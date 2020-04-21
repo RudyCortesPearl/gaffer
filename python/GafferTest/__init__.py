@@ -37,6 +37,7 @@
 
 from _GafferTest import *
 
+import os
 import unittest
 
 # workaround lack of expectedFailure decorator for
@@ -52,9 +53,27 @@ except AttributeError :
 				print "Expected failure"
 		return wrapper
 
+## Determines if the tests are running in a Continuous Integration
+# environment.
+def inCI( platforms = set() ) :
+
+	platformVars = {
+		# There isn't a specific 'We're on Azure' var (other than some azure specific
+		# vars that are set that would be 'magic words'), so we set our own in our
+		# azure-pipelines.yaml
+		'azure' : 'AZURE'
+	}
+
+	targets = platforms or platformVars.keys()
+	for t in targets :
+		if platformVars[ t ] in os.environ :
+			return True
+
+	return False
+
 from TestCase import TestCase
+from TestRunner import TestRunner
 from AddNode import AddNode
-from SphereNode import SphereNode
 from SignalsTest import SignalsTest
 from GraphComponentTest import GraphComponentTest
 from FrameNode import FrameNode
@@ -69,11 +88,9 @@ from FileSystemPathTest import FileSystemPathTest
 from PathTest import PathTest
 from PathFilterTest import PathFilterTest
 from UndoTest import UndoTest
-from SpeedTest import SpeedTest
 from KeywordPlugNode import KeywordPlugNode
 from CompoundNumericPlugTest import CompoundNumericPlugTest
 from CompoundNumericNode import CompoundNumericNode
-from CompoundPlugTest import CompoundPlugTest
 from CompoundPlugNode import CompoundPlugNode
 from TypedObjectPlugTest import TypedObjectPlugTest
 from SplinePlugTest import SplinePlugTest
@@ -90,7 +107,7 @@ from NodeBindingTest import NodeBindingTest
 from DictPathTest import DictPathTest
 from ExpressionTest import ExpressionTest
 from BlockedConnectionTest import BlockedConnectionTest
-from TimeWarpComputeNodeTest import TimeWarpComputeNodeTest
+from TimeWarpTest import TimeWarpTest
 from TransformPlugTest import TransformPlugTest
 from Transform2DPlugTest import Transform2DPlugTest
 from SequencePathTest import SequencePathTest
@@ -110,14 +127,12 @@ from OutputRedirectionTest import OutputRedirectionTest
 from RecursiveChildIteratorTest import RecursiveChildIteratorTest
 from FilteredRecursiveChildIteratorTest import FilteredRecursiveChildIteratorTest
 from ReferenceTest import ReferenceTest
-from OrphanRemoverTest import OrphanRemoverTest
 from GraphComponentPathTest import GraphComponentPathTest
 from ArrayPlugNode import ArrayPlugNode
 from ArrayPlugTest import ArrayPlugTest
 from SerialisationTest import SerialisationTest
 from SwitchTest import SwitchTest
 from MetadataTest import MetadataTest
-from StringAlgoTest import StringAlgoTest
 from NodeAlgoTest import NodeAlgoTest
 from DotTest import DotTest
 from ApplicationTest import ApplicationTest
@@ -136,6 +151,21 @@ from PlugAlgoTest import PlugAlgoTest
 from BoxInTest import BoxInTest
 from BoxOutTest import BoxOutTest
 from DirtyPropagationScopeTest import DirtyPropagationScopeTest
+from BoxIOTest import BoxIOTest
+from ParallelAlgoTest import ParallelAlgoTest
+from BackgroundTaskTest import BackgroundTaskTest
+from ProcessMessageHandlerTest import ProcessMessageHandlerTest
+from MonitorAlgoTest import MonitorAlgoTest
+from NameValuePlugTest import NameValuePlugTest
+from ExtensionAlgoTest import ExtensionAlgoTest
+from ModuleTest import ModuleTest
+from NumericBookmarkSetTest import NumericBookmarkSetTest
+from NameSwitchTest import NameSwitchTest
+from SpreadsheetTest import SpreadsheetTest
+from ShufflePlugTest import ShufflePlugTest
+from EditScopeTest import EditScopeTest
+
+from IECorePreviewTest import *
 
 if __name__ == "__main__":
 	import unittest

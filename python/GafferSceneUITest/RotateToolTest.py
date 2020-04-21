@@ -34,6 +34,10 @@
 #
 ##########################################################################
 
+import math
+
+import imath
+
 import IECore
 
 import Gaffer
@@ -50,14 +54,14 @@ class RotateToolTest( GafferUITest.TestCase ) :
 
 		view = GafferSceneUI.SceneView()
 		view["in"].setInput( script["cube"]["out"] )
-		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), GafferScene.PathMatcher( [ "/cube" ] ) )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/cube" ] ) )
 
 		tool = GafferSceneUI.RotateTool( view )
 		tool["active"].setValue( True )
 
 		for i in range( 0, 6 ) :
-			tool.rotate( 1, 90 )
-			self.assertEqual( script["cube"]["transform"]["rotate"]["y"].getValue(), (i + 1) * 90 )
+			tool.rotate( imath.Eulerf( 0, 90, 0 ) )
+			self.assertAlmostEqual( script["cube"]["transform"]["rotate"]["y"].getValue(), (i + 1) * 90, delta = 0.0001 )
 
 	def testInteractionWithGroupRotation( self ) :
 
@@ -72,7 +76,7 @@ class RotateToolTest( GafferUITest.TestCase ) :
 
 		view = GafferSceneUI.SceneView()
 		view["in"].setInput( script["group"]["out"] )
-		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), GafferScene.PathMatcher( [ "/group/cube" ] ) )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/group/cube" ] ) )
 
 		tool = GafferSceneUI.RotateTool( view )
 		tool["active"].setValue( True )
@@ -81,20 +85,20 @@ class RotateToolTest( GafferUITest.TestCase ) :
 		# rotate about the X axis in world space, because the
 		# handle orientation has been affected by the group
 		# transform (because default orientation is Parent).
-		tool.rotate( 2, 90 )
+		tool.rotate( imath.Eulerf( 0, 0, 90 ) )
 
 		# We expect this to have aligned the cube's local X axis onto
 		# the Y axis in world space, and the local Y axis onto the world
 		# Z axis.
 		self.assertTrue(
-			IECore.V3f( 0, 1, 0 ).equalWithAbsError(
-				IECore.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
+			imath.V3f( 0, 1, 0 ).equalWithAbsError(
+				imath.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
 				0.000001
 			)
 		)
 		self.assertTrue(
-			IECore.V3f( 0, 0, 1 ).equalWithAbsError(
-				IECore.V3f( 0, 1, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
+			imath.V3f( 0, 0, 1 ).equalWithAbsError(
+				imath.V3f( 0, 1, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
 				0.000001
 			)
 		)
@@ -112,7 +116,7 @@ class RotateToolTest( GafferUITest.TestCase ) :
 
 		view = GafferSceneUI.SceneView()
 		view["in"].setInput( script["group"]["out"] )
-		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), GafferScene.PathMatcher( [ "/group/cube" ] ) )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/group/cube" ] ) )
 
 		tool = GafferSceneUI.RotateTool( view )
 		tool["active"].setValue( True )
@@ -122,11 +126,11 @@ class RotateToolTest( GafferUITest.TestCase ) :
 		tool["orientation"].setValue( tool.Orientation.Local )
 
 		with Gaffer.UndoScope( script ) :
-			tool.rotate( 2, 90 )
+			tool.rotate( imath.Eulerf( 0, 0, 90 ) )
 
 		self.assertTrue(
-			IECore.V3f( 0, 1, 0 ).equalWithAbsError(
-				IECore.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
+			imath.V3f( 0, 1, 0 ).equalWithAbsError(
+				imath.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
 				0.000001
 			)
 		)
@@ -137,11 +141,11 @@ class RotateToolTest( GafferUITest.TestCase ) :
 		tool["orientation"].setValue( tool.Orientation.Parent )
 
 		with Gaffer.UndoScope( script ) :
-			tool.rotate( 0, 90 )
+			tool.rotate( imath.Eulerf( 90, 0, 0 ) )
 
 		self.assertTrue(
-			IECore.V3f( 0, 1, 0 ).equalWithAbsError(
-				IECore.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
+			imath.V3f( 0, 1, 0 ).equalWithAbsError(
+				imath.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
 				0.000001
 			)
 		)
@@ -152,11 +156,11 @@ class RotateToolTest( GafferUITest.TestCase ) :
 		tool["orientation"].setValue( tool.Orientation.World )
 
 		with Gaffer.UndoScope( script ) :
-			tool.rotate( 2, 90 )
+			tool.rotate( imath.Eulerf( 0, 0, 90 ) )
 
 		self.assertTrue(
-			IECore.V3f( 0, -1, 0 ).equalWithAbsError(
-				IECore.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
+			imath.V3f( 0, -1, 0 ).equalWithAbsError(
+				imath.V3f( 1, 0, 0 ) * script["group"]["out"].fullTransform( "/group/cube" ),
 				0.000001
 			)
 		)
@@ -177,25 +181,155 @@ class RotateToolTest( GafferUITest.TestCase ) :
 
 		view = GafferSceneUI.SceneView()
 		view["in"].setInput( script["transform"]["out"] )
-		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), GafferScene.PathMatcher( [ "/plane" ] ) )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/plane" ] ) )
 
 		tool = GafferSceneUI.RotateTool( view )
 		tool["active"].setValue( True )
 
-		tool.rotate( 0, 90 )
+		tool.rotate( imath.Eulerf( 90, 0, 0 ) )
 
 		self.assertTrue(
-			IECore.V3f( 0, 1, 0 ).equalWithAbsError(
-				IECore.V3f( 1, 0, 0 ) * script["transform"]["out"].fullTransform( "/plane" ),
+			imath.V3f( 0, 1, 0 ).equalWithAbsError(
+				imath.V3f( 1, 0, 0 ) * script["transform"]["out"].fullTransform( "/plane" ),
 				0.000001
 			)
 		)
 
 		self.assertTrue(
-			IECore.V3f( 0, 0, 1 ).equalWithAbsError(
-				IECore.V3f( 0, 1, 0 ) * script["transform"]["out"].fullTransform( "/plane" ),
+			imath.V3f( 0, 0, 1 ).equalWithAbsError(
+				imath.V3f( 0, 1, 0 ) * script["transform"]["out"].fullTransform( "/plane" ),
 				0.000001
 			)
+		)
+
+	def testPivotAffectsHandlesTransform( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["cube"] = GafferScene.Cube()
+
+		view = GafferSceneUI.SceneView()
+		view["in"].setInput( script["cube"]["out"] )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/cube" ] ) )
+
+		tool = GafferSceneUI.RotateTool( view )
+		tool["active"].setValue( True )
+
+		self.assertEqual( tool.handlesTransform(), imath.M44f() )
+
+		script["cube"]["transform"]["pivot"].setValue( imath.V3f( 1, 0, 0 ) )
+
+		self.assertEqual(
+			tool.handlesTransform(),
+			imath.M44f().translate(
+				script["cube"]["transform"]["pivot"].getValue()
+			)
+		)
+
+		script["cube"]["transform"]["translate"].setValue( imath.V3f( 1, 2, -1 ) )
+
+		self.assertEqual(
+			tool.handlesTransform(),
+			imath.M44f().translate(
+				script["cube"]["transform"]["pivot"].getValue() +
+				script["cube"]["transform"]["translate"].getValue()
+			)
+		)
+
+	def testPivotAndExistingTransform( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["cube"] = GafferScene.Cube()
+
+		script["transformFilter"] = GafferScene.PathFilter()
+		script["transformFilter"]["paths"].setValue( IECore.StringVectorData( [ "/cube" ] ) )
+
+		script["transform"] = GafferScene.Transform()
+		script["transform"]["in"].setInput( script["cube"]["out"] )
+		script["transform"]["filter"].setInput( script["transformFilter"]["out"] )
+
+		view = GafferSceneUI.SceneView()
+		view["in"].setInput( script["transform"]["out"] )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/cube" ] ) )
+
+		tool = GafferSceneUI.RotateTool( view )
+		tool["active"].setValue( True )
+
+		# Start with default pivot
+
+		self.assertEqual(
+			imath.V3f( 0 ) * tool.handlesTransform(),
+			imath.V3f( 0, 0, 0 ),
+		)
+
+		# Offset it
+
+		script["transform"]["transform"]["pivot"].setValue( imath.V3f( 1, 0, 0 ) )
+
+		self.assertEqual(
+			imath.V3f( 0 ) * tool.handlesTransform(),
+			imath.V3f( 1, 0, 0 ),
+		)
+
+		# Now add an existing transform on the cube, prior
+		# to it entering the transform node we're editing.
+		# The pivot's world space position should be affected
+		# because the Transform node is operating in Local space.
+
+		script["cube"]["transform"]["rotate"]["y"].setValue( 90 )
+
+		self.assertTrue(
+			imath.V3f( 0, 0, -1 ).equalWithAbsError(
+				imath.V3f( 0 ) * tool.handlesTransform(),
+				0.0000001,
+			)
+		)
+
+		# But if we edit in World space, then the existing transform
+		# should have no relevance.
+
+		script["transform"]["space"].setValue( script["transform"].Space.World )
+
+		self.assertEqual(
+			imath.V3f( 0 ) * tool.handlesTransform(),
+			imath.V3f( 1, 0, 0 ),
+		)
+
+	def testEditScopes( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["sphere"] = GafferScene.Sphere()
+		script["sphere"]["transform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
+
+		script["editScope"] = Gaffer.EditScope()
+		script["editScope"].setup( script["sphere"]["out"] )
+		script["editScope"]["in"].setInput( script["sphere"]["out"] )
+
+		view = GafferSceneUI.SceneView()
+		view["in"].setInput( script["editScope"]["out"] )
+		view["editScope"].setInput( script["editScope"]["out"] )
+
+		GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( [ "/sphere" ] ) )
+
+		tool = GafferSceneUI.RotateTool( view )
+		tool["active"].setValue( True )
+
+		self.assertEqual( tool.handlesTransform(), imath.M44f().translate( imath.V3f( 1, 0, 0 ) ) )
+		self.assertEqual( len( tool.selection() ), 1 )
+		self.assertTrue( tool.selection()[0].editable() )
+		self.assertFalse( GafferScene.EditScopeAlgo.hasTransformEdit( script["editScope"], "/sphere" ) )
+		self.assertEqual( script["editScope"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 1, 0, 0 ) ) )
+
+		tool.rotate( imath.Eulerf( 0, 90, 0 ) )
+		self.assertEqual( tool.handlesTransform(), imath.M44f().translate( imath.V3f( 1, 0, 0 ) ) )
+		self.assertEqual( len( tool.selection() ), 1 )
+		self.assertTrue( tool.selection()[0].editable() )
+		self.assertTrue( GafferScene.EditScopeAlgo.hasTransformEdit( script["editScope"], "/sphere" ) )
+
+		self.assertEqual(
+			script["editScope"]["out"].transform( "/sphere" ),
+			imath.M44f().translate( imath.V3f( 1, 0, 0 ) ).rotate( imath.V3f( 0, math.pi / 2, 0 ) ),
 		)
 
 if __name__ == "__main__":

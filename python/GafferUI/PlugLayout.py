@@ -55,6 +55,7 @@ from Qt import QtWidgets
 #	- "<layoutName>:activator" the name of an activator to control editability
 #	- "<layoutName>:visibilityActivator" the name of an activator to control visibility
 #	- "<layoutName>:accessory" groups as an accessory to the previous widget
+#	- "<layoutName>:width" gives a specific width to the plug's widget
 #
 # Per-parent metadata support :
 #
@@ -88,11 +89,15 @@ class PlugLayout( GafferUI.Widget ) :
 	# We use this when we can't find a ScriptNode to provide the context.
 	__fallbackContext = Gaffer.Context()
 
-	def __init__( self, parent, orientation = GafferUI.ListContainer.Orientation.Vertical, layoutName = "layout", rootSection = "", **kw ) :
+	def __init__( self, parent, orientation = GafferUI.ListContainer.Orientation.Vertical, layoutName = "layout", rootSection = "", embedded = False, **kw ) :
 
 		assert( isinstance( parent, ( Gaffer.Node, Gaffer.Plug ) ) )
 
-		self.__layout = _TabLayout( orientation ) if isinstance( parent, Gaffer.Node ) else _CollapsibleLayout( orientation )
+		# embedded indicates that the PlugLayout is embedded in another layout
+		# which affects how the widget is built
+		self.__embedded = embedded
+
+		self.__layout = _TabLayout( orientation, embedded = embedded ) if isinstance( parent, Gaffer.Node ) and not rootSection else _CollapsibleLayout( orientation )
 
 		GafferUI.Widget.__init__( self, self.__layout, **kw )
 
@@ -104,16 +109,16 @@ class PlugLayout( GafferUI.Widget ) :
 
 		# we need to connect to the childAdded/childRemoved signals on
 		# the parent so we can update the ui when plugs are added and removed.
-		self.__childAddedConnection = parent.childAddedSignal().connect( Gaffer.WeakMethod( self.__childAddedOrRemoved ) )
- 		self.__childRemovedConnection = parent.childRemovedSignal().connect( Gaffer.WeakMethod( self.__childAddedOrRemoved ) )
+		parent.childAddedSignal().connect( Gaffer.WeakMethod( self.__childAddedOrRemoved ), scoped = False )
+		parent.childRemovedSignal().connect( Gaffer.WeakMethod( self.__childAddedOrRemoved ), scoped = False )
 
 		# since our layout is driven by metadata, we must respond dynamically
 		# to changes in that metadata.
-		self.__metadataChangedConnection = Gaffer.Metadata.plugValueChangedSignal().connect( Gaffer.WeakMethod( self.__plugMetadataChanged ) )
+		Gaffer.Metadata.plugValueChangedSignal().connect( Gaffer.WeakMethod( self.__plugMetadataChanged ), scoped = False )
 
 		# and since our activations are driven by plug values, we must respond
 		# when the plugs are dirtied.
-		self.__plugDirtiedConnection = self.__node().plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) )
+		self.__node().plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ), scoped = False )
 
 		# frequently events that trigger a ui update come in batches, so we
 		# perform the update lazily using a LazyMethod. the dirty variables
@@ -131,9 +136,8 @@ class PlugLayout( GafferUI.Widget ) :
 		scriptNode = self.__node() if isinstance( self.__node(), Gaffer.ScriptNode ) else self.__node().scriptNode()
 		self.setContext( scriptNode.context() if scriptNode is not None else self.__fallbackContext )
 
-		# schedule our first update, which will take place when we become
-		# visible for the first time.
-		self.__updateLazily()
+		# Build the layout
+		self.__update()
 
 	def getReadOnly( self ) :
 
@@ -161,13 +165,9 @@ class PlugLayout( GafferUI.Widget ) :
 			self.__applyContext( widget, context )
 
 	## Returns a PlugValueWidget representing the specified child plug.
-	# Because the layout is built lazily on demand, this might return None due
-	# to the user not having opened up the ui - in this case lazy=False may
-	# be passed to force the creation of the ui.
-	def plugValueWidget( self, childPlug, lazy=True ) :
+	def plugValueWidget( self, childPlug ) :
 
-		if not lazy :
-			self.__updateLazily.flush( self )
+		self.__updateLazily.flush( self )
 
 		w = self.__widgets.get( childPlug, None )
 		if w is None :
@@ -178,13 +178,9 @@ class PlugLayout( GafferUI.Widget ) :
 			return w.plugValueWidget()
 
 	## Returns the custom widget registered with the specified name.
-	# Because the layout is built lazily on demand, this might return None due
-	# to the user not having opened up the ui - in this case lazy=False may
-	# be passed to force the creation of the ui.
-	def customWidget( self, name, lazy=True ) :
+	def customWidget( self, name ) :
 
-		if not lazy :
-			self.__updateLazily.flush( self )
+		self.__updateLazily.flush( self )
 
 		return self.__widgets.get( name )
 
@@ -224,7 +220,7 @@ class PlugLayout( GafferUI.Widget ) :
 		for itemAndIndex in itemsAndIndices :
 			index = cls.__staticItemMetadataValue( itemAndIndex[1], "index", parent, layoutName )
 			if index is not None :
-				index = index if index >= 0 else sys.maxint + index
+				index = index if index >= 0 else sys.maxsize + index
 				itemAndIndex[0] = index
 
 		itemsAndIndices.sort( key = lambda x : x[0] )
@@ -304,10 +300,13 @@ class PlugLayout( GafferUI.Widget ) :
 				section = section.subsection( sectionName )
 
 			if len( section.widgets ) and self.__itemMetadataValue( item, "accessory" ) :
-				row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 )
-				row.append( section.widgets[-1] )
-				row.append( widget )
-				section.widgets[-1] = row
+				if isinstance( section.widgets[-1], _AccessoryRow ) :
+					section.widgets[-1].append( widget )
+				else :
+					row = _AccessoryRow()
+					row.append( section.widgets[-1] )
+					row.append( widget )
+					section.widgets[-1] = row
 			else :
 				section.widgets.append( widget )
 
@@ -369,6 +368,12 @@ class PlugLayout( GafferUI.Widget ) :
 		if result is None :
 			return result
 
+		width = self.__itemMetadataValue( plug, "width" )
+		if width is not None :
+			result._qtWidget().setFixedWidth( width )
+			if result._qtWidget().layout() is not None :
+				result._qtWidget().layout().setSizeConstraint( QtWidgets.QLayout.SetDefaultConstraint )
+
 		if isinstance( result, GafferUI.PlugValueWidget ) and not result.hasLabel() and self.__itemMetadataValue( plug, "label" ) != "" :
  			result = GafferUI.PlugWidget( result )
 			if self.__layout.orientation() == GafferUI.ListContainer.Orientation.Horizontal :
@@ -405,10 +410,7 @@ class PlugLayout( GafferUI.Widget ) :
 	@classmethod
 	def __metadataValue( cls, plugOrNode, name ) :
 
-		if isinstance( plugOrNode, Gaffer.Node ) :
-			return Gaffer.Metadata.value( plugOrNode, name )
-		else :
-			return Gaffer.Metadata.value( plugOrNode, name )
+		return Gaffer.Metadata.value( plugOrNode, name )
 
 	@classmethod
 	def __staticItemMetadataValue( cls, item, name, parent, layoutName ) :
@@ -515,6 +517,13 @@ class PlugLayout( GafferUI.Widget ) :
 		self.__summariesDirty = True
 		self.__updateLazily()
 
+
+class _AccessoryRow( GafferUI.ListContainer ) :
+
+	def __init__( self, **kw ) :
+
+		GafferUI.ListContainer.__init__( self, GafferUI.ListContainer.Orientation.Horizontal, spacing = 4, **kw )
+
 # The _Section class provides a simple abstract representation of a hierarchical
 # layout. Each section contains a list of widgets to be displayed in that section,
 # and an OrderedDict of named subsections.
@@ -549,17 +558,11 @@ class _Section( object ) :
 
 	def saveState( self, name, value ) :
 
-		if isinstance( self.__parent, Gaffer.Node ) :
-			Gaffer.Metadata.registerValue( self.__parent, self.__stateName( name ), value, persistent = False )
-		else :
-			Gaffer.Metadata.registerValue( self.__parent, self.__stateName( name ), value, persistent = False )
+		Gaffer.Metadata.registerValue( self.__parent, self.__stateName( name ), value, persistent = False )
 
 	def restoreState( self, name ) :
 
-		if isinstance( self.__parent, Gaffer.Node ) :
-			return Gaffer.Metadata.value( self.__parent, self.__stateName( name ) )
-		else :
-			return Gaffer.Metadata.value( self.__parent, self.__stateName( name ) )
+		return Gaffer.Metadata.value( self.__parent, self.__stateName( name ) )
 
 	def __stateName( self, name ) :
 
@@ -588,7 +591,9 @@ class _Layout( GafferUI.Widget ) :
 
 class _TabLayout( _Layout ) :
 
-	def __init__( self, orientation, **kw ) :
+	def __init__( self, orientation, embedded = False, **kw ) :
+
+		self.__embedded = embedded
 
 		self.__mainColumn = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical )
 
@@ -597,6 +602,12 @@ class _TabLayout( _Layout ) :
 		with self.__mainColumn :
 			self.__widgetsColumn = GafferUI.ListContainer( self.orientation(), spacing = 4, borderWidth = 4 )
 			self.__tabbedContainer = GafferUI.TabbedContainer()
+			# if the TabLayout is embedded, we want to restrict the maximum width/height depending on the orientation
+			if self.__embedded :
+				if self.orientation() == GafferUI.ListContainer.Orientation.Vertical :
+					self.__tabbedContainer._qtWidget().setSizePolicy( QtWidgets.QSizePolicy( QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Maximum ) )
+				else :
+					self.__tabbedContainer._qtWidget().setSizePolicy( QtWidgets.QSizePolicy( QtWidgets.QSizePolicy.Maximum, QtWidgets.QSizePolicy.Expanding ) )
 
 		self.__currentTabChangedConnection = self.__tabbedContainer.currentChangedSignal().connect(
 			Gaffer.WeakMethod( self.__currentTabChanged )
@@ -615,11 +626,16 @@ class _TabLayout( _Layout ) :
 		for name, subsection in section.subsections.items() :
 			tab = existingTabs.get( name )
 			if tab is None :
-				tab = GafferUI.ScrolledContainer( borderWidth = 8 )
-				if self.orientation() == GafferUI.ListContainer.Orientation.Vertical :
-					tab.setHorizontalMode( GafferUI.ScrolledContainer.ScrollMode.Never )
+				# Use scroll bars only when the TabLayout is not embedded
+				if self.__embedded :
+					tab = GafferUI.Frame( borderWidth = 0, borderStyle = GafferUI.Frame.BorderStyle.None )
 				else :
-					tab.setVerticalMode( GafferUI.ScrolledContainer.ScrollMode.Never )
+					tab = GafferUI.ScrolledContainer( borderWidth = 8 )
+					if self.orientation() == GafferUI.ListContainer.Orientation.Vertical :
+						tab.setHorizontalMode( GafferUI.ScrollMode.Never )
+					else :
+						tab.setVerticalMode( GafferUI.ScrollMode.Never )
+
 				tab.setChild( _CollapsibleLayout( self.orientation() ) )
 			tab.getChild().update( subsection )
 			updatedTabs[name] = tab
@@ -682,8 +698,9 @@ class _CollapsibleLayout( _Layout ) :
 				if subsection.restoreState( "collapsed" ) is False :
 					collapsible.setCollapsed( False )
 
-				collapsible.__stateChangedConnection = collapsible.stateChangedSignal().connect(
-					functools.partial( Gaffer.WeakMethod( self.__collapsibleStateChanged ), subsection = subsection )
+				collapsible.stateChangedSignal().connect(
+					functools.partial( Gaffer.WeakMethod( self.__collapsibleStateChanged ), subsection = subsection ),
+					scoped = False
 				)
 
 				self.__collapsibles[name] = collapsible

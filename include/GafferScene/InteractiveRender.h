@@ -37,35 +37,32 @@
 #ifndef GAFFERSCENE_INTERACTIVERENDER_H
 #define GAFFERSCENE_INTERACTIVERENDER_H
 
-#include "tbb/pipeline.h"
-
-#include "IECore/Renderer.h"
+#include "GafferScene/Private/IECoreScenePreview/Renderer.h"
+#include "GafferScene/RenderController.h"
+#include "GafferScene/ScenePlug.h"
 
 #include "Gaffer/Node.h"
-
-#include "GafferScene/ScenePlug.h"
 
 namespace Gaffer
 {
 
 IE_CORE_FORWARDDECLARE( Context )
+IE_CORE_FORWARDDECLARE( StringPlug )
 
 } // namespace Gaffer
 
 namespace GafferScene
 {
 
-/// Base class for nodes which perform renders embedded in the main gaffer process,
-/// and which can be updated automatically and rerendered as the user tweaks the scene.
-class InteractiveRender : public Gaffer::Node
+class GAFFERSCENE_API InteractiveRender : public Gaffer::Node
 {
 
 	public :
 
 		InteractiveRender( const std::string &name=defaultName<InteractiveRender>() );
-		virtual ~InteractiveRender();
+		~InteractiveRender() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::InteractiveRender, InteractiveRenderTypeId, Gaffer::Node );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::InteractiveRender, GafferScene::InteractiveRenderTypeId, Gaffer::Node );
 
 		enum State
 		{
@@ -74,80 +71,47 @@ class InteractiveRender : public Gaffer::Node
 			Paused
 		};
 
-		/// The scene to be rendered.
-		ScenePlug *inPlug();
-		const ScenePlug *inPlug() const;
+		GafferScene::ScenePlug *inPlug();
+		const GafferScene::ScenePlug *inPlug() const;
 
-		/// A direct pass-through of the input scene.
-		ScenePlug *outPlug();
-		const ScenePlug *outPlug() const;
+		Gaffer::StringPlug *rendererPlug();
+		const Gaffer::StringPlug *rendererPlug() const;
 
 		Gaffer::IntPlug *statePlug();
 		const Gaffer::IntPlug *statePlug() const;
 
-		Gaffer::BoolPlug *updateLightsPlug();
-		const Gaffer::BoolPlug *updateLightsPlug() const;
+		GafferScene::ScenePlug *outPlug();
+		const GafferScene::ScenePlug *outPlug() const;
 
-		Gaffer::BoolPlug *updateAttributesPlug();
-		const Gaffer::BoolPlug *updateAttributesPlug() const;
-
-		Gaffer::BoolPlug *updateCamerasPlug();
-		const Gaffer::BoolPlug *updateCamerasPlug() const;
-
-		Gaffer::BoolPlug *updateCoordinateSystemsPlug();
-		const Gaffer::BoolPlug *updateCoordinateSystemsPlug() const;
-
-		/// The Context in which the InteractiveRender should operate.
+		/// Specifies a context in which the InteractiveRender should operate.
+		/// The default is null, meaning that the context of the ancestor
+		/// ScriptNode will be used, or failing that, a default context.
+		void setContext( Gaffer::ContextPtr context );
 		Gaffer::Context *getContext();
 		const Gaffer::Context *getContext() const;
-		void setContext( Gaffer::ContextPtr context );
 
 	protected :
 
-		/// Must be implemented by derived classes to return the renderer that will be used.
-		virtual IECore::RendererPtr createRenderer() const = 0;
+		// Constructor for derived classes which wish to hardcode the renderer type. Perhaps
+		// at some point we won't even have derived classes, but instead will always use the
+		// base class? At the moment the main purpose of the derived classes is to force the
+		// loading of the module which registers the required renderer type.
+		InteractiveRender( const IECore::InternedString &rendererType, const std::string &name );
 
 	private :
 
+		ScenePlug *adaptedInPlug();
+		const ScenePlug *adaptedInPlug() const;
+
 		void plugDirtied( const Gaffer::Plug *plug );
-		void parentChanged( Gaffer::GraphComponent *child, Gaffer::GraphComponent *oldParent );
 
 		void update();
-
-		static void runPipeline(tbb::pipeline *p);
-		void outputScene( bool update );
-
-		void updateLights();
-		void updateAttributes();
-		void updateCameras();
-		void updateCoordinateSystems();
-
-		void outputLightsInternal( const IECore::CompoundObject *globals, bool editing );
-
+		Gaffer::ConstContextPtr effectiveContext();
 		void stop();
 
-		typedef std::set<std::string> LightHandles;
-
-		// hierarchical structure for tracking scene information:
-		class SceneGraph;
-		boost::shared_ptr<SceneGraph> m_sceneGraph;
-
-		// tbb classes for performing multithreaded traversals of the scene graph, etc.
-		class SceneGraphBuildTask;
-		class ChildNamesUpdateTask;
-
-		class SceneGraphIteratorFilter;
-		class SceneGraphEvaluatorFilter;
-		class SceneGraphOutputFilter;
-
-		IECore::RendererPtr m_renderer;
-		ConstScenePlugPtr m_scene;
+		IECoreScenePreview::RendererPtr m_renderer;
+		std::unique_ptr<RenderController> m_controller;
 		State m_state;
-		LightHandles m_lightHandles;
-		bool m_lightsDirty;
-		bool m_attributesDirty;
-		bool m_camerasDirty;
-		bool m_coordinateSystemsDirty;
 
 		Gaffer::ContextPtr m_context;
 

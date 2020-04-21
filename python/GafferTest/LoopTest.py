@@ -43,10 +43,8 @@ class LoopTest( GafferTest.TestCase ) :
 
 	def intLoop( self ) :
 
-		result = Gaffer.LoopComputeNode()
-		result["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  )
-		result["in"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-
+		result = Gaffer.Loop()
+		result.setup( Gaffer.IntPlug() )
 		return result
 
 	def test( self ) :
@@ -94,7 +92,7 @@ class LoopTest( GafferTest.TestCase ) :
 		self.assertEqual( s["n"]["out"].getValue(), 1 + 2 + 3 + 4 )
 
 		# Make sure the loop index is undefined when pulling the input, instead of leaking out upstream
-	
+
 		s["e2"] = Gaffer.Expression()
 		s["e2"].setExpression( 'parent["n"]["in"] = context.get( "loop:index", -100 )' )
 
@@ -184,6 +182,44 @@ class LoopTest( GafferTest.TestCase ) :
 		self.assertEqual( n["out"].getValue(), 0 )
 
 		self.assertTrue( n.correspondingInput( n["out"] ).isSame( n["in"] ) )
+
+	def testSetup( self ) :
+
+		n = Gaffer.Loop()
+
+		self.assertNotIn( "in", n )
+		self.assertNotIn( "out", n )
+		self.assertNotIn( "previous", n )
+		self.assertNotIn( "next", n )
+
+		n.setup( Gaffer.StringPlug() )
+
+		self.assertIsInstance( n["in"], Gaffer.StringPlug )
+		self.assertIsInstance( n["out"], Gaffer.StringPlug )
+		self.assertIsInstance( n["previous"], Gaffer.StringPlug )
+		self.assertIsInstance( n["next"], Gaffer.StringPlug )
+
+	def testSerialisationUsesSetup( self ) :
+
+		s1 = Gaffer.ScriptNode()
+		s1["c"] = Gaffer.Loop()
+		s1["c"].setup( Gaffer.IntPlug() )
+
+		ss = s1.serialise()
+		self.assertIn( "setup", ss )
+		self.assertEqual( ss.count( "addChild" ), 1 )
+		self.assertNotIn( "Dynamic", ss )
+		self.assertNotIn( "Serialisable", ss )
+		self.assertNotIn( "setInput", ss )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( ss )
+		self.assertIn( "in", s2["c"] )
+		self.assertIn( "out", s2["c"] )
+		self.assertIsInstance( s2["c"]["in"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["c"]["out"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["c"]["previous"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["c"]["next"], Gaffer.IntPlug )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -56,7 +56,9 @@ Gaffer.Metadata.registerNode(
 	node and then export it for referencing.
 	""",
 
-	"nodeGraph:childrenViewable", True,
+	"icon", "referenceNode.png",
+
+	"graphEditor:childrenViewable", True,
 	"childNodesAreReadOnly", True,
 
 	"layout:customWidget:fileName:widgetType", "GafferUI.ReferenceUI._FileNameWidget"
@@ -73,16 +75,16 @@ Gaffer.Metadata.registerNode(
 # for particular applications append it if it suits their purposes.
 def nodeMenuCreateCommand( menu ) :
 
-	nodeGraph = menu.ancestor( GafferUI.NodeGraph )
-	assert( nodeGraph is not None )
+	graphEditor = menu.ancestor( GafferUI.GraphEditor )
+	assert( graphEditor is not None )
 
 	fileName = _waitForFileName( parentWindow = menu.ancestor( GafferUI.Window ) )
 
 	node = Gaffer.Reference()
-	nodeGraph.graphGadget().getRoot().addChild( node )
+	graphEditor.graphGadget().getRoot().addChild( node )
 
 	if fileName :
-		_load( node, fileName, parentWindow = nodeGraph.ancestor( GafferUI.Window ) )
+		_load( node, fileName, parentWindow = graphEditor.ancestor( GafferUI.Window ) )
 
 	return node
 
@@ -109,13 +111,13 @@ class _FileNameWidget( GafferUI.Widget ) :
 
 			loadButton = GafferUI.Button( image = "pathChooser.png", hasFrame=False )
 			loadButton.setToolTip( "Load" )
-			self.__loadButtonClickedConnection = loadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__loadClicked ) )
+			loadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__loadClicked ), scoped = False )
 
 			self.__reloadButton = GafferUI.Button( image = "refresh.png", hasFrame=False )
 			self.__reloadButton.setToolTip( "Reload" )
-			self.__reloadButtonClickedConnection = self.__reloadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__reloadClicked ) )
+			self.__reloadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__reloadClicked ), scoped = False )
 
-		self.__referenceLoadedConnection = node.referenceLoadedSignal().connect( Gaffer.WeakMethod( self.__referenceLoaded ) )
+		node.referenceLoadedSignal().connect( Gaffer.WeakMethod( self.__referenceLoaded ), scoped = False )
 
 	def __loadClicked( self, button ) :
 
@@ -166,18 +168,18 @@ def _load( node, fileName, parentWindow ) :
 		node.load( fileName )
 
 ##########################################################################
-# NodeGraph node context menu
+# GraphEditor node context menu
 ##########################################################################
 
-def __duplicateAsBox( nodeGraph, node ) :
+def __duplicateAsBox( graphEditor, node ) :
 
 	script = node.scriptNode()
 	with Gaffer.UndoScope( script ) :
 
 		box = Gaffer.Box( node.getName() + "Copy" )
-		script.addChild( box )
+		node.parent().addChild( box )
 
-		graphGadget = nodeGraph.graphGadget()
+		graphGadget = graphEditor.graphGadget()
 		graphGadget.getLayout().positionNode(
 			graphGadget, box, fallbackPosition = graphGadget.getNodePosition( node )
 		)
@@ -188,11 +190,11 @@ def __duplicateAsBox( nodeGraph, node ) :
 		with GafferUI.ErrorDialogue.ErrorHandler(
 			title = "Errors Occurred During Loading",
 			closeLabel = "Oy vey",
-			parentWindow = nodeGraph.ancestor( GafferUI.Window ),
+			parentWindow = graphEditor.ancestor( GafferUI.Window ),
 		) :
 			script.executeFile( node.fileName(), parent = box, continueOnError = True )
 
-def __nodeGraphNodeContextMenu( nodeGraph, node, menuDefinition ) :
+def __graphEditorNodeContextMenu( graphEditor, node, menuDefinition ) :
 
 	if not isinstance( node, Gaffer.Reference ) :
 		return
@@ -200,9 +202,9 @@ def __nodeGraphNodeContextMenu( nodeGraph, node, menuDefinition ) :
 	menuDefinition.append(
 		"/Duplicate as Box",
 		{
-			"command" : functools.partial( __duplicateAsBox, nodeGraph, node ),
+			"command" : functools.partial( __duplicateAsBox, graphEditor, node ),
 			"active" : bool( node.fileName() ),
 		}
 	)
 
-__nodeGraphNodeContextMenuConnection = GafferUI.NodeGraph.nodeContextMenuSignal().connect( __nodeGraphNodeContextMenu )
+GafferUI.GraphEditor.nodeContextMenuSignal().connect( __graphEditorNodeContextMenu, scoped = False )

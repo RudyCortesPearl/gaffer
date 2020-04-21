@@ -36,9 +36,10 @@
 
 
 #include "GafferImage/FilterAlgo.h"
-#include "IECore/Exception.h"
-#include "OpenImageIO/filter.h"
 
+#include "IECore/Exception.h"
+
+#include "OpenImageIO/filter.h"
 
 #include <climits>
 
@@ -66,32 +67,32 @@ class SmoothGaussian2D : public OIIO::Filter2D
 		{
 		}
 
-		~SmoothGaussian2D()
+		~SmoothGaussian2D() override
 		{
 		}
 
-		virtual float operator()( float x, float y ) const
+		float operator()( float x, float y ) const override
 		{
 			return gauss1d( x * m_radiusInverse.x ) *
 			       gauss1d( y * m_radiusInverse.y );
 		}
 
-		virtual bool separable() const
+		bool separable() const override
 		{
 			return true;
 		}
 
-		virtual float xfilt( float x ) const
+		float xfilt( float x ) const override
 		{
 			return gauss1d( x * m_radiusInverse.x );
 		}
 
-		virtual float yfilt( float y ) const
+		float yfilt( float y ) const override
 		{
 			return gauss1d( y * m_radiusInverse.y );
 		}
 
-		OIIO::string_view name() const
+		OIIO::string_view name() const override
 		{
 			return "smoothGaussian";
 		}
@@ -108,7 +109,7 @@ class SmoothGaussian2D : public OIIO::Filter2D
 
 };
 
-// OIIO's default cubic is a general one with a protected m_a member that can be 
+// OIIO's default cubic is a general one with a protected m_a member that can be
 // modified.  But when m_a is left at it's default value of 0, it is 0 over half
 // of it's width.  By specializing for this case, we get a filter that needs
 // half as many support pixels, but gives an identical result.
@@ -122,32 +123,32 @@ class FilterCubicSimple2D : public OIIO::Filter2D
 		{
 		}
 
-		~FilterCubicSimple2D( void )
+		~FilterCubicSimple2D( void ) override
 		{
 		}
 
-		float operator()( float x, float y ) const
+		float operator()( float x, float y ) const override
 		{
 			return cubicSimple( x * m_wrad_inv )
 				 * cubicSimple( y * m_hrad_inv );
 		}
 
-		bool separable() const
+		bool separable() const override
 		{
 			return true;
 		}
 
-		float xfilt( float x ) const
+		float xfilt( float x ) const override
 		{
 			return cubicSimple( x * m_wrad_inv );
 		}
 
-		float yfilt( float y ) const
+		float yfilt( float y ) const override
 		{
 			return cubicSimple( y * m_hrad_inv );
 		}
 
-		virtual OIIO::string_view name() const
+		OIIO::string_view name() const override
 		{
 			return "cubic";
 		}
@@ -255,7 +256,7 @@ std::vector<FilterPair> getAllFilters()
 		}
 	}
 	filters.push_back( FilterPair("smoothGaussian", new SmoothGaussian2D( 3.0f, 3.0f ) ) );
-	
+
 	return filters;
 }
 
@@ -310,7 +311,7 @@ const OIIO::Filter2D *GafferImage::FilterAlgo::acquireFilter( const std::string 
 	}
 	else
 	{
-		throw IECore::Exception( boost::str( boost::format( "Unknown filter \"%s\"" ) % name ) );	
+		throw IECore::Exception( boost::str( boost::format( "Unknown filter \"%s\"" ) % name ) );
 	}
 }
 
@@ -359,9 +360,9 @@ float GafferImage::FilterAlgo::sampleParallelogram( Sampler &sampler, const V2f 
 			// pixels within the bounding box, and another value for pixels actually touched
 			// by the filter, is a good way to check that the bounding box is correct
 			//w = w != 0.0f ? 1.0f : 0.1f;
-		
+
 			if( w != 0.0f )
-			{	
+			{
 				totalW += w;
 				v += w * sampler.sample( x, y );
 			}
@@ -419,7 +420,7 @@ float GafferImage::FilterAlgo::sampleBox( Sampler &sampler, const V2f &p, float 
 				// pixels within the bounding box, and another value for pixels actually touched
 				// by the filter, is a good way to check that the bounding box is correct
 				//w = w != 0.0f ? 1.0f : 0.1f;
-			
+
 				totalW += w;
 				v += w * sampler.sample( x, y );
 			}

@@ -38,9 +38,9 @@
 #ifndef GAFFER_FILTEREDRECURSIVECHILDITERATOR_H
 #define GAFFER_FILTEREDRECURSIVECHILDITERATOR_H
 
-#include "boost/iterator/iterator_adaptor.hpp"
-
 #include "Gaffer/RecursiveChildIterator.h"
+
+#include "boost/iterator/iterator_adaptor.hpp"
 
 namespace Gaffer
 {
@@ -132,6 +132,35 @@ class FilteredRecursiveChildIterator : public boost::iterator_adaptor<FilteredRe
 		Predicate m_predicate;
 		RecursionPredicate m_recursionPredicate;
 		RecursiveChildIterator m_end;
+
+};
+
+template<typename Predicate, typename RecursionPredicate=TypePredicate<GraphComponent>>
+class FilteredRecursiveChildRange
+{
+
+	public :
+
+		FilteredRecursiveChildRange( const GraphComponent &parent )
+			:	m_parent( parent )
+		{
+		}
+
+		using Iterator = FilteredRecursiveChildIterator<Predicate, RecursionPredicate>;
+
+		Iterator begin() const
+		{
+			return Iterator( &m_parent, m_parent.children().begin() );
+		}
+
+		Iterator end() const
+		{
+			return Iterator( &m_parent, m_parent.children().end() );
+		}
+
+	private :
+
+		const GraphComponent &m_parent;
 
 };
 

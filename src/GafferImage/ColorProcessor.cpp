@@ -34,11 +34,13 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-#include "Gaffer/StringAlgo.h"
-
 #include "GafferImage/ColorProcessor.h"
+
 #include "GafferImage/ImageAlgo.h"
+
+#include "Gaffer/Context.h"
+
+#include "IECore/StringAlgo.h"
 
 using namespace std;
 using namespace IECore;
@@ -52,7 +54,7 @@ const IECore::InternedString g_layerNameKey( "image:colorProcessor:__layerName" 
 
 } // namespace
 
-IE_CORE_DEFINERUNTIMETYPED( ColorProcessor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ColorProcessor );
 
 size_t ColorProcessor::g_firstPlugIndex = 0;
 
@@ -62,6 +64,7 @@ ColorProcessor::ColorProcessor( const std::string &name )
 	storeIndexOfNextChild( g_firstPlugIndex );
 
 	addChild( new StringPlug( "channels", Plug::In, "[RGB]" ) );
+	addChild( new BoolPlug( "processUnpremultiplied", Plug::In, false ) );
 
 	addChild(
 		new ObjectPlug(
@@ -71,21 +74,20 @@ ColorProcessor::ColorProcessor( const std::string &name )
 		)
 	);
 
-	// Because our implementation of computeChannelData() is so simple,
-	// just copying data out of our intermediate colorDataPlug(), it is
-	// actually quicker not to cache the result.
-	outPlug()->channelDataPlug()->setFlags( Plug::Cacheable, false );
-
 	// We don't ever want to change the these, so we make pass-through connections.
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
+	outPlug()->deepPlug()->setInput( inPlug()->deepPlug() );
+	outPlug()->sampleOffsetsPlug()->setInput( inPlug()->sampleOffsetsPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
 }
 
 ColorProcessor::~ColorProcessor()
 {
 }
+
+
 
 Gaffer::StringPlug *ColorProcessor::channelsPlug()
 {
@@ -97,14 +99,24 @@ const Gaffer::StringPlug *ColorProcessor::channelsPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
+Gaffer::BoolPlug *ColorProcessor::processUnpremultipliedPlug()
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::BoolPlug *ColorProcessor::processUnpremultipliedPlug() const
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
+}
+
 Gaffer::ObjectPlug *ColorProcessor::colorDataPlug()
 {
-	return getChild<ObjectPlug>( g_firstPlugIndex + 1 );
+	return getChild<ObjectPlug>( g_firstPlugIndex + 2 );
 }
 
 const Gaffer::ObjectPlug *ColorProcessor::colorDataPlug() const
 {
-	return getChild<ObjectPlug>( g_firstPlugIndex + 1 );
+	return getChild<ObjectPlug>( g_firstPlugIndex + 2 );
 }
 
 void ColorProcessor::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
@@ -138,31 +150,124 @@ void ColorProcessor::compute( Gaffer::ValuePlug *output, const Gaffer::Context *
 {
 	if( output == colorDataPlug() )
 	{
+		ConstStringVectorDataPtr channelNamesData;
+		bool unpremult;
+		{
+			ImagePlug::GlobalScope globalScope( context );
+			channelNamesData = inPlug()->channelNamesPlug()->getValue();
+			unpremult = processUnpremultipliedPlug()->getValue();
+		}
+		const vector<string> &channelNames = channelNamesData->readable();
+
 		const string &layerName = context->get<string>( g_layerNameKey );
 
-		FloatVectorDataPtr r, g, b;
+		FloatVectorDataPtr rgb[3];
+		ConstFloatVectorDataPtr alpha;
+		int samples = -1;
 		{
 			ImagePlug::ChannelDataScope channelDataScope( context );
-			channelDataScope.setChannelName( ImageAlgo::channelName( layerName, "R" ) );
-			r = inPlug()->channelDataPlug()->getValue()->copy();
-			channelDataScope.setChannelName( ImageAlgo::channelName( layerName, "G" ) );
-			g = inPlug()->channelDataPlug()->getValue()->copy();
-			channelDataScope.setChannelName( ImageAlgo::channelName( layerName, "B" ) );
-			b = inPlug()->channelDataPlug()->getValue()->copy();
+
+			if( unpremult && ImageAlgo::channelExists( channelNames, "A" ) )
+			{
+				channelDataScope.setChannelName( "A" );
+				alpha = inPlug()->channelDataPlug()->getValue();
+			}
+
+			int i = 0;
+			for( const auto &baseName : { "R", "G", "B" } )
+			{
+				string channelName = ImageAlgo::channelName( layerName, baseName );
+				if( ImageAlgo::channelExists( channelNames, channelName ) )
+				{
+					channelDataScope.setChannelName( channelName );
+					rgb[i] = inPlug()->channelDataPlug()->getValue()->copy();
+
+					samples = rgb[i]->readable().size();
+
+					if( unpremult && alpha )
+					{
+						const float *A = &alpha->readable().front();
+						float *C = &rgb[i]->writable().front();
+						for( int j = 0; j < samples; j++ )
+						{
+							if( *A != 0 )
+							{
+								*C /= *A;
+							}
+							A++;
+							C++;
+						}
+					}
+				}
+				else
+				{
+					rgb[i] = nullptr;
+				}
+				i++;
+			}
+
+			if( samples == -1 )
+			{
+				throw IECore::Exception( "Cannot evaluate color data plug with no source channels" );
+			}
+
+			for( int k = 0; k < 3; k++ )
+			{
+				if( !rgb[k] )
+				{
+					rgb[k] = new FloatVectorData();
+					rgb[k]->writable().resize( samples, 0.0f );
+				}
+			}
+
 		}
 
-		processColorData( context, r.get(), g.get(), b.get() );
+		processColorData( context, rgb[0].get(), rgb[1].get(), rgb[2].get() );
+
+		if( unpremult && alpha )
+		{
+			for( int i = 0; i < 3; i++ )
+			{
+				if( unpremult && alpha )
+				{
+					const float *A = &alpha->readable().front();
+					float *C = &rgb[i]->writable().front();
+					for( int j = 0; j < samples; j++ )
+					{
+						// Pixels with no alpha aren't touched by either the unpremult or repremult
+						if( *A != 0 )
+						{
+							*C *= *A;
+						}
+						A++;
+						C++;
+					}
+				}
+			}
+		}
 
 		ObjectVectorPtr result = new ObjectVector();
-		result->members().push_back( r );
-		result->members().push_back( g );
-		result->members().push_back( b );
+		result->members().push_back( rgb[0] );
+		result->members().push_back( rgb[1] );
+		result->members().push_back( rgb[2] );
 
 		static_cast<ObjectPlug *>( output )->setValue( result );
 		return;
 	}
 
 	ImageProcessor::compute( output, context );
+}
+
+Gaffer::ValuePlug::CachePolicy ColorProcessor::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == outPlug()->channelDataPlug() )
+	{
+		// Because our implementation of computeChannelData() is so simple,
+		// just copying data out of our intermediate colorDataPlug(), it is
+		// actually quicker not to cache the result.
+		return ValuePlug::CachePolicy::Uncached;
+	}
+	return ImageProcessor::computeCachePolicy( output );
 }
 
 void ColorProcessor::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -216,18 +321,40 @@ IECore::ConstFloatVectorDataPtr ColorProcessor::computeChannelData( const std::s
 
 bool ColorProcessor::affectsColorData( const Gaffer::Plug *input ) const
 {
-	return input == inPlug()->channelDataPlug();
+	return input == inPlug()->channelDataPlug() || input == inPlug()->channelNamesPlug() || input == processUnpremultipliedPlug();
 }
 
 void ColorProcessor::hashColorData( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ConstStringVectorDataPtr channelNamesData;
+	bool unpremult;
+	{
+		ImagePlug::GlobalScope globalScope( context );
+		channelNamesData = inPlug()->channelNamesPlug()->getValue();
+		unpremult = processUnpremultipliedPlug()->getValue();
+	}
+	const vector<string> &channelNames = channelNamesData->readable();
+
 	const string &layerName = context->get<string>( g_layerNameKey );
 
 	ImagePlug::ChannelDataScope channelDataScope( context );
-	channelDataScope.setChannelName( ImageAlgo::channelName( layerName, "R" ) );
-	inPlug()->channelDataPlug()->hash( h );
-	channelDataScope.setChannelName( ImageAlgo::channelName( layerName, "G" ) );
-	inPlug()->channelDataPlug()->hash( h );
-	channelDataScope.setChannelName( ImageAlgo::channelName( layerName, "B" ) );
-	inPlug()->channelDataPlug()->hash( h );
+	for( const auto &baseName : { "R", "G", "B" } )
+	{
+		string channelName = ImageAlgo::channelName( layerName, baseName );
+		if( ImageAlgo::channelExists( channelNames, channelName ) )
+		{
+			channelDataScope.setChannelName( channelName );
+			inPlug()->channelDataPlug()->hash( h );
+		}
+		else
+		{
+			ImagePlug::blackTile()->hash( h );
+		}
+	}
+
+	if( unpremult && ImageAlgo::channelExists( channelNames, "A" ) )
+	{
+		channelDataScope.setChannelName( "A" );
+		inPlug()->channelDataPlug()->hash( h );
+	}
 }

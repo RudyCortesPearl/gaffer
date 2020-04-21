@@ -36,6 +36,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
@@ -95,10 +96,10 @@ class ButtonTest( GafferUITest.TestCase ) :
 		w.setVisible( True )
 		self.waitForIdle()
 
-		self.assertEqual( b.bound().size(), IECore.V2i( 10 ) )
+		self.assertEqual( b.bound().size(), imath.V2i( 10 ) )
 
 		b.setHasFrame( True )
-		self.waitForIdle( 20 )
+		self.waitForIdle( 1000 )
 
 		self.assertGreater( b.bound().size().x, 10 )
 		self.assertGreater( b.bound().size().y, 10 )

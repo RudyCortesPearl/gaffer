@@ -59,36 +59,50 @@ GafferUI.LayoutMenu.appendDefinitions( scriptWindowMenu, name="/Layout" )
 GafferUI.DispatcherUI.appendMenuDefinitions( scriptWindowMenu, prefix="/Execute" )
 GafferUI.LocalDispatcherUI.appendMenuDefinitions( scriptWindowMenu, prefix="/Execute" )
 
+# Turn on backups by default, so they are supported by the open functions
+# in the file menu. They can be turned off again in the preferences menu.
+GafferUI.Backups.acquire( application )
+
 ## Help menu
 ###########################################################################
 
-for menuItem, url in [
+def addHelpMenuItems( items ) :
+
+	for menuItem, url in items:
+
+		if url and "://" not in url :
+			url = os.path.expandvars( url )
+			url = "file://" + url if os.path.isfile( url ) else ""
+
+		scriptWindowMenu.append(
+			"/Help/" + menuItem,
+			{
+				"divider" : url is None,
+				"command" : functools.partial( GafferUI.showURL, url ),
+				"active" : bool( url )
+			}
+		)
+
+addHelpMenuItems( [
 		( "User Guide", "$GAFFER_ROOT/doc/gaffer/html/index.html" ),
-		( "Node Reference", "$GAFFER_ROOT/doc/gaffer/html/Reference/NodeReference/index.html" ),
+		( "Node Reference", "$GAFFER_ROOT/doc/gaffer/html/Reference/NodeReference/index.html" )
+] )
+
+GafferUI.Examples.appendExamplesSubmenuDefinition( scriptWindowMenu, "/Help/Examples" )
+
+addHelpMenuItems( [
 		( "License", "$GAFFER_ROOT/doc/gaffer/html/Appendices/License/index.html" ),
 		( "LocalDocsDivider", None ),
 		( "Forum", "https://groups.google.com/forum/#!forum/gaffer-dev" ),
 		( "Issue Tracker", "https://github.com/GafferHQ/gaffer/issues" ),
-		( "CoreDocsDivider", None ),
-	] :
+		( "CoreDocsDivider", None )
+] )
 
-	if url and "://" not in url :
-		url = os.path.expandvars( url )
-		url = "file://" + url if os.path.isfile( url ) else ""
-
-	scriptWindowMenu.append(
-		"/Help/" + menuItem,
-		{
-			"divider" : url is None,
-			"command" : functools.partial( GafferUI.showURL, url ),
-			"active" : bool( url )
-		}
-	)
 
 ## Node creation menu
 ###########################################################################
 
-moduleSearchPath = IECore.SearchPath( os.environ["PYTHONPATH"], ":" )
+moduleSearchPath = IECore.SearchPath( os.environ["PYTHONPATH"] )
 
 nodeMenu = GafferUI.NodeMenu.acquire( application )
 
@@ -103,19 +117,18 @@ if moduleSearchPath.find( "arnold" ) :
 
 		GafferArnoldUI.ShaderMenu.appendShaders( nodeMenu.definition() )
 
+		nodeMenu.append( "/Arnold/Globals/Options", GafferArnold.ArnoldOptions, searchText = "ArnoldOptions" )
+		nodeMenu.append( "/Arnold/Globals/Atmosphere", GafferArnold.ArnoldAtmosphere, searchText = "ArnoldAtmosphere" )
+		nodeMenu.append( "/Arnold/Globals/Background", GafferArnold.ArnoldBackground, searchText = "ArnoldBackground" )
+		nodeMenu.append( "/Arnold/Globals/AOVShader", GafferArnold.ArnoldAOVShader, searchText = "ArnoldAOVShader" )
 		nodeMenu.append( "/Arnold/Displacement", GafferArnold.ArnoldDisplacement, searchText = "ArnoldDisplacement"  )
+		nodeMenu.append( "/Arnold/CameraShaders", GafferArnold.ArnoldCameraShaders, searchText = "ArnoldCameraShaders"  )
 		nodeMenu.append( "/Arnold/VDB", GafferArnold.ArnoldVDB, searchText = "ArnoldVDB"  )
-		nodeMenu.append( "/Arnold/Options", GafferArnold.ArnoldOptions, searchText = "ArnoldOptions" )
 		nodeMenu.append( "/Arnold/Attributes", GafferArnold.ArnoldAttributes, searchText = "ArnoldAttributes" )
-		nodeMenu.append(
-			"/Arnold/Render", GafferArnold.ArnoldRender,
-			plugValues = {
-				"fileName" : "${project:rootDirectory}/asses/${script:name}/${script:name}.####.ass",
-			},
-			searchText = "ArnoldRender"
-		)
+		nodeMenu.append( "/Arnold/Render", GafferArnold.ArnoldRender, searchText = "ArnoldRender" )
 		nodeMenu.append( "/Arnold/Interactive Render", GafferArnold.InteractiveArnoldRender, searchText = "InteractiveArnoldRender" )
 		nodeMenu.append( "/Arnold/Shader Ball", GafferArnold.ArnoldShaderBall, searchText = "ArnoldShaderBall" )
+		nodeMenu.append( "/Arnold/Arnold Texture Bake", GafferArnold.ArnoldTextureBake, searchText = "ArnoldTextureBake" )
 
 		GafferArnoldUI.CacheMenu.appendDefinitions( scriptWindowMenu, "/Tools/Arnold" )
 
@@ -124,40 +137,92 @@ if moduleSearchPath.find( "arnold" ) :
 		stacktrace = traceback.format_exc()
 		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading Arnold module - \"%s\".\n %s" % ( m, stacktrace ) )
 
-# RenderMan nodes
+# 3delight nodes
 
-if "DELIGHT" in os.environ :
+if moduleSearchPath.find( "nsi.py" ) and moduleSearchPath.find( "GafferDelight" ) :
 
 	try :
 
-		import GafferRenderMan
-		import GafferRenderManUI
+		import GafferOSL
+		import GafferDelight
+		import GafferDelightUI
 
-		GafferRenderManUI.ShaderMenu.appendShaders( nodeMenu.definition() )
+		def __shaderNodeCreator( nodeName, shaderName ) :
 
-		nodeMenu.append( "/RenderMan/Attributes", GafferRenderMan.RenderManAttributes, searchText = "RenderManAttributes" )
-		nodeMenu.append( "/RenderMan/Options", GafferRenderMan.RenderManOptions, searchText = "RenderManOptions" )
-		nodeMenu.append(
-			"/RenderMan/Render", GafferRenderMan.RenderManRender,
-			plugValues = {
-				"ribFileName" : "${project:rootDirectory}/ribs/${script:name}/${script:name}.####.rib",
-			},
-			searchText = "RenderManRender"
+			node = GafferOSL.OSLShader( nodeName )
+			node.loadShader( "maya/osl/" + shaderName )
+
+			return node
+
+		for label, shader in [
+			( "Standard", "material3Delight" ),
+			( "Glass", "material3DelightGlass" ),
+			( "Metal", "material3DelightMetal" ),
+			( "Skin", "material3DelightSkin" ),
+			( "Hair", "materialHairAndFur" ),
+		] :
+
+			nodeMenu.append(
+				"/3Delight/Shader/" + label,
+				functools.partial( __shaderNodeCreator, label, shader ),
+				searchText = "dl" + label
+			)
+
+		GafferSceneUI.ShaderUI.appendShaders(
+			nodeMenu.definition(), "/3Delight/Shader/Maya",
+			[ os.path.join( os.environ["DELIGHT"], "maya", "osl" ) ],
+			[ "oso" ],
+			__shaderNodeCreator,
+			matchExpression = re.compile( "^[^_].*$"),
+			searchTextPrefix = "maya"
 		)
-		nodeMenu.append( "/RenderMan/Interactive Render", GafferRenderMan.InteractiveRenderManRender, searchText = "InteractiveRenderManRender" )
-		nodeMenu.append( "/RenderMan/Shader Ball", GafferRenderMan.RenderManShaderBall, searchText = "RenderManShaderBall" )
 
-		scriptWindowMenu.append(
-			"/Help/3Delight/User Guide",
-			{
-				"command" : functools.partial( GafferUI.showURL, os.path.expandvars( "$DELIGHT/doc/3Delight-UserManual.pdf" ) ),
-			}
-		)
+		def __lightCreator( nodeName, shaderName, shape ) :
+
+			node = GafferOSL.OSLLight( nodeName )
+			node.loadShader( shaderName )
+
+			if isinstance( shape, node.Shape ) :
+				node["shape"].setValue( shape )
+			else  :
+				node["shape"].setValue( node.Shape.Geometry )
+				node["geometryType"].setValue( "dl:environment" )
+				Gaffer.Metadata.registerValue( node["geometryType"], "plugValueWidget:type", "" )
+				Gaffer.Metadata.registerValue( node["geometryBound"], "plugValueWidget:type", "" )
+				Gaffer.Metadata.registerValue( node["geometryParameters"], "plugValueWidget:type", "" )
+
+				if shape == "distant" :
+					node["geometryParameters"].addChild( Gaffer.NameValuePlug( "angle", 0.0, name = "angle", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+
+			Gaffer.Metadata.registerValue( node["shape"], "plugValueWidget:type", "" )
+
+			visibilityPlug = Gaffer.NameValuePlug( "dl:visibility.camera", False, "cameraVisibility", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+			node["attributes"].addChild( visibilityPlug )
+			Gaffer.MetadataAlgo.setReadOnly( visibilityPlug["name"], True )
+
+			return node
+
+		for label, shader, shape in [
+			[ "PointLight", "maya/osl/pointLight", GafferOSL.OSLLight.Shape.Sphere ],
+			[ "SpotLight", "maya/osl/spotLight", GafferOSL.OSLLight.Shape.Disk ],
+			[ "DistantLight", "maya/osl/distantLight", "distant" ],
+			[ "EnvironmentLight", "maya/osl/environmentLight", "environment" ],
+		] :
+			nodeMenu.append(
+				"/3Delight/Light/" + label,
+				functools.partial( __lightCreator, label, shader, shape ),
+				searchText = "dl" + label
+			)
+
+		nodeMenu.append( "/3Delight/Attributes", GafferDelight.DelightAttributes, searchText = "DelightAttributes"  )
+		nodeMenu.append( "/3Delight/Options", GafferDelight.DelightOptions, searchText = "DelightOptions"  )
+		nodeMenu.append( "/3Delight/Render", GafferDelight.DelightRender, searchText = "DelightRender"  )
+		nodeMenu.append( "/3Delight/Interactive Render", GafferDelight.InteractiveDelightRender, searchText = "InteractiveDelightRender"  )
 
 	except Exception, m :
 
 		stacktrace = traceback.format_exc()
-		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading RenderMan module - \"%s\".\n %s" % ( m, stacktrace ) )
+		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading Delight module - \"%s\".\n %s" % ( m, stacktrace ) )
 
 # appleseed nodes
 
@@ -170,43 +235,24 @@ if "APPLESEED" in os.environ :
 		import GafferOSL
 		import GafferOSLUI
 
-		def __shaderNodeCreator( nodeName, shaderName ) :
+		if os.environ.get( "GAFFERAPPLESEED_HIDE_UI", "" ) != "1" :
 
-			node = GafferOSL.OSLShader( nodeName )
-			node.loadShader( shaderName )
+			GafferAppleseedUI.ShaderMenu.appendShaders( nodeMenu.definition() )
 
-			return node
+			GafferAppleseedUI.LightMenu.appendLights( nodeMenu.definition() )
 
-		GafferSceneUI.ShaderUI.appendShaders(
-			nodeMenu.definition(), "/Appleseed/Shader",
-			os.environ["APPLESEED_SEARCHPATH"].split( ":" ),
-			[ "oso" ],
-			__shaderNodeCreator,
-			# Show only the OSL shaders from the Appleseed shader
-			# library.
-			matchExpression = re.compile( "(^|.*/)as_[^/]*$")
-		)
+			nodeMenu.append( "/Appleseed/Attributes", GafferAppleseed.AppleseedAttributes, searchText = "AppleseedAttributes" )
+			nodeMenu.append( "/Appleseed/Options", GafferAppleseed.AppleseedOptions, searchText = "AppleseedOptions" )
+			nodeMenu.append( "/Appleseed/Render", GafferAppleseed.AppleseedRender, searchText = "AppleseedRender" )
+			nodeMenu.append( "/Appleseed/Interactive Render", GafferAppleseed.InteractiveAppleseedRender, searchText = "InteractiveAppleseedRender" )
+			nodeMenu.append( "/Appleseed/Shader Ball", GafferAppleseed.AppleseedShaderBall, searchText = "AppleseedShaderBall" )
 
-		GafferAppleseedUI.LightMenu.appendLights( nodeMenu.definition() )
-
-		nodeMenu.append( "/Appleseed/Attributes", GafferAppleseed.AppleseedAttributes, searchText = "AppleseedAttributes" )
-		nodeMenu.append( "/Appleseed/Options", GafferAppleseed.AppleseedOptions, searchText = "AppleseedOptions" )
-		nodeMenu.append(
-			"/Appleseed/Render", GafferAppleseed.AppleseedRender,
-			plugValues = {
-				"fileName" : "${project:rootDirectory}/appleseeds/${script:name}/${script:name}.####.appleseed",
-			},
-			searchText = "AppleseedRender"
-		)
-		nodeMenu.append( "/Appleseed/Interactive Render", GafferAppleseed.InteractiveAppleseedRender, searchText = "InteractiveAppleseedRender" )
-		nodeMenu.append( "/Appleseed/Shader Ball", GafferAppleseed.AppleseedShaderBall, searchText = "AppleseedShaderBall" )
-
-		scriptWindowMenu.append(
-			"/Help/Appleseed/User Docs",
-			{
-				"command" : functools.partial( GafferUI.showURL, "https://github.com/appleseedhq/appleseed/wiki" ),
-			}
-		)
+			scriptWindowMenu.append(
+				"/Help/Appleseed/User Docs",
+				{
+					"command" : functools.partial( GafferUI.showURL, "https://github.com/appleseedhq/appleseed/wiki" ),
+				}
+			)
 
 	except Exception, m :
 
@@ -217,7 +263,6 @@ if "APPLESEED" in os.environ :
 
 nodeMenu.append( "/Scene/File/Reader", GafferScene.SceneReader, searchText = "SceneReader" )
 nodeMenu.append( "/Scene/File/Writer", GafferScene.SceneWriter, searchText = "SceneWriter" )
-nodeMenu.append( "/Scene/File/Alembic", GafferScene.AlembicSource, searchText = "AlembicSource" )
 nodeMenu.append( "/Scene/Source/Object To Scene", GafferScene.ObjectToScene, searchText = "ObjectToScene" )
 nodeMenu.append( "/Scene/Source/Camera", GafferScene.Camera )
 nodeMenu.append( "/Scene/Source/Coordinate System", GafferScene.CoordinateSystem, searchText = "CoordinateSystem" )
@@ -231,47 +276,55 @@ nodeMenu.append( "/Scene/Source/Primitive/Text", GafferScene.Text )
 nodeMenu.append( "/Scene/Source/Seeds", GafferScene.Seeds )
 nodeMenu.append( "/Scene/Source/Instancer", GafferScene.Instancer )
 nodeMenu.append( "/Scene/Object/Primitive Variables", GafferScene.PrimitiveVariables, searchText = "PrimitiveVariables" )
+nodeMenu.append( "/Scene/Object/Copy Primitive Variables", GafferScene.CopyPrimitiveVariables, searchText = "CopyPrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Delete Primitive Variables", GafferScene.DeletePrimitiveVariables, searchText = "DeletePrimitiveVariables" )
+nodeMenu.append( "/Scene/Object/Shuffle Primitive Variables", GafferScene.ShufflePrimitiveVariables, searchText = "ShufflePrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Resample Primitive Variables", GafferScene.ResamplePrimitiveVariables, searchText = "ResamplePrimitiveVariables" )
+nodeMenu.append( "/Scene/Object/Collect Primitive Variables", GafferScene.CollectPrimitiveVariables, searchText = "CollectPrimitiveVariables" )
+nodeMenu.append( "/Scene/Object/Orientation", GafferScene.Orientation )
 nodeMenu.append( "/Scene/Object/Mesh Type", GafferScene.MeshType, searchText = "MeshType" )
 nodeMenu.append( "/Scene/Object/Points Type", GafferScene.PointsType, searchText = "PointsType" )
 nodeMenu.append( "/Scene/Object/Mesh To Points", GafferScene.MeshToPoints, searchText = "MeshToPoints" )
+nodeMenu.append( "/Scene/Object/Wireframe", GafferScene.Wireframe )
 nodeMenu.append( "/Scene/Object/Light To Camera", GafferScene.LightToCamera, searchText = "LightToCamera" )
 nodeMenu.append( "/Scene/Object/Map Projection", GafferScene.MapProjection, searchText = "MapProjection" )
 nodeMenu.append( "/Scene/Object/Map Offset", GafferScene.MapOffset, searchText = "MapOffset"  )
 nodeMenu.append( "/Scene/Object/Parameters", GafferScene.Parameters )
-nodeMenu.append( "/Scene/Object/Mesh Tangents", GafferScene.MeshTangents, searchText = "MeshTangents" )
+nodeMenu.append( "/Scene/Object/Mesh Tangents", GafferScene.MeshTangents, searchText = "MeshTangents", postCreator = GafferSceneUI.MeshTangentsUI.postCreate )
 nodeMenu.append( "/Scene/Object/Delete Faces", GafferScene.DeleteFaces, searchText = "DeleteFaces" )
 nodeMenu.append( "/Scene/Object/Delete Curves", GafferScene.DeleteCurves, searchText = "DeleteCurves" )
 nodeMenu.append( "/Scene/Object/Delete Points", GafferScene.DeletePoints, searchText = "DeletePoints" )
+nodeMenu.append( "/Scene/Object/Delete Object", GafferScene.DeleteObject, searchText = "DeleteObject" )
+nodeMenu.append( "/Scene/Object/Reverse Winding", GafferScene.ReverseWinding, searchText = "ReverseWinding" )
+nodeMenu.append( "/Scene/Object/Mesh Distortion", GafferScene.MeshDistortion, searchText = "MeshDistortion" )
+nodeMenu.append( "/Scene/Object/Camera Tweaks", GafferScene.CameraTweaks, searchText = "CameraTweaks" )
 nodeMenu.append( "/Scene/Attributes/Shader Assignment", GafferScene.ShaderAssignment, searchText = "ShaderAssignment" )
-nodeMenu.append( "/Scene/Attributes/Shader Switch", GafferScene.ShaderSwitch, searchText = "ShaderSwitch" )
+nodeMenu.append( "/Scene/Attributes/Shader Tweaks", GafferScene.ShaderTweaks, searchText = "ShaderTweaks" )
 nodeMenu.append( "/Scene/Attributes/Standard Attributes", GafferScene.StandardAttributes, searchText = "StandardAttributes" )
 nodeMenu.append( "/Scene/Attributes/Custom Attributes", GafferScene.CustomAttributes, searchText = "CustomAttributes" )
 nodeMenu.append( "/Scene/Attributes/Delete Attributes", GafferScene.DeleteAttributes, searchText = "DeleteAttributes" )
+nodeMenu.append( "/Scene/Attributes/Shuffle Attributes", GafferScene.ShuffleAttributes, searchText = "ShuffleAttributes" )
+nodeMenu.append( "/Scene/Attributes/Localise Attributes", GafferScene.LocaliseAttributes, searchText = "LocaliseAttributes" )
 nodeMenu.append( "/Scene/Attributes/Attribute Visualiser", GafferScene.AttributeVisualiser, searchText = "AttributeVisualiser" )
-nodeMenu.append( "/Scene/Attributes/Light Tweaks", GafferScene.LightTweaks, searchText = "LightTweaks" )
+nodeMenu.append( "/Scene/Attributes/Copy Attributes", GafferScene.CopyAttributes, searchText = "CopyAttributes" )
+nodeMenu.append( "/Scene/Attributes/Collect Transforms", GafferScene.CollectTransforms, searchText = "CollectTransforms" )
 nodeMenu.append( "/Scene/Filters/Set Filter", GafferScene.SetFilter, searchText = "SetFilter" )
 nodeMenu.append( "/Scene/Filters/Path Filter", GafferScene.PathFilter, searchText = "PathFilter" )
 nodeMenu.append( "/Scene/Filters/Union Filter", GafferScene.UnionFilter, searchText = "UnionFilter" )
-nodeMenu.append( "/Scene/Filters/FilterSwitch", GafferScene.FilterSwitch, searchText = "FilterSwitch" )
 nodeMenu.append( "/Scene/Hierarchy/Group", GafferScene.Group )
 nodeMenu.append( "/Scene/Hierarchy/Parent", GafferScene.Parent )
+nodeMenu.append( "/Scene/Hierarchy/Merge", GafferScene.MergeScenes, searchText = "MergeScenes" )
 nodeMenu.append( "/Scene/Hierarchy/Duplicate", GafferScene.Duplicate )
 nodeMenu.append( "/Scene/Hierarchy/SubTree", GafferScene.SubTree ) #\todo - rename to 'Subtree' (node needs to change too)
 nodeMenu.append( "/Scene/Hierarchy/Prune", GafferScene.Prune )
 nodeMenu.append( "/Scene/Hierarchy/Isolate", GafferScene.Isolate )
-nodeMenu.append( "/Scene/Hierarchy/Switch", GafferScene.SceneSwitch, searchText = "SceneSwitch" )
 nodeMenu.append( "/Scene/Hierarchy/Collect", GafferScene.CollectScenes, searchText = "CollectScenes" )
+nodeMenu.append( "/Scene/Hierarchy/Encapsulate", GafferScene.Encapsulate )
 nodeMenu.append( "/Scene/Transform/Transform", GafferScene.Transform )
 nodeMenu.append( "/Scene/Transform/Freeze Transform", GafferScene.FreezeTransform, searchText = "FreezeTransform" )
 nodeMenu.append( "/Scene/Transform/Point Constraint", GafferScene.PointConstraint, searchText = "PointConstraint" )
 nodeMenu.append( "/Scene/Transform/Aim Constraint", GafferScene.AimConstraint, searchText = "AimConstraint" )
 nodeMenu.append( "/Scene/Transform/Parent Constraint", GafferScene.ParentConstraint, searchText = "ParentConstraint" )
-nodeMenu.append( "/Scene/Context/Time Warp", GafferScene.SceneTimeWarp, searchText = "SceneTimeWarp" )
-nodeMenu.append( "/Scene/Context/Variables", GafferScene.SceneContextVariables, searchText = "SceneContextVariables" )
-nodeMenu.append( "/Scene/Context/Delete Variables", GafferScene.DeleteSceneContextVariables, searchText = "DeleteSceneContextVariables" )
-nodeMenu.append( "/Scene/Context/Loop", GafferScene.SceneLoop, searchText = "SceneLoop"  )
 nodeMenu.append( "/Scene/Globals/Outputs", GafferScene.Outputs )
 nodeMenu.append( "/Scene/Globals/Delete Outputs", GafferScene.DeleteOutputs, searchText = "DeleteOutputs" )
 nodeMenu.append( "/Scene/Globals/Delete Sets", GafferScene.DeleteSets, searchText = "DeleteSets" )
@@ -280,6 +333,7 @@ nodeMenu.append( "/Scene/Globals/Custom Options", GafferScene.CustomOptions, sea
 nodeMenu.append( "/Scene/Globals/Delete Options", GafferScene.DeleteOptions, searchText = "DeleteOptions" )
 nodeMenu.append( "/Scene/Globals/Copy Options", GafferScene.CopyOptions, searchText = "CopyOptions" )
 nodeMenu.append( "/Scene/Globals/Set", GafferScene.Set )
+nodeMenu.append( "/Scene/Globals/Set Visualiser", GafferScene.SetVisualiser, searchText = "SetVisualiser" )
 nodeMenu.append( "/Scene/OpenGL/Attributes", GafferScene.OpenGLAttributes, searchText = "OpenGLAttributes" )
 nodeMenu.definition().append( "/Scene/OpenGL/Shader", { "subMenu" : GafferSceneUI.OpenGLShaderUI.shaderSubMenu } )
 nodeMenu.append( "/Scene/OpenGL/Render", GafferScene.OpenGLRender, searchText = "OpenGLRender" )
@@ -292,9 +346,12 @@ import GafferImageUI
 
 nodeMenu.append( "/Image/File/Reader", GafferImage.ImageReader, searchText = "ImageReader" )
 nodeMenu.append( "/Image/File/Writer", GafferImage.ImageWriter, searchText = "ImageWriter" )
+nodeMenu.append( "/Image/Shape/Rectangle", GafferImage.Rectangle, postCreator = GafferImageUI.RectangleUI.postCreate )
 nodeMenu.append( "/Image/Shape/Text", GafferImage.Text, postCreator = GafferImageUI.TextUI.postCreate )
+nodeMenu.append( "/Image/Pattern/Constant", GafferImage.Constant )
+nodeMenu.append( "/Image/Pattern/Checkerboard", GafferImageUI.CheckerboardUI.nodeMenuCreateCommand )
+nodeMenu.append( "/Image/Pattern/Ramp", GafferImage.Ramp, postCreator = GafferImageUI.RampUI.postCreate)
 nodeMenu.append( "/Image/Color/Clamp", GafferImage.Clamp )
-nodeMenu.append( "/Image/Color/Constant", GafferImage.Constant )
 nodeMenu.append( "/Image/Color/Grade", GafferImage.Grade )
 nodeMenu.append( "/Image/Color/CDL", GafferImage.CDL )
 nodeMenu.append( "/Image/Color/ColorSpace", GafferImage.ColorSpace )
@@ -306,9 +363,9 @@ nodeMenu.append( "/Image/Filter/Blur", GafferImageUI.BlurUI.nodeMenuCreateComman
 nodeMenu.append( "/Image/Filter/Median", GafferImageUI.MedianUI.nodeMenuCreateCommand )
 nodeMenu.append( "/Image/Filter/Erode", GafferImageUI.ErodeUI.nodeMenuCreateCommand )
 nodeMenu.append( "/Image/Filter/Dilate", GafferImageUI.DilateUI.nodeMenuCreateCommand )
+nodeMenu.append( "/Image/Filter/BleedFill", GafferImage.BleedFill )
 nodeMenu.append( "/Image/Merge/Merge", GafferImage.Merge )
 nodeMenu.append( "/Image/Merge/Mix", GafferImage.Mix )
-nodeMenu.append( "/Image/Merge/Switch", GafferImage.ImageSwitch, searchText = "ImageSwitch" )
 nodeMenu.append( "/Image/Transform/Resize", GafferImage.Resize )
 nodeMenu.append( "/Image/Transform/Transform", GafferImage.ImageTransform, searchText = "ImageTransform" )
 nodeMenu.append( "/Image/Transform/Crop", GafferImage.Crop, postCreator = GafferImageUI.CropUI.postCreate )
@@ -319,16 +376,21 @@ nodeMenu.append( "/Image/Channels/Shuffle", GafferImageUI.ShuffleUI.nodeMenuCrea
 nodeMenu.append( "/Image/Channels/Copy", GafferImage.CopyChannels, searchText = "CopyChannels" )
 nodeMenu.append( "/Image/Channels/Delete", GafferImage.DeleteChannels, searchText = "DeleteChannels" )
 nodeMenu.append( "/Image/Channels/Collect", GafferImage.CollectImages, searchText = "CollectImages" )
-nodeMenu.append( "/Image/Context/Time Warp", GafferImage.ImageTimeWarp, searchText = "ImageTimeWarp" )
-nodeMenu.append( "/Image/Context/Variables", GafferImage.ImageContextVariables, searchText = "ImageContextVariables"  )
-nodeMenu.append( "/Image/Context/Delete Variables", GafferImage.DeleteImageContextVariables, searchText = "DeleteImageContextVariables"  )
-nodeMenu.append( "/Image/Context/Loop", GafferImage.ImageLoop, searchText = "ImageLoop"  )
 nodeMenu.append( "/Image/Utility/Metadata", GafferImage.ImageMetadata, searchText = "ImageMetadata" )
 nodeMenu.append( "/Image/Utility/Delete Metadata", GafferImage.DeleteImageMetadata, searchText = "DeleteImageMetadata" )
 nodeMenu.append( "/Image/Utility/Copy Metadata", GafferImage.CopyImageMetadata, searchText = "CopyImageMetadata" )
 nodeMenu.append( "/Image/Utility/Stats", GafferImage.ImageStats, searchText = "ImageStats", postCreator = GafferImageUI.ImageStatsUI.postCreate  )
 nodeMenu.append( "/Image/Utility/Sampler", GafferImage.ImageSampler, searchText = "ImageSampler" )
 nodeMenu.append( "/Image/Utility/Catalogue", GafferImage.Catalogue )
+nodeMenu.append( "/Image/Utility/Catalogue Select", GafferImage.CatalogueSelect )
+nodeMenu.append( "/Image/Deep/FlatToDeep", GafferImage.FlatToDeep, searchText = "FlatToDeep" )
+nodeMenu.append( "/Image/Deep/Merge", GafferImage.DeepMerge, searchText = "DeepMerge" )
+nodeMenu.append( "/Image/Deep/Tidy", GafferImage.DeepTidy, searchText = "DeepTidy" )
+nodeMenu.append( "/Image/Deep/DeepToFlat", GafferImage.DeepToFlat )
+nodeMenu.append( "/Image/Deep/Sample Counts", GafferImage.DeepSampleCounts, searchText = "DeepSampleCounts" )
+nodeMenu.append( "/Image/Deep/Deep Sampler", GafferImage.DeepSampler, searchText = "DeepSampler" )
+nodeMenu.append( "/Image/Deep/Deep Holdout", GafferImage.DeepHoldout, searchText = "DeepHoldout" )
+nodeMenu.append( "/Image/Deep/Deep Recolor", GafferImage.DeepRecolor, searchText = "DeepRecolor" )
 
 # OSL nodes
 
@@ -352,6 +414,8 @@ if moduleSearchPath.find( "GafferOSL" ) :
 		# Appleseed comes with a library of OSL shaders which we put
 		# on the OSL_SHADER_PATHS, but we don't want to show them in
 		# this menu, because we show them in the Appleseed menu instead.
+		# Likewise, 3Delight comes with a library of shaders that we
+		# show in the 3Delight menu and don't want to show here.
 		#
 		# The OSLCode node also generates a great many shaders behind
 		# the scenes that we don't want to place in the menus. Typically
@@ -363,17 +427,24 @@ if moduleSearchPath.find( "GafferOSL" ) :
 		# shader plugins at startup, but we hide any oslCode shaders here
 		# in case someone else enables it.
 		#
-		# This match expression filters both categories of shader out :
+		# This match expression filters these categories of shader out
+		# as follows :
 		#
+		# - (?!__) asserts that the shader does not begin with double underscore.
 		# - (^|.*/) matches any number (including zero) of directory
 		#   names preceding the shader name.
+		# - (?<!maya/osl/) is a negative lookbehind, asserting that the
+		#   directory is not maya/osl, the directory containing 3delight's
+		#   shaders.
+		# - (?<!3DelightForKatana/osl/) is the same, but for another location
+		#   where 3delight seems to put copies of the same shaders.
 		# - (?!as_|oslCode) is a negative lookahead, asserting that the shader
 		#   name does not start with "as_", the prefix for all
 		#   Appleseed shaders, or "oslCode", the prefix for all OSLCode
 		#   shaders.
 		# - [^/]*$ matches the rest of the shader name, ensuring it
 		#   doesn't include any directory separators.
-		matchExpression = re.compile( "(^|.*/)(?!as_|oslCode)[^/]*$"),
+		matchExpression = re.compile( "(?!__)(^|.*/)(?<!maya/osl/)(?<!3DelightForKatana/osl/)(?!as_|oslCode)[^/]*$"),
 		searchTextPrefix = "osl",
 	)
 
@@ -390,6 +461,17 @@ if moduleSearchPath.find( "GafferOSL" ) :
 		}
 	)
 
+# VDB nodes
+
+import GafferVDB
+import GafferVDBUI
+
+nodeMenu.append( "/VDB/Level Set To Mesh", GafferVDB.LevelSetToMesh, searchText = "LevelSetToMesh" )
+nodeMenu.append( "/VDB/Mesh To Level Set", GafferVDB.MeshToLevelSet, searchText = "MeshToLevelSet" )
+nodeMenu.append( "/VDB/Level Set Offset", GafferVDB.LevelSetOffset, searchText = "LevelSetOffset" )
+nodeMenu.append( "/VDB/Points Grid To Points", GafferVDB.PointsGridToPoints, searchText = "PointsGridToPoints" )
+nodeMenu.append( "/VDB/Sphere Level Set", GafferVDB.SphereLevelSet, searchText="SphereLevelSet")
+
 # Dispatch nodes
 
 import GafferDispatch
@@ -398,9 +480,8 @@ import GafferDispatchUI
 nodeMenu.append( "/Dispatch/System Command", GafferDispatch.SystemCommand, searchText = "SystemCommand" )
 nodeMenu.append( "/Dispatch/Python Command", GafferDispatch.PythonCommand, searchText = "PythonCommand" )
 nodeMenu.append( "/Dispatch/Task List", GafferDispatch.TaskList, searchText = "TaskList" )
-nodeMenu.append( "/Dispatch/Task Switch", GafferDispatch.TaskSwitch, searchText = "TaskSwitch" )
 nodeMenu.append( "/Dispatch/Wedge", GafferDispatch.Wedge )
-nodeMenu.append( "/Dispatch/Variables", GafferDispatch.TaskContextVariables, searchText = "TaskContextVariables" )
+nodeMenu.append( "/Dispatch/Frame Mask", GafferDispatch.FrameMask, searchText = "FrameMask" )
 
 # Utility nodes
 
@@ -410,10 +491,17 @@ nodeMenu.append( "/Utility/Random", Gaffer.Random )
 nodeMenu.append( "/Utility/Box", GafferUI.BoxUI.nodeMenuCreateCommand )
 nodeMenu.append( "/Utility/BoxIn", Gaffer.BoxIn )
 nodeMenu.append( "/Utility/BoxOut", Gaffer.BoxOut )
+nodeMenu.append( "/Utility/Edit Scope", Gaffer.EditScope, searchText = "EditScope" )
 nodeMenu.append( "/Utility/Reference", GafferUI.ReferenceUI.nodeMenuCreateCommand )
 nodeMenu.definition().append( "/Utility/Backdrop", { "command" : GafferUI.BackdropUI.nodeMenuCreateCommand } )
 nodeMenu.append( "/Utility/Dot", Gaffer.Dot )
-nodeMenu.append( "/Utility/Switch", functools.partial( Gaffer.SwitchComputeNode, "Switch" ) )
+nodeMenu.append( "/Utility/Switch", Gaffer.Switch )
+nodeMenu.append( "/Utility/Name Switch", Gaffer.NameSwitch, searchText = "NameSwitch" )
+nodeMenu.append( "/Utility/Context Variables", Gaffer.ContextVariables, searchText = "ContextVariables" )
+nodeMenu.append( "/Utility/Delete Context Variables", Gaffer.DeleteContextVariables, searchText = "DeleteContextVariables" )
+nodeMenu.append( "/Utility/Time Warp", Gaffer.TimeWarp, searchText = "TimeWarp" )
+nodeMenu.append( "/Utility/Loop", Gaffer.Loop )
+nodeMenu.append( "/Utility/Spreadsheet", Gaffer.Spreadsheet )
 
 ## Miscellaneous UI
 ###########################################################################

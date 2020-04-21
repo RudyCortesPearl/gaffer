@@ -48,15 +48,17 @@ class CompoundDataPlugValueWidgetTest( GafferUITest.TestCase ) :
 		n["user"]["p1"] = Gaffer.CompoundDataPlug()
 		n["user"]["p2"] = Gaffer.CompoundDataPlug()
 
-		m1 = n["user"]["p1"].addMember( "test", 10 )
-		m2 = n["user"]["p2"].addMember( "test", 10 )
+		m1 = Gaffer.NameValuePlug( "test", 10 )
+		n["user"]["p1"].addChild( m1 )
+		m2 = Gaffer.NameValuePlug( "test", 10 )
+		n["user"]["p2"].addChild( m2 )
 
 		w = GafferUI.CompoundDataPlugValueWidget( n["user"]["p1"] )
-		w1 = w.childPlugValueWidget( m1, lazy = False )
+		w1 = w.childPlugValueWidget( m1 )
 		self.assertTrue( w1.getPlug().isSame( m1 ) )
 
 		w.setPlug( n["user"]["p2"] )
-		w2 = w.childPlugValueWidget( m2, lazy = False )
+		w2 = w.childPlugValueWidget( m2 )
 		self.assertTrue( w2.getPlug().isSame( m2 ) )
 
 if __name__ == "__main__":

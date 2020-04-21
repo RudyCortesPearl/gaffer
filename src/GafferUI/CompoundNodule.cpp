@@ -35,10 +35,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Plug.h"
+#include "GafferUI/CompoundNodule.h"
 
 #include "GafferUI/NoduleLayout.h"
-#include "GafferUI/CompoundNodule.h"
+
+#include "Gaffer/Plug.h"
 
 using namespace std;
 using namespace Imath;
@@ -46,12 +47,11 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( CompoundNodule );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CompoundNodule );
 
 Nodule::NoduleTypeDescription<CompoundNodule> CompoundNodule::g_noduleTypeDescription;
 
-CompoundNodule::CompoundNodule( Gaffer::PlugPtr plug, LinearContainer::Orientation orientation,
-	float spacing, LinearContainer::Direction direction )
+CompoundNodule::CompoundNodule( Gaffer::PlugPtr plug )
 	:	Nodule( plug )
 {
 	addChild( new NoduleLayout( plug ) );
@@ -84,4 +84,13 @@ NoduleLayout *CompoundNodule::noduleLayout()
 const NoduleLayout *CompoundNodule::noduleLayout() const
 {
 	return getChild<NoduleLayout>( 0 );
+}
+
+bool CompoundNodule::canCreateConnection( const Gaffer::Plug *endpoint ) const
+{
+	return false;
+}
+
+void CompoundNodule::createConnection( Gaffer::Plug *endpoint )
+{
 }

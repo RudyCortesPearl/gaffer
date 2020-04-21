@@ -34,7 +34,13 @@
 #
 ##########################################################################
 
+import os
+import subprocess
+
 import IECore
+import imath
+
+import IECoreScene
 
 import Gaffer
 import GafferUITest
@@ -55,7 +61,7 @@ class ArnoldShaderUITest( GafferUITest.TestCase ) :
 
 		self.assertEqual(
 			Gaffer.Metadata.value( shader["parameters"]["amplitude"], "nodule:type" ),
-			"GafferUI::StandardNodule"
+			None
 		)
 
 		self.assertEqual(
@@ -70,7 +76,7 @@ class ArnoldShaderUITest( GafferUITest.TestCase ) :
 
 		self.assertEqual(
 			Gaffer.Metadata.value( shader["parameters"]["coord_space"], "presetNames" ),
-			IECore.StringVectorData( [ "world", "object", "Pref" ] ),
+			IECore.StringVectorData( [ "world", "object", "Pref", "uv" ] ),
 		)
 
 		self.assertEqual(
@@ -86,7 +92,7 @@ class ArnoldShaderUITest( GafferUITest.TestCase ) :
 
 		## \todo Here we're suppressing warnings about not being
 		# able to create plugs for some parameters. In many cases
-		# these are parameters like "matrix" and "time_samples"
+		# these are parameters like "matrix"
 		# that we don't actually want to represent anyway. We should
 		# add a mechanism for ignoring irrelevant parameters (perhaps
 		# using custom gaffer.something metadata in additional Arnold
@@ -119,6 +125,80 @@ class ArnoldShaderUITest( GafferUITest.TestCase ) :
 			Gaffer.Metadata.value( light["parameters"]["format"], "presetValues" ),
 			Gaffer.Metadata.value( light["parameters"]["format"], "presetNames" ),
 		)
+
+	def testUserDefaultMetadata( self ) :
+
+		cacheFile =	os.path.join( self.temporaryDirectory(), "testShaderUserDefaults.scc" )
+		script = """
+import Gaffer
+import GafferScene
+import GafferArnold
+import GafferArnoldUI
+root = Gaffer.ScriptNode()
+root["image"] = GafferArnold.ArnoldShader( "image" )
+root["image"].loadShader( "image" )
+Gaffer.NodeAlgo.applyUserDefaults( root["image"] )
+root["Sphere"] = GafferScene.Sphere( "Sphere" )
+root["ShaderAssignment"] = GafferScene.ShaderAssignment( "ShaderAssignment" )
+root["SceneWriter"] = GafferScene.SceneWriter( "SceneWriter" )
+root["ShaderAssignment"]["in"].setInput( root["Sphere"]["out"] )
+root["ShaderAssignment"]["shader"].setInput( root["image"]["out"] )
+root["SceneWriter"]["in"].setInput( root["ShaderAssignment"]["out"] )
+root["SceneWriter"]["fileName"].setValue( "%s" )
+root["SceneWriter"].execute()
+		""" % cacheFile
+
+		env = os.environ.copy()
+		subprocess.check_call(
+			[ "gaffer", "env", "python","-c", script ],
+			env = env
+		)
+		scene = IECoreScene.SceneCache( cacheFile, IECore.IndexedIO.OpenMode.Read )
+		sphere = scene.child( "sphere" )
+		parms = sphere.readAttributeAtSample( "ai:surface", 0 ).outputShader().parameters
+
+		self.assertEqual( parms["single_channel"].value, False )
+		self.assertEqual( parms["mipmap_bias"].value, 0 )
+		self.assertEqual( parms["start_channel"].value, 0 )
+		self.assertEqual( parms["sscale"].value, 1.0 )
+		self.assertEqual( parms["multiply"].value, imath.Color3f( 1.0 ) )
+		self.assertEqual( parms["missing_texture_color"].value, imath.Color4f( 0.0 ) )
+		self.assertEqual( parms["uvcoords"].value, imath.V2f( 0.0 ) )
+		self.assertEqual( parms["filename"].value, "" )
+		self.assertEqual( parms["filter"].value, "smart_bicubic" )
+
+		env["ARNOLD_PLUGIN_PATH"] = os.path.join( os.path.dirname( __file__ ), "metadata" )
+		subprocess.check_call(
+			[ "gaffer", "env", "python","-c", script ],
+			env = env
+		)
+		scene = IECoreScene.SceneCache( cacheFile, IECore.IndexedIO.OpenMode.Read )
+		sphere = scene.child( "sphere" )
+		parms = sphere.readAttributeAtSample( "ai:surface", 0 ).outputShader().parameters
+
+		self.assertEqual( parms["single_channel"].value, True )
+		self.assertEqual( parms["mipmap_bias"].value, 84 )
+		self.assertEqual( parms["start_channel"].value, 84 )
+		self.assertAlmostEqual( parms["sscale"].value, 6.7, places = 5 )
+		self.assertEqual( parms["multiply"].value, imath.Color3f( 12, 13, 14 ) )
+
+		# SolidAngle does not appear to have wrapped AiMetaDataGetRGBA in Python, so we don't
+		# support the RGBA case
+        #self.assertEqual( parms["missing_texture_color"].value, imath.Color4f( 12, 13, 14, 15 ) )
+
+		self.assertEqual( parms["uvcoords"].value, imath.V2f( 12, 13 ) )
+		self.assertEqual( parms["filename"].value, "overrideUserDefault" )
+		self.assertEqual( parms["filter"].value, "bilinear" )
+
+	def testBaseClassMetadataLookup( self ) :
+
+		surface = GafferArnold.ArnoldShader()
+		surface.loadShader( "standard_surface" )
+
+		# Make sure that metadata registration based on mechanism in GafferScene.ShaderUI works
+		Gaffer.Metadata.registerValue( "ai:surface:standard_surface:aov_id1", "userDefault", "id_1" )
+
+		self.assertEqual( Gaffer.Metadata.value( surface["parameters"]["aov_id1"], "userDefault" ), "id_1" )
 
 if __name__ == "__main__":
 	unittest.main()

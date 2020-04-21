@@ -34,10 +34,12 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
+import IECoreScene
 import GafferScene
 import GafferSceneTest
-
 
 class DeleteFacesTest( GafferSceneTest.SceneTestCase ) :
 
@@ -45,15 +47,15 @@ class DeleteFacesTest( GafferSceneTest.SceneTestCase ) :
 
 		verticesPerFace = IECore.IntVectorData( [4, 4] )
 		vertexIds = IECore.IntVectorData( [0, 1, 4, 3, 1, 2, 5, 4] )
-		p = IECore.V3fVectorData( [IECore.V3f( 0, 0, 0 ), IECore.V3f( 1, 0, 0 ), IECore.V3f( 2, 0, 0 ), IECore.V3f( 0, 1, 0 ), IECore.V3f( 1, 1, 0 ), IECore.V3f( 2, 1, 0 )] )
+		p = IECore.V3fVectorData( [imath.V3f( 0, 0, 0 ), imath.V3f( 1, 0, 0 ), imath.V3f( 2, 0, 0 ), imath.V3f( 0, 1, 0 ), imath.V3f( 1, 1, 0 ), imath.V3f( 2, 1, 0 )] )
 		deleteData = IECore.IntVectorData( [0, 1] )
 
-		mesh = IECore.MeshPrimitive( verticesPerFace, vertexIds, "linear", p )
-		mesh["deleteFaces"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, deleteData )
+		mesh = IECoreScene.MeshPrimitive( verticesPerFace, vertexIds, "linear", p )
+		mesh["deleteFaces"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, deleteData )
 
-		mesh["uniform"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.IntVectorData( [10, 11] ) )
-		mesh["vertex"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex, IECore.IntVectorData( [100, 101, 102, 103, 104, 105] ) )
-		mesh["faceVarying"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.FaceVarying, IECore.IntVectorData( [20, 21, 22, 23, 24, 25, 26, 27] ) )
+		mesh["uniform"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.IntVectorData( [10, 11] ) )
+		mesh["vertex"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Vertex, IECore.IntVectorData( [100, 101, 102, 103, 104, 105] ) )
+		mesh["faceVarying"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.FaceVarying, IECore.IntVectorData( [20, 21, 22, 23, 24, 25, 26, 27] ) )
 
 		self.assertTrue(mesh.arePrimitiveVariablesValid())
 
@@ -78,19 +80,37 @@ class DeleteFacesTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( faceDeletedObject.verticesPerFace, IECore.IntVectorData([4]) )
 		self.assertEqual( faceDeletedObject.vertexIds, IECore.IntVectorData([0, 1, 3, 2]) )
 		self.assertEqual( faceDeletedObject.numFaces(), 1 )
-		self.assertEqual( faceDeletedObject["P"].data, IECore.V3fVectorData( [IECore.V3f( 0, 0, 0 ), IECore.V3f( 1, 0, 0 ), IECore.V3f( 0, 1, 0 ), IECore.V3f( 1, 1, 0 )] ) )
+		self.assertEqual( faceDeletedObject["P"].data, IECore.V3fVectorData( [imath.V3f( 0, 0, 0 ), imath.V3f( 1, 0, 0 ), imath.V3f( 0, 1, 0 ), imath.V3f( 1, 1, 0 )], IECore.GeometricData.Interpretation.Point) )
 
 		# verify the primvars are correct
 		self.assertEqual( faceDeletedObject["uniform"].data,  IECore.IntVectorData([10]) )
 		self.assertEqual( faceDeletedObject["vertex"].data,  IECore.IntVectorData([100, 101, 103, 104]) )
 		self.assertEqual( faceDeletedObject["faceVarying"].data,  IECore.IntVectorData([20, 21, 22, 23]) )
 
+		# invert
+		# ======
+
+		deleteFaces["invert"].setValue( True )
+		faceDeletedObject = deleteFaces["out"].object( "/object" )
+
+		self.assertEqual( faceDeletedObject.verticesPerFace, IECore.IntVectorData([4]) )
+		self.assertEqual( faceDeletedObject.vertexIds, IECore.IntVectorData([0, 1, 3, 2]) )
+		self.assertEqual( faceDeletedObject.numFaces(), 1 )
+		self.assertEqual( faceDeletedObject["P"].data,
+			IECore.V3fVectorData( [imath.V3f( 1, 0, 0 ), imath.V3f( 2, 0, 0 ), imath.V3f( 1, 1, 0 ), imath.V3f( 2, 1, 0 )],
+				IECore.GeometricData.Interpretation.Point ) )
+
+		# verify the primvars are correct
+		self.assertEqual( faceDeletedObject["uniform"].data,  IECore.IntVectorData([11]) )
+		self.assertEqual( faceDeletedObject["vertex"].data,  IECore.IntVectorData([101, 102, 104, 105]) )
+		self.assertEqual( faceDeletedObject["faceVarying"].data,  IECore.IntVectorData([24, 25, 26, 27]) )
+
 	def testDeletingFacesUpdatesBounds( self ) :
 
 		rectangleScene = self.makeRectangleFromTwoSquaresScene()
 
 		expectedOriginalBound = rectangleScene["out"].bound( "/object" )
-		self.assertEqual(expectedOriginalBound, IECore.Box3f( IECore.V3f( 0, 0, 0 ), IECore.V3f( 2, 1, 0 ) ) )
+		self.assertEqual(expectedOriginalBound, imath.Box3f( imath.V3f( 0, 0, 0 ), imath.V3f( 2, 1, 0 ) ) )
 
 		deleteFaces = GafferScene.DeleteFaces()
 		deleteFaces["in"].setInput( rectangleScene["out"] )
@@ -100,6 +120,35 @@ class DeleteFacesTest( GafferSceneTest.SceneTestCase ) :
 		deleteFaces["filter"].setInput( pathFilter["out"] )
 
 		actualFaceDeletedBounds = deleteFaces["out"].bound( "/object" )
-		expectedBoundingBox = IECore.Box3f( IECore.V3f( 0, 0, 0 ), IECore.V3f( 1, 1, 0 ) )
+		expectedBoundingBox = imath.Box3f( imath.V3f( 0, 0, 0 ), imath.V3f( 1, 1, 0 ) )
 
 		self.assertEqual( actualFaceDeletedBounds, expectedBoundingBox )
+
+	def testBoundsOfChildObjects( self ) :
+
+		rectangle = self.makeRectangleFromTwoSquaresScene()
+		sphere = GafferScene.Sphere()
+		sphere["radius"].setValue( 10 ) # Totally encloses the rectangle
+
+		parent = GafferScene.Parent()
+		parent["in"].setInput( rectangle["out"] )
+		parent["parent"].setValue( "/object" )
+		parent["children"][0].setInput( sphere["out"] )
+
+		self.assertSceneValid( parent["out"] )
+
+		pathFilter = GafferScene.PathFilter( "PathFilter" )
+		pathFilter["paths"].setValue( IECore.StringVectorData( [ "/object" ] ) )
+
+		deleteFaces = GafferScene.DeleteFaces()
+		deleteFaces["in"].setInput( parent["out"] )
+		deleteFaces["filter"].setInput( pathFilter["out"] )
+
+		# The sphere should not have been modified
+		self.assertEqual( deleteFaces["out"].object( "/object/sphere" ), parent["out"].object( "/object/sphere" ) )
+		# And the bounding boxes should still enclose all the objects,
+		# including the sphere.
+		self.assertSceneValid( deleteFaces["out"] )
+
+if __name__ == "__main__":
+	unittest.main()

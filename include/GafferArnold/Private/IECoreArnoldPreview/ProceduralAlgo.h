@@ -35,9 +35,9 @@
 #ifndef IECOREARNOLDPREVIEW_PROCEDURALALGO_H
 #define IECOREARNOLDPREVIEW_PROCEDURALALGO_H
 
-#include "ai.h"
+#include "IECoreScene/ExternalProcedural.h"
 
-#include "IECore/ExternalProcedural.h"
+#include "ai.h"
 
 namespace IECoreArnoldPreview
 {
@@ -45,7 +45,7 @@ namespace IECoreArnoldPreview
 namespace ProceduralAlgo
 {
 
-AtNode *convert( const IECore::ExternalProcedural *procedural );
+AtNode *convert( const IECoreScene::ExternalProcedural *procedural, const std::string &nodeName, const AtNode *parentNode );
 
 } // namespace ProceduralAlgo
 

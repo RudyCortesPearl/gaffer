@@ -37,22 +37,29 @@
 #ifndef GAFFERSCENEUI_SHADERVIEW_H
 #define GAFFERSCENEUI_SHADERVIEW_H
 
+#include "GafferSceneUI/Export.h"
+#include "GafferSceneUI/TypeIds.h"
+
+#include "GafferScene/InteractiveRender.h"
+
 #include "GafferImageUI/ImageView.h"
 
-#include "GafferSceneUI/TypeIds.h"
+#include "GafferImage/Display.h"
+
+#include <functional>
 
 namespace GafferSceneUI
 {
 
-class ShaderView : public GafferImageUI::ImageView
+class GAFFERSCENEUI_API ShaderView : public GafferImageUI::ImageView
 {
 
 	public :
 
 		ShaderView( const std::string &name = defaultName<ShaderView>() );
-		virtual ~ShaderView();
+		~ShaderView() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::ShaderView, ShaderViewTypeId, GafferImageUI::ImageView );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::ShaderView, ShaderViewTypeId, GafferImageUI::ImageView );
 
 		Gaffer::StringPlug *scenePlug();
 		const Gaffer::StringPlug *scenePlug() const;
@@ -67,12 +74,12 @@ class ShaderView : public GafferImageUI::ImageView
 		typedef boost::signal<void ( ShaderView * )> SceneChangedSignal;
 		SceneChangedSignal &sceneChangedSignal();
 
-		virtual void setContext( Gaffer::ContextPtr context );
+		void setContext( Gaffer::ContextPtr context ) override;
 
-		typedef boost::function<Gaffer::NodePtr ()> RendererCreator;
+		typedef std::function<GafferScene::InteractiveRenderPtr ()> RendererCreator;
 		static void registerRenderer( const std::string &shaderPrefix, RendererCreator rendererCreator );
 
-		typedef boost::function<Gaffer::NodePtr ()> SceneCreator;
+		typedef std::function<Gaffer::NodePtr ()> SceneCreator;
 		static void registerScene( const std::string &shaderPrefix, const std::string &name, SceneCreator sceneCreator );
 		static void registerScene( const std::string &shaderPrefix, const std::string &name, const std::string &referenceFileName );
 		static void registeredScenes( const std::string &shaderPrefix, std::vector<std::string> &names );
@@ -81,6 +88,9 @@ class ShaderView : public GafferImageUI::ImageView
 
 		typedef std::pair<std::string, std::string> PrefixAndName;
 		typedef std::map<PrefixAndName, Gaffer::NodePtr> Scenes;
+
+		GafferImage::Display *display();
+		const GafferImage::Display *display() const;
 
 		void viewportVisibilityChanged();
 
@@ -95,12 +105,14 @@ class ShaderView : public GafferImageUI::ImageView
 		void updateScene();
 		void preRender();
 
+		void driverCreated( IECoreImage::DisplayDriver *driver, const IECore::CompoundData *parameters );
+
 		bool m_framed;
 		Gaffer::NodePtr m_imageConverter;
 
 		boost::signals::scoped_connection m_idleConnection;
 
-		Gaffer::NodePtr m_renderer;
+		GafferScene::InteractiveRenderPtr m_renderer;
 		std::string m_rendererShaderPrefix;
 
 		Scenes m_scenes;

@@ -35,11 +35,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/NumericParameter.h"
+#include "GafferCortex/NumericParameterHandler.h"
 
 #include "Gaffer/NumericPlug.h"
 
-#include "GafferCortex/NumericParameterHandler.h"
+#include "IECore/NumericParameter.h"
 
 using namespace GafferCortex;
 
@@ -115,5 +115,5 @@ void NumericParameterHandler<T>::setPlugValue()
 
 // explicit instantiations
 
-template class NumericParameterHandler<float>;
-template class NumericParameterHandler<int>;
+template class GafferCortex::NumericParameterHandler<float>;
+template class GafferCortex::NumericParameterHandler<int>;

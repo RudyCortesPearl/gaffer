@@ -35,7 +35,9 @@
 ##########################################################################
 
 import os
+import time
 import unittest
+import imath
 
 import IECore
 
@@ -52,9 +54,9 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 
 		m = GafferImage.Median()
 		m["in"].setInput( c["out"] )
-		m["radius"].setValue( IECore.V2i( 0 ) )
+		m["radius"].setValue( imath.V2i( 0 ) )
 
-		self.assertEqual( c["out"].imageHash(), m["out"].imageHash() )
+		self.assertEqual( GafferImage.ImageAlgo.imageHash( c["out"] ), GafferImage.ImageAlgo.imageHash( m["out"] ) )
 		self.assertImagesEqual( c["out"], m["out"] )
 
 	def testExpandDataWindow( self ) :
@@ -63,14 +65,14 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 
 		m = GafferImage.Median()
 		m["in"].setInput( c["out"] )
-		m["radius"].setValue( IECore.V2i( 1 ) )
+		m["radius"].setValue( imath.V2i( 1 ) )
 
 		self.assertEqual( m["out"]["dataWindow"].getValue(), c["out"]["dataWindow"].getValue() )
 
 		m["expandDataWindow"].setValue( True )
 
-		self.assertEqual( m["out"]["dataWindow"].getValue().min, c["out"]["dataWindow"].getValue().min - IECore.V2i( 1 ) )
-		self.assertEqual( m["out"]["dataWindow"].getValue().max, c["out"]["dataWindow"].getValue().max + IECore.V2i( 1 ) )
+		self.assertEqual( m["out"]["dataWindow"].getValue().min(), c["out"]["dataWindow"].getValue().min() - imath.V2i( 1 ) )
+		self.assertEqual( m["out"]["dataWindow"].getValue().max(), c["out"]["dataWindow"].getValue().max() + imath.V2i( 1 ) )
 
 	def testFilter( self ) :
 
@@ -81,7 +83,7 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 		m["in"].setInput( r["out"] )
 		self.assertImagesEqual( m["out"], r["out"] )
 
-		m["radius"].setValue( IECore.V2i( 1 ) )
+		m["radius"].setValue( imath.V2i( 1 ) )
 		m["boundingMode"].setValue( GafferImage.Sampler.BoundingMode.Clamp )
 
 		dataWindow = m["out"]["dataWindow"].getValue()
@@ -89,8 +91,8 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 
 		uStep = 1.0 / dataWindow.size().x
 		uMin = 0.5 * uStep
-		for y in range( dataWindow.min.y, dataWindow.max.y ) :
-			for x in range( dataWindow.min.x, dataWindow.max.x ) :
+		for y in range( dataWindow.min().y, dataWindow.max().y ) :
+			for x in range( dataWindow.min().x, dataWindow.max().x ) :
 				self.assertAlmostEqual( s.sample( x, y ), uMin + x * uStep, delta = 0.011 )
 
 	def testDriverChannel( self ) :
@@ -101,15 +103,15 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 		r = GafferImage.Grade()
 		r["in"].setInput( rRaw["out"] )
 		# Trim off the noise in the blacks so that areas with no visible color are actually flat
-		r["blackPoint"].setValue( IECore.Color4f( 0.03 ) )
+		r["blackPoint"].setValue( imath.Color4f( 0.03 ) )
 
 
 		masterMedian = GafferImage.Median()
 		masterMedian["in"].setInput( r["out"] )
-		masterMedian["radius"].setValue( IECore.V2i( 2 ) )
+		masterMedian["radius"].setValue( imath.V2i( 2 ) )
 
 		masterMedian["masterChannel"].setValue( "G" )
-		
+
 		expected = GafferImage.ImageReader()
 		expected["fileName"].setValue( os.path.dirname( __file__ ) + "/images/circlesGreenMedian.exr" )
 
@@ -117,12 +119,12 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 		# unchanged in areas where there is no green.  In areas where red and blue overlap with a noisy green,
 		# they get a bit scrambled.  This is why in practice, you would use something like luminance, rather
 		# than just the green channel
-		self.assertImagesEqual( masterMedian["out"], expected["out"], ignoreMetadata = True )
+		self.assertImagesEqual( masterMedian["out"], expected["out"], ignoreMetadata = True, maxDifference=0.0005 )
 
-		
+
 		defaultMedian = GafferImage.Median()
 		defaultMedian["in"].setInput( r["out"] )
-		defaultMedian["radius"].setValue( IECore.V2i( 2 ) )
+		defaultMedian["radius"].setValue( imath.V2i( 2 ) )
 
 		masterMedianSingleChannel = GafferImage.DeleteChannels()
 		masterMedianSingleChannel["in"].setInput( masterMedian["out"] )
@@ -140,6 +142,35 @@ class MedianTest( GafferImageTest.ImageTestCase ) :
 			# When we look at just the channel being used as the master, it matches a default median not using
 			# a master
 			self.assertImagesEqual( masterMedianSingleChannel["out"], defaultMedianSingleChannel["out"] )
+
+	def testCancellation( self ) :
+
+		c = GafferImage.Constant()
+
+		m = GafferImage.Median()
+		m["in"].setInput( c["out"] )
+		m["radius"].setValue( imath.V2i( 2000 ) )
+
+		bt = Gaffer.ParallelAlgo.callOnBackgroundThread( m["out"], lambda : GafferImageTest.processTiles( m["out"] ) )
+		# Give background tasks time to get into full swing
+		time.sleep( 0.1 )
+
+		# Check that we can cancel them in reasonable time
+		acceptableCancellationDelay = 4.0 if GafferTest.inCI() else 0.25
+		t = time.time()
+		bt.cancelAndWait()
+		self.assertLess( time.time() - t, acceptableCancellationDelay )
+
+		# Check that we can do the same when using a master
+		# channel.
+		m["masterChannel"].setValue( "R" )
+
+		bt = Gaffer.ParallelAlgo.callOnBackgroundThread( m["out"], lambda : GafferImageTest.processTiles( m["out"] ) )
+		time.sleep( 0.1 )
+
+		t = time.time()
+		bt.cancelAndWait()
+		self.assertLess( time.time() - t, acceptableCancellationDelay )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -38,11 +38,13 @@
 #ifndef GAFFERCORTEX_PARAMETERHANDLER_H
 #define GAFFERCORTEX_PARAMETERHANDLER_H
 
-#include "boost/function.hpp"
+#include "GafferCortex/Export.h"
+
+#include "Gaffer/Plug.h"
 
 #include "IECore/Parameter.h"
 
-#include "Gaffer/Plug.h"
+#include <functional>
 
 namespace GafferCortex
 {
@@ -51,14 +53,14 @@ IE_CORE_FORWARDDECLARE( ParameterHandler );
 
 /// ParameterHandlers manage a mapping between IECore::Parameter objects
 /// and Plugs on a Node.
-class ParameterHandler : public IECore::RefCounted
+class GAFFERCORTEX_API ParameterHandler : public IECore::RefCounted
 {
 
 	public :
 
 		IE_CORE_DECLAREMEMBERPTR( ParameterHandler );
 
-		virtual ~ParameterHandler();
+		~ParameterHandler() override;
 
 		virtual IECore::Parameter *parameter() = 0;
 		virtual const IECore::Parameter *parameter() const = 0;
@@ -74,11 +76,17 @@ class ParameterHandler : public IECore::RefCounted
 		virtual void setParameterValue() = 0;
 		virtual void setPlugValue() = 0;
 
+		/// Returns a hash representing the current state
+		/// of the parameter. This is achieved by hashing
+		/// all ValuePlug descendants of `plug()` (and the
+		/// plug itself if is is a ValuePlug too).
+		IECore::MurmurHash hash() const;
+
 		/// Returns a handler for the specified parameter.
 		static ParameterHandlerPtr create( IECore::ParameterPtr parameter );
 		/// A function for creating ParameterHandlers which will represent a Parameter with a plug on a given
 		/// parent.
-		typedef boost::function<ParameterHandlerPtr ( IECore::ParameterPtr )> Creator;
+		typedef std::function<ParameterHandlerPtr ( IECore::ParameterPtr )> Creator;
 		/// Registers a function which can return a ParameterHandler for a given Parameter type.
 		static void registerParameterHandler( IECore::TypeId parameterType, Creator creator );
 

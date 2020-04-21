@@ -34,6 +34,9 @@
 #
 ##########################################################################
 
+import math
+import imath
+
 import Gaffer
 
 Gaffer.Metadata.registerValue( "ai:light:spot_light", "type", "spot" )
@@ -43,12 +46,14 @@ Gaffer.Metadata.registerValue( "ai:light:spot_light", "penumbraType", "inset" )
 Gaffer.Metadata.registerValue( "ai:light:spot_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:spot_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:spot_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:spot_light", "radiusParameter", "radius" )
 Gaffer.Metadata.registerValue( "ai:light:spot_light", "lensRadiusParameter", "lens_radius" )
 
 Gaffer.Metadata.registerValue( "ai:light:point_light", "type", "point" )
 Gaffer.Metadata.registerValue( "ai:light:point_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:point_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:point_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:point_light", "radiusParameter", "radius" )
 
 Gaffer.Metadata.registerValue( "ai:light:distant_light", "type", "distant" )
 Gaffer.Metadata.registerValue( "ai:light:distant_light", "intensityParameter", "intensity" )
@@ -59,11 +64,15 @@ Gaffer.Metadata.registerValue( "ai:light:quad_light", "type", "quad" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:quad_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:quad_light", "portalParameter", "portal" )
+Gaffer.Metadata.registerValue( "ai:light:quad_light", "spreadParameter", "spread" )
+Gaffer.Metadata.registerValue( "ai:light:quad_light", "visualiserOrientation", imath.M44f().rotate( imath.V3f( 0, 0, 0.5 * math.pi ) ) )
 
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "type", "disk" )
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:disk_light", "spreadParameter", "spread" )
 Gaffer.Metadata.registerValue( "ai:light:disk_light", "radiusParameter", "radius" )
 
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "type", "cylinder" )
@@ -71,8 +80,22 @@ Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "intensityParameter", 
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "colorParameter", "color" )
 Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "radiusParameter", "radius" )
-Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "visualiserOrientation", IECore.M44f().rotate( IECore.V3f( 0.5 * math.pi, 0 , 0 ) ) )
+Gaffer.Metadata.registerValue( "ai:light:cylinder_light", "visualiserOrientation", imath.M44f().rotate( imath.V3f( 0.5 * math.pi, 0 , 0 ) ) )
 
 Gaffer.Metadata.registerValue( "ai:light:skydome_light", "intensityParameter", "intensity" )
 Gaffer.Metadata.registerValue( "ai:light:skydome_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "ai:light:skydome_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:skydome_light", "type", "environment" )
+
+Gaffer.Metadata.registerValue( "ai:light:mesh_light", "intensityParameter", "intensity" )
+Gaffer.Metadata.registerValue( "ai:light:mesh_light", "exposureParameter", "exposure" )
+Gaffer.Metadata.registerValue( "ai:light:mesh_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:mesh_light", "type", "mesh" )
+
+Gaffer.Metadata.registerValue( "ai:light:photometric_light", "intensityParameter", "intensity" )
+Gaffer.Metadata.registerValue( "ai:light:photometric_light", "exposureParameter", "exposure" )
+Gaffer.Metadata.registerValue( "ai:light:photometric_light", "colorParameter", "color" )
+Gaffer.Metadata.registerValue( "ai:light:photometric_light", "radiusParameter", "radius" )
+# Most profiles generally shine down -y
+Gaffer.Metadata.registerValue( "ai:light:photometric_light", "visualiserOrientation", imath.M44f().rotate( imath.V3f( -0.5 * math.pi, 0 , 0 ) ) )
+Gaffer.Metadata.registerValue( "ai:light:photometric_light", "type", "photometric" )

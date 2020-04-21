@@ -34,21 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferScene/Constraint.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( Constraint );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Constraint );
 
 size_t Constraint::g_firstPlugIndex = 0;
 
 Constraint::Constraint( const std::string &name )
-	:	SceneElementProcessor( name, Filter::NoMatch )
+	:	SceneElementProcessor( name, IECore::PathMatcher::NoMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "target" ) );

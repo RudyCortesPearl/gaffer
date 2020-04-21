@@ -34,9 +34,11 @@
 #
 ##########################################################################
 
+import os
 import sys
 import unittest
 import inspect
+import subprocess
 import types
 import shutil
 import tempfile
@@ -60,6 +62,11 @@ class TestCase( unittest.TestCase ) :
 		# to grab them and then assert that they are as expected.
 		self.addCleanup( functools.partial( self.__messageHandlerCleanup, IECore.MessageHandler.getDefaultHandler() ) )
 		IECore.MessageHandler.setDefaultHandler( IECore.CapturingMessageHandler() )
+
+		# Clear the cache so that each test starts afresh. This is
+		# important for tests which use monitors to assert that specific
+		# processes are being invoked as expected.
+		Gaffer.ValuePlug.clearCache()
 
 	def tearDown( self ) :
 
@@ -148,6 +155,11 @@ class TestCase( unittest.TestCase ) :
 
 				self.assertNotEqual( outputPlug.hash(), hash, outputPlug.fullName() + " hash not affected by " + inputPlug.fullName() )
 
+				# Set value back to the input value
+				# ( The calling code may have set up plugs in a specific state, because some plugs may
+				# have no affect in certain states )
+				inputPlug.setValue( value )
+
 				numTests += 1
 
 		self.failUnless( numTests > 0 )
@@ -169,7 +181,7 @@ class TestCase( unittest.TestCase ) :
 
 		self.assertEqual( incorrectTypeNames, [] )
 
-	def assertDefaultNamesAreCorrect( self, module ) :
+	def assertDefaultNamesAreCorrect( self, module, namesToIgnore = () ) :
 
 		for name in dir( module ) :
 
@@ -182,6 +194,9 @@ class TestCase( unittest.TestCase ) :
 			except :
 				continue
 
+			if instance.getName() in namesToIgnore :
+				continue
+
 			self.assertEqual( instance.getName(), cls.staticTypeName().rpartition( ":" )[2] )
 
 	def assertNodesAreDocumented( self, module, additionalTerminalPlugTypes = () ) :
@@ -191,7 +206,7 @@ class TestCase( unittest.TestCase ) :
 			Gaffer.V2fPlug, Gaffer.V3fPlug,
 			Gaffer.V2iPlug, Gaffer.V3iPlug,
 			Gaffer.Color3fPlug, Gaffer.Color4fPlug,
-			Gaffer.SplineffPlug, Gaffer.SplinefColor3fPlug,
+			Gaffer.SplineffPlug, Gaffer.SplinefColor3fPlug, Gaffer.SplinefColor4fPlug,
 			Gaffer.Box2iPlug, Gaffer.Box3iPlug,
 			Gaffer.Box2fPlug, Gaffer.Box3fPlug,
 			Gaffer.TransformPlug, Gaffer.Transform2DPlug,
@@ -250,13 +265,19 @@ class TestCase( unittest.TestCase ) :
 		self.assertEqual( undocumentedPlugs, [] )
 
 	## We don't serialise plug values when they're at their default, so
-	# newly constructed nodes must have all their plugs be at the default value.
-	def assertNodesConstructWithDefaultValues( self, module ) :
+	# newly constructed nodes _must_ have all their plugs be at the default value.
+	# Use `nodesToIgnore` with caution : the only good reason for using it is to
+	# ignore compatibility stubs used to load old nodes and convert them into new
+	# ones.
+	def assertNodesConstructWithDefaultValues( self, module, nodesToIgnore = None ) :
 
 		for name in dir( module ) :
 
 			cls = getattr( module, name )
 			if not inspect.isclass( cls ) or not issubclass( cls, Gaffer.Node ) :
+				continue
+
+			if nodesToIgnore is not None and cls in nodesToIgnore :
 				continue
 
 			try :
@@ -266,10 +287,20 @@ class TestCase( unittest.TestCase ) :
 
 			for plug in node.children( Gaffer.Plug ) :
 
-				if plug.direction() != plug.Direction.In or not isinstance( plug, Gaffer.ValuePlug ) :
+				if plug.source().direction() != plug.Direction.In or not isinstance( plug, Gaffer.ValuePlug ) :
 					continue
 
 				if not plug.getFlags( plug.Flags.Serialisable ) :
 					continue
 
 				self.assertTrue( plug.isSetToDefault(), plug.fullName() + " not at default value following construction" )
+
+	def assertModuleDoesNotImportUI( self, moduleName ) :
+
+		script = os.path.join( self.temporaryDirectory(), "test.py" )
+		with open( script, "w" ) as f :
+			f.write( "import {}\n".format( moduleName ) )
+			f.write( "import sys\n" )
+			f.write( "assert( 'GafferUI' not in sys.modules )\n" )
+
+		subprocess.check_call( [ "gaffer", "python", script ] )

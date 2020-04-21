@@ -34,19 +34,26 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/CompoundNumericPlug.h"
-
 #include "GafferSceneTest/TestShader.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/StringPlug.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferSceneTest;
 
-IE_CORE_DEFINERUNTIMETYPED( TestShader )
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TestShader )
 
 TestShader::TestShader( const std::string &name )
 	:	Shader( name )
 {
+	// The base class expects us to serialise a `loadShader()`
+	// call to set the values for these, but we just represent
+	// a fixed shader. Turn serialisation back on.
+	namePlug()->setFlags( Plug::Serialisable, true );
+	typePlug()->setFlags( Plug::Serialisable, true );
+
 	addChild( new Color3fPlug( "out", Plug::Out ) );
 	parametersPlug()->addChild( new IntPlug( "i" ) );
 	parametersPlug()->addChild( new Color3fPlug( "c" ) );

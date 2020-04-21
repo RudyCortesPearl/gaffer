@@ -36,15 +36,18 @@
 
 import os
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
+import GafferTest
 import GafferImage
 import GafferScene
 import GafferSceneTest
 
-@unittest.skipIf( "TRAVIS" in os.environ, "OpenGL not set up on Travis" )
+@unittest.skipIf( GafferTest.inCI(), "OpenGL not set up" )
 class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
@@ -54,7 +57,7 @@ class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 		s = Gaffer.ScriptNode()
 
 		s["plane"] = GafferScene.Plane()
-		s["plane"]["transform"]["translate"].setValue( IECore.V3f( 0, 0, -5 ) )
+		s["plane"]["transform"]["translate"].setValue( imath.V3f( 0, 0, -5 ) )
 
 		s["image"] = GafferImage.ImageReader()
 		s["image"]["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" ) )
@@ -63,7 +66,7 @@ class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["shader"].loadShader( "Texture" )
 		s["shader"]["parameters"]["texture"].setInput( s["image"]["out"] )
 		s["shader"]["parameters"]["mult"].setValue( 1 )
-		s["shader"]["parameters"]["tint"].setValue( IECore.Color4f( 1 ) )
+		s["shader"]["parameters"]["tint"].setValue( imath.Color4f( 1 ) )
 
 		s["assignment"] = GafferScene.ShaderAssignment()
 		s["assignment"]["in"].setInput( s["plane"]["out"] )
@@ -72,7 +75,7 @@ class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				self.temporaryDirectory() + "/test.exr",
 				"exr",
 				"rgba",
@@ -91,18 +94,21 @@ class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/test.exr" ) )
 
-		i = IECore.EXRImageReader( self.temporaryDirectory() + "/test.exr" ).read()
-		e = IECore.ImagePrimitiveEvaluator( i )
-		r = e.createResult()
-		e.pointAtUV( IECore.V2f( 0.5 ), r )
-		self.assertAlmostEqual( r.floatPrimVar( e.R() ), 0.666666, 5 )
-		self.assertAlmostEqual( r.floatPrimVar( e.G() ), 0.666666, 5 )
-		self.assertEqual( r.floatPrimVar( e.B() ), 0 )
+		imageReader = GafferImage.ImageReader()
+		imageReader["fileName"].setValue( self.temporaryDirectory() + "/test.exr" )
+
+		imageSampler = GafferImage.ImageSampler()
+		imageSampler["image"].setInput( imageReader["out"] )
+		imageSampler["pixel"].setValue( imath.V2f( 320, 240 ) )
+
+		self.assertAlmostEqual( imageSampler["color"]["r"].getValue(), 0.666666, delta = 0.001 )
+		self.assertAlmostEqual( imageSampler["color"]["g"].getValue(), 0.666666, delta = 0.001 )
+		self.assertEqual( imageSampler["color"]["b"].getValue(), 0 )
 
 	def testOutputDirectoryCreation( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["variables"].addMember( "renderDirectory", self.temporaryDirectory() + "/openGLRenderTest" )
+		s["variables"].addChild( Gaffer.NameValuePlug( "renderDirectory", self.temporaryDirectory() + "/openGLRenderTest" ) )
 
 		s["plane"] = GafferScene.Plane()
 
@@ -110,7 +116,7 @@ class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["outputs"]["in"].setInput( s["plane"]["out"] )
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"$renderDirectory/test.####.exr",
 				"exr",
 				"rgba",
@@ -143,7 +149,7 @@ class OpenGLRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["plane"] = GafferScene.Plane()
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"]["in"].setInput( s["plane"]["out"] )
-		s["outputs"].addOutput( "beauty", IECore.Display( "$renderDirectory/test.####.exr", "exr", "rgba", {} ) )
+		s["outputs"].addOutput( "beauty", IECoreScene.Output( "$renderDirectory/test.####.exr", "exr", "rgba", {} ) )
 		s["render"] = GafferScene.OpenGLRender()
 
 		# no input scene produces no effect

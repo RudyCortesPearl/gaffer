@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import IECore
 
 import Gaffer
@@ -144,7 +142,7 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 
 	ParameterValueWidget.popupMenuSignal()( menuDefinition, parameterValueWidget )
 
-__plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu, scoped = False )
 
 # add menu items for presets
 

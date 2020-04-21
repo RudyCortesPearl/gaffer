@@ -34,16 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringAlgo.h"
+#include "GafferScene/DeleteSets.h"
+
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/DeleteSets.h"
+#include "IECore/StringAlgo.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( DeleteSets );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeleteSets );
 
 size_t DeleteSets::g_firstPlugIndex(0);
 
@@ -146,7 +147,7 @@ void DeleteSets::hashSet( const IECore::InternedString &setName, const Gaffer::C
 	}
 }
 
-GafferScene::ConstPathMatcherDataPtr DeleteSets::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr DeleteSets::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	const std::string names = namesPlug()->getValue();
 	const bool invert = invertNamesPlug()->getValue();

@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+__import__( "IECoreImage" )
 __import__( "Gaffer" )
 __import__( "GafferDispatch" )
 
@@ -46,5 +47,8 @@ def __setupEnvironment() :
 __setupEnvironment()
 
 from _GafferImage import *
+from CatalogueSelect import CatalogueSelect
+from BleedFill import BleedFill
+from DeepTidy import DeepTidy
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferImage" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferImage" )

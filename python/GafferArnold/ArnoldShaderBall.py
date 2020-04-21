@@ -56,10 +56,11 @@ class ArnoldShaderBall( GafferScene.ShaderBall ) :
 		self["__skyDome"].loadShader( "skydome_light" )
 		self["__skyDome"]["parameters"]["color"].setInput( self["__envMap"]["out"] )
 		self["__skyDome"]["parameters"]["format"].setValue( "latlong" )
+		self["__skyDome"]["parameters"]["camera"].setValue( 0 )
 
 		self["__parentLights"] = GafferScene.Parent()
 		self["__parentLights"]["in"].setInput( self._outPlug().getInput() )
-		self["__parentLights"]["child"].setInput( self["__skyDome"]["out"] )
+		self["__parentLights"]["children"][0].setInput( self["__skyDome"]["out"] )
 		self["__parentLights"]["parent"].setValue( "/" )
 
 		self["__arnoldOptions"] = GafferArnold.ArnoldOptions()

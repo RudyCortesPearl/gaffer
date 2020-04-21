@@ -34,17 +34,18 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <iostream>
+#include "GafferImage/Resample.h"
 
-#include "OpenImageIO/fmath.h"
-#include "OpenImageIO/filter.h"
+#include "GafferImage/FilterAlgo.h"
+#include "GafferImage/Sampler.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/Resample.h"
-#include "GafferImage/Sampler.h"
-#include "GafferImage/FilterAlgo.h"
+#include "OpenImageIO/filter.h"
+#include "OpenImageIO/fmath.h"
+
+#include <iostream>
 
 using namespace Imath;
 using namespace IECore;
@@ -176,7 +177,7 @@ const OIIO::Filter2D *filterAndScale( const std::string &name, V2f ratio, V2f &i
 
 	// Convert the filter scale into input space
 	inputFilterScale = V2f( 1.0f ) / ratio;
-	
+
 	// Don't allow the filter scale to cover less than 1 pixel in input space
 	inputFilterScale = V2f( std::max( 1.0f, inputFilterScale.x ), std::max( 1.0f, inputFilterScale.y ) );
 
@@ -236,12 +237,12 @@ Box2f transform( const Box2f &b, const M33f &m )
 // Resample
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Resample );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Resample );
 
 size_t Resample::g_firstPlugIndex = 0;
 
 Resample::Resample( const std::string &name )
-	:   ImageProcessor( name )
+	:   FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new M33fPlug( "matrix" ) );
@@ -340,7 +341,7 @@ const ImagePlug *Resample::horizontalPassPlug() const
 
 void Resample::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	if(
 		input == inPlug()->dataWindowPlug() ||
@@ -372,7 +373,7 @@ void Resample::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outpu
 
 void Resample::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashDataWindow( parent, context, h );
+	FlatImageProcessor::hashDataWindow( parent, context, h );
 
 	inPlug()->dataWindowPlug()->hash( h );
 	matrixPlug()->hash( h );
@@ -404,7 +405,7 @@ Imath::Box2i Resample::computeDataWindow( const Gaffer::Context *context, const 
 		V2f inputFilterScale;
 		const OIIO::Filter2D *filter = filterAndScale( filterPlug()->getValue(), ratio, inputFilterScale );
 		inputFilterScale *= filterScalePlug()->getValue();
-		
+
 		const V2f filterRadius = V2f( filter->width(), filter->height() ) * inputFilterScale * 0.5f;
 
 		dstDataWindow.min -= filterRadius * ratio;
@@ -451,7 +452,7 @@ Imath::Box2i Resample::computeDataWindow( const Gaffer::Context *context, const 
 
 void Resample::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashChannelData( parent, context, h );
+	FlatImageProcessor::hashChannelData( parent, context, h );
 
 	V2f ratio, offset;
 	{
@@ -544,6 +545,8 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 
 			for( oP.x = tileBound.min.x; oP.x < tileBound.max.x; ++oP.x )
 			{
+				Canceller::check( context->canceller() );
+
 				iP.x = ( oP.x + 0.5 ) / ratio.x + offset.x;
 				iPF.x = OIIO::floorfrac( iP.x, &iPI.x );
 
@@ -570,7 +573,7 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 				// center is actually within the filter support.  This fix should also be done to the
 				// seperable case.  Once that is done, we should probably also hoist the multiply by
 				// filterCoordinateMult out of the loop.
-				
+
 				V2i fP; // relative filter position
 				float v = 0.0f;
 				float totalW = 0.0f;
@@ -621,6 +624,8 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 
 		for( oP.y = tileBound.min.y; oP.y < tileBound.max.y; ++oP.y )
 		{
+			Canceller::check( context->canceller() );
+
 			std::vector<float>::const_iterator wIt = weights.begin();
 			for( oP.x = tileBound.min.x; oP.x < tileBound.max.x; ++oP.x )
 			{
@@ -665,6 +670,8 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 
 		for( oP.y = tileBound.min.y; oP.y < tileBound.max.y; ++oP.y )
 		{
+			Canceller::check( context->canceller() );
+
 			iY = ( oP.y + 0.5 ) / ratio.y + offset.y;
 			OIIO::floorfrac( iY, &iYI );
 

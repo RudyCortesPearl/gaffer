@@ -36,14 +36,16 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
 import Gaffer
 import GafferTest
 import GafferImage
+import GafferImageTest
 
-class OffsetTest( GafferTest.TestCase ) :
+class OffsetTest( GafferImageTest.ImageTestCase ) :
 
 	def testPassThrough( self ) :
 
@@ -53,9 +55,9 @@ class OffsetTest( GafferTest.TestCase ) :
 		o = GafferImage.Offset()
 		o["in"].setInput( c["out"] )
 
-		self.assertEqual( o["offset"].getValue(), IECore.V2i( 0 ) )
-		self.assertEqual( o["out"].imageHash(), c["out"].imageHash() )
-		self.assertEqual( o["out"].image(), c["out"].image() )
+		self.assertEqual( o["offset"].getValue(), imath.V2i( 0 ) )
+		self.assertImageHashesEqual( o["out"], c["out"] )
+		self.assertImagesEqual( o["out"], c["out"] )
 
 	def testDataWindow( self ) :
 
@@ -64,16 +66,16 @@ class OffsetTest( GafferTest.TestCase ) :
 
 		self.assertEqual(
 			c["out"]["dataWindow"].getValue(),
-			IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 2 ) )
+			imath.Box2i( imath.V2i( 0 ), imath.V2i( 2 ) )
 		)
 
 		o = GafferImage.Offset()
 		o["in"].setInput( c["out"] )
-		o["offset"].setValue( IECore.V2i( 1 ) )
+		o["offset"].setValue( imath.V2i( 1 ) )
 
 		self.assertEqual(
 			o["out"]["dataWindow"].getValue(),
-			IECore.Box2i( IECore.V2i( 1 ), IECore.V2i( 3 ) )
+			imath.Box2i( imath.V2i( 1 ), imath.V2i( 3 ) )
 		)
 
 	def testChannelData( self ) :
@@ -83,7 +85,7 @@ class OffsetTest( GafferTest.TestCase ) :
 
 		o = GafferImage.Offset()
 		o["in"].setInput( c["out"] )
-		o["offset"].setValue( IECore.V2i( 1 ) )
+		o["offset"].setValue( imath.V2i( 1 ) )
 
 		def sample( image, channelName, pos ) :
 
@@ -93,15 +95,45 @@ class OffsetTest( GafferTest.TestCase ) :
 		for yOffset in range( -10, 10 ) :
 			for xOffset in range( -10, 10 ) :
 
-				o["offset"].setValue( IECore.V2i( xOffset, yOffset ) )
+				o["offset"].setValue( imath.V2i( xOffset, yOffset ) )
 
 				for y in range( 0, 2 ) :
 					for x in range( 0, 2 ) :
 						for channelName in ( "R", "G", "B", "A" ) :
 							self.assertEqual(
-								sample( o["out"], channelName, IECore.V2i( x + xOffset, y + yOffset ) ),
-								sample( c["out"], channelName, IECore.V2i( x, y ) ),
+								sample( o["out"], channelName, imath.V2i( x + xOffset, y + yOffset ) ),
+								sample( c["out"], channelName, imath.V2i( x, y ) ),
 						)
+
+	def testDeepOffset( self ) :
+
+		r = GafferImage.ImageReader()
+		r["fileName"].setValue( os.path.dirname( __file__ ) + "/images/representativeDeepImage.exr" )
+
+		od = GafferImage.Offset()
+		od["in"].setInput( r["out"] )
+		od["offset"].setValue( imath.V2i( 1 ) )
+
+		preFlat = GafferImage.DeepState()
+		preFlat["in"].setInput( r["out"] )
+		preFlat["deepState"].setValue( GafferImage.DeepState.TargetState.Flat )
+
+		of = GafferImage.Offset()
+		of["in"].setInput( preFlat["out"] )
+		of["offset"].setInput( od["offset"] )
+
+		s = GafferImage.DeepState()
+		s["in"].setInput( od["out"] )
+		s["deepState"].setValue( GafferImage.DeepState.TargetState.Flat )
+
+		tileSize = GafferImage.ImagePlug.tileSize()
+		for yOffset in [ -tileSize, -200, -107, -31, -1, 0, 1, 31, 107, 200, tileSize ] :
+			for xOffset in [ -tileSize, -200, -107, -31, -1, 0, 1, 31, 107, 200, tileSize ] :
+
+				od["offset"].setValue( imath.V2i( xOffset, yOffset ) )
+
+				self.assertImagesEqual( s["out"], of["out"] )
+
 
 	def testMultipleOfTileSize( self ) :
 
@@ -112,13 +144,13 @@ class OffsetTest( GafferTest.TestCase ) :
 		o["in"].setInput( c["out"] )
 
 		for offset in [
-			IECore.V2i( 0, 1 ),
-			IECore.V2i( 1, 0 ),
-			IECore.V2i( 2, 0 ),
-			IECore.V2i( 2, 1 ),
-			IECore.V2i( 2, -3 ),
-			IECore.V2i( -2, 3 ),
-			IECore.V2i( -1, -1 ),
+			imath.V2i( 0, 1 ),
+			imath.V2i( 1, 0 ),
+			imath.V2i( 2, 0 ),
+			imath.V2i( 2, 1 ),
+			imath.V2i( 2, -3 ),
+			imath.V2i( -2, 3 ),
+			imath.V2i( -1, -1 ),
 		] :
 
 			offset *= GafferImage.ImagePlug.tileSize()
@@ -126,11 +158,11 @@ class OffsetTest( GafferTest.TestCase ) :
 
 			self.assertEqual(
 				o["out"].channelDataHash( "R", offset ),
-				c["out"].channelDataHash( "R", IECore.V2i( 0 ) ),
+				c["out"].channelDataHash( "R", imath.V2i( 0 ) ),
 			)
 			self.assertEqual(
 				o["out"].channelData( "R", offset ),
-				c["out"].channelData( "R", IECore.V2i( 0 ) ),
+				c["out"].channelData( "R", imath.V2i( 0 ) ),
 			)
 
 	def testOffsetBack( self ) :
@@ -140,13 +172,13 @@ class OffsetTest( GafferTest.TestCase ) :
 
 		o1 = GafferImage.Offset()
 		o1["in"].setInput( c["out"] )
-		o1["offset"].setValue( IECore.V2i( 101, -45 ) )
+		o1["offset"].setValue( imath.V2i( 101, -45 ) )
 
 		o2 = GafferImage.Offset()
 		o2["in"].setInput( o1["out"] )
-		o2["offset"].setValue( IECore.V2i( -101, 45 ) )
+		o2["offset"].setValue( imath.V2i( -101, 45 ) )
 
-		self.assertEqual( c["out"].image(), o2["out"].image() )
+		self.assertImagesEqual( c["out"], o2["out"] )
 
 	def testChannelDataDirtyPropagation( self ) :
 
@@ -171,6 +203,24 @@ class OffsetTest( GafferTest.TestCase ) :
 		c["format"].setValue( GafferImage.Format( 100, 100 ) )
 
 		self.assertTrue( o["out"]["dataWindow"] in { x[0] for x in cs } )
+
+	def testOffsetEmpty( self ) :
+
+		c = GafferImage.Text()
+		c["text"].setValue( "" )
+
+		self.assertTrue( c["out"]["dataWindow"].getValue().isEmpty() )
+
+		o = GafferImage.Offset()
+		o["in"].setInput( c["out"] )
+		o["offset"].setValue( imath.V2i( 100, 100 ) )
+
+		self.assertTrue( o["out"]["dataWindow"].getValue().isEmpty() )
+
+		o["offset"].setValue( imath.V2i( -100, -100 ) )
+
+		self.assertTrue( o["out"]["dataWindow"].getValue().isEmpty() )
+
 
 if __name__ == "__main__":
 	unittest.main()

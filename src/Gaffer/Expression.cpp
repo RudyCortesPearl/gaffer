@@ -35,17 +35,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "Gaffer/Expression.h"
+
+#include "Gaffer/Action.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECore/Exception.h"
+#include "IECore/MessageHandler.h"
+
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
-
-#include "IECore/MessageHandler.h"
-#include "IECore/Exception.h"
-
-#include "Gaffer/Expression.h"
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/Context.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/Action.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -56,10 +58,10 @@ using namespace Gaffer;
 
 size_t Expression::g_firstPlugIndex;
 
-IE_CORE_DEFINERUNTIMETYPED( Expression );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Expression );
 
 Expression::Expression( const std::string &name )
-	:	ComputeNode( name ), m_engine( NULL )
+	:	ComputeNode( name ), m_engine( nullptr )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -69,7 +71,7 @@ Expression::Expression( const std::string &name )
 			Plug::In,
 			"",
 			Plug::Default & ~( Plug::AcceptsInputs | Plug::Serialisable ),
-			Context::NoSubstitutions
+			IECore::StringAlgo::NoSubstitutions
 		)
 	);
 	addChild(
@@ -78,13 +80,15 @@ Expression::Expression( const std::string &name )
 			Plug::In,
 			"",
 			Plug::Default & ~( Plug::AcceptsInputs | Plug::Serialisable ),
-			Context::NoSubstitutions
+			IECore::StringAlgo::NoSubstitutions
 		)
 	);
 
 	addChild( new ValuePlug( "__in", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
 	addChild( new ValuePlug( "__out", Plug::Out ) );
 	addChild( new ObjectVectorPlug( "__execute", Plug::Out, new ObjectVector ) );
+
+	plugSetSignal().connect( boost::bind( &Expression::plugSet, this, ::_1 ) );
 }
 
 Expression::~Expression()
@@ -144,7 +148,7 @@ void Expression::setExpression( const std::string &expression, const std::string
 				throw Exception( boost::str(
 					boost::format(
 						"Cannot both read from and write to plug \"%s\""
-					) % (*it)->relativeName( parent<GraphComponent>() )
+					) % (*it)->relativeName( parent() )
 				) );
 			}
 		}
@@ -303,7 +307,7 @@ void Expression::hash( const ValuePlug *output, const Context *context, IECore::
 
 		for( std::vector<IECore::InternedString>::const_iterator it = m_contextNames.begin(); it != m_contextNames.end(); it++ )
 		{
-			const IECore::Data *d = context->get<IECore::Data>( *it, 0 );
+			const IECore::Data *d = context->get<IECore::Data>( *it, nullptr );
 			if( d )
 			{
 				d->hash( h );
@@ -404,8 +408,8 @@ void Expression::updatePlug( ValuePlug *parentPlug, size_t childIndex, ValuePlug
 		// See if we can reuse the existing plug
 		Plug *existingChildPlug = parentPlug->getChild<Plug>( childIndex );
 		if(
-			( existingChildPlug->direction() == Plug::In && existingChildPlug->getInput<Plug>() == plug ) ||
-			( existingChildPlug->direction() == Plug::Out && plug->getInput<Plug>() == existingChildPlug )
+			( existingChildPlug->direction() == Plug::In && existingChildPlug->getInput() == plug ) ||
+			( existingChildPlug->direction() == Plug::Out && plug->getInput() == existingChildPlug )
 		)
 		{
 			return;
@@ -420,7 +424,7 @@ void Expression::updatePlug( ValuePlug *parentPlug, size_t childIndex, ValuePlug
 	// Finally we can add the plug we need.
 
 	PlugPtr childPlug = plug->createCounterpart( "p0", parentPlug->direction() );
-	childPlug->setFlags( Plug::Dynamic, true );
+	childPlug->setFlags( Plug::Dynamic | Plug::Serialisable, true );
 	parentPlug->addChild( childPlug );
 	if( childPlug->direction() == Plug::In )
 	{
@@ -467,7 +471,7 @@ std::string Expression::transcribe( const std::string &expression, bool toIntern
 		}
 		else
 		{
-			externalPlugs.push_back( NULL );
+			externalPlugs.push_back( nullptr );
 		}
 	}
 
@@ -481,6 +485,49 @@ std::string Expression::transcribe( const std::string &expression, bool toIntern
 	}
 }
 
+void Expression::plugSet( const Plug *plug )
+{
+	if( m_engine || plug != expressionPlug() )
+	{
+		return;
+	}
+
+	const std::string engineType = enginePlug()->getValue();
+	std::string expression = expressionPlug()->getValue();
+	if( engineType.empty() || expression.empty() )
+	{
+		return;
+	}
+
+	const ScriptNode *script = scriptNode();
+	if( !script || !script->isExecuting() )
+	{
+		IECore::msg( IECore::Msg::Warning, "Expression::plugSet", "Unexpected change to __engine plug. Should you be calling setExpression() instead?" );
+		return;
+	}
+
+	// We've just been loaded from serialised form. All our plugs
+	// will already have been connected appropriately by the serialisation,
+	// but we need to initialise m_engine so we're ready for hash/compute.
+
+	m_contextNames.clear();
+	m_engine = Engine::create( engineType );
+	expression = transcribe( expression, /* toInternalForm = */ false );
+	std::vector<ValuePlug *> inPlugs, outPlugs;
+	m_engine->parse( this, expression, inPlugs, outPlugs, m_contextNames );
+
+	// Alas, it's not quite that simple. Nodes might have been renamed
+	// during deserialisation (to avoid name clashes between duplicates).
+	// And PythonExpressionEngine returns plugs in an order that depends
+	// on name, so our internal plugs may not correspond to what it is
+	// expecting. Call `updatePlugs()` to fix any mismatches. Transcribe
+	// to internal form to match the state that `setExpression()` leaves
+	// us in.
+	updatePlugs( inPlugs, outPlugs );
+	expressionPlug()->setValue( transcribe( expression, /* toInternalForm = */ true ) );
+
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Expression::Engine implementation
 //////////////////////////////////////////////////////////////////////////
@@ -491,7 +538,7 @@ Expression::EnginePtr Expression::Engine::create( const std::string engineType )
 	CreatorMap::const_iterator it = m.find( engineType );
 	if( it == m.end() )
 	{
-		return NULL;
+		return nullptr;
 	}
 	return it->second();
 }

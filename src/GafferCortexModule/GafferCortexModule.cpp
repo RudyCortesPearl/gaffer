@@ -35,16 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "GafferCortexBindings/ParameterisedHolderBinding.h"
-#include "GafferCortexBindings/ParameterHandlerBinding.h"
-#include "GafferCortexBindings/CompoundParameterHandlerBinding.h"
-#include "GafferCortexBindings/OpHolderBinding.h"
-#include "GafferCortexBindings/ProceduralHolderBinding.h"
-#include "GafferCortexBindings/ExecutableOpHolderBinding.h"
+#include "CompoundParameterHandlerBinding.h"
+#include "ExecutableOpHolderBinding.h"
+#include "OpHolderBinding.h"
+#include "ParameterHandlerBinding.h"
+#include "ParameterisedHolderBinding.h"
 
 using namespace boost::python;
 using namespace Gaffer;
-using namespace GafferCortexBindings;
+using namespace GafferCortexModule;
 
 BOOST_PYTHON_MODULE( _GafferCortex )
 {
@@ -53,7 +52,6 @@ BOOST_PYTHON_MODULE( _GafferCortex )
 	bindParameterHandler();
 	bindCompoundParameterHandler();
 	bindOpHolder();
-	bindProceduralHolder();
 	bindExecutableOpHolder();
 
 }

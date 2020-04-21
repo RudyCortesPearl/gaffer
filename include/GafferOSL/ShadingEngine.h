@@ -35,25 +35,27 @@
 #ifndef GAFFEROSL_SHADINGENGINE_H
 #define GAFFEROSL_SHADINGENGINE_H
 
-#include "boost/container/flat_set.hpp"
+#include "GafferOSL/Export.h"
+#include "GafferOSL/TypeIds.h"
+
+#include "IECoreScene/ShaderNetwork.h"
 
 #include "IECore/CompoundData.h"
-#include "IECore/ObjectVector.h"
 
-#include "GafferOSL/TypeIds.h"
+#include "boost/container/flat_set.hpp"
 
 namespace GafferOSL
 {
 
-class ShadingEngine : public IECore::RefCounted
+class GAFFEROSL_API ShadingEngine : public IECore::RefCounted
 {
 
 	public :
 
 		IE_CORE_DECLAREMEMBERPTR( ShadingEngine )
 
-		ShadingEngine( const IECore::ObjectVector *shaderNetwork );
-		~ShadingEngine();
+		ShadingEngine( const IECoreScene::ShaderNetwork *shaderNetwork );
+		~ShadingEngine() override;
 
 		struct Transform
 		{
@@ -79,19 +81,29 @@ class ShadingEngine : public IECore::RefCounted
 
 		typedef std::map<IECore::InternedString, Transform> Transforms;
 
+		/// Append a unique hash representing this shading engine to `h`.
+		void hash( IECore::MurmurHash &h ) const;
 		IECore::CompoundDataPtr shade( const IECore::CompoundData *points, const Transforms &transforms = Transforms() ) const;
 
-		bool needsAttribute( const std::string &scope, const std::string &name ) const;
+		bool needsAttribute( const std::string &name ) const;
+		bool hasDeformation() const;
 
 	private :
 
-		void queryAttributesNeeded();
+		void queryShaderGroup();
 
-		typedef boost::container::flat_set<std::pair<std::string, std::string> > AttributesNeededContainer;
+		const IECore::MurmurHash m_hash;
+
+		bool m_timeNeeded;
+		std::vector<IECore::InternedString> m_contextVariablesNeeded;
+
+		typedef boost::container::flat_set<std::string> AttributesNeededContainer;
 		AttributesNeededContainer m_attributesNeeded;
 
 		// Set to true if the shader reads attributes who's name is not know at compile time
 		bool m_unknownAttributesNeeded;
+
+		bool m_hasDeformation;
 
 		void *m_shaderGroupRef;
 

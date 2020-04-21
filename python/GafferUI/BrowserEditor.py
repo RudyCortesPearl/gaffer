@@ -37,25 +37,26 @@
 import os
 import weakref
 import threading
+import functools
 
 import IECore
 
 import Gaffer
 import GafferUI
 
-class BrowserEditor( GafferUI.EditorWidget ) :
+class BrowserEditor( GafferUI.Editor ) :
 
 	def __init__( self, scriptNode, **kw ) :
 
 		self.__column = GafferUI.ListContainer( borderWidth = 8, spacing = 6 )
 
-		GafferUI.EditorWidget.__init__( self, self.__column, scriptNode, **kw )
+		GafferUI.Editor.__init__( self, self.__column, scriptNode, **kw )
 
 		with self.__column :
 
 			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 6 ) :
 
-				GafferUI.Label( "Location" )
+				GafferUI.Label( "Mode" )
 
 				modeMenu = GafferUI.MultiSelectionMenu(
 					allowMultipleSelection = False,
@@ -63,7 +64,7 @@ class BrowserEditor( GafferUI.EditorWidget ) :
 				)
 				for mode in self.__modes :
 					modeMenu.append( mode[0] )
-				self.__modeChangedConnection = modeMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__modeChanged ) )
+				modeMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__modeChanged ), scoped = False )
 
 			self.__pathChooser = GafferUI.PathChooserWidget( Gaffer.DictPath( {}, "/" ), previewTypes=GafferUI.PathPreviewWidget.types() )
 			self.__pathChooser.pathWidget().setVisible( False )
@@ -107,7 +108,7 @@ class BrowserEditor( GafferUI.EditorWidget ) :
 
 			# create the op matcher on a separate thread, as it may take a while to trawl
 			# through all the available ops.
-			self.__opMatcher = None
+			self.__opMatcher = "__loading__"
 			threading.Thread( target = self.__createOpMatcher ).start()
 
 		def browser( self ) :
@@ -178,25 +179,33 @@ class BrowserEditor( GafferUI.EditorWidget ) :
 		# to provide action menu items for the ui.
 		def _createOpMatcher( self ) :
 
-			return Gaffer.OpMatcher.defaultInstance()
+			try :
+				import GafferCortex
+			except ImportError :
+				return None
+
+			## \todo Remove dependency on GafferCortex. Consider removing OpMatcher
+			# entirely and introducing mechanism for matching TaskNodes to files
+			# instead.
+			return GafferCortex.OpMatcher.defaultInstance()
 
 		def __contextMenu( self, pathListing ) :
 
+			if self.__opMatcher is None :
+				return False
+
 			menuDefinition = IECore.MenuDefinition()
 
-			if self.__opMatcher is not None :
-
+			if self.__opMatcher == "__loading__" :
+				menuDefinition.append( "/Loading actions...", { "active" : False } )
+			else  :
 				selectedPaths = pathListing.getSelectedPaths()
 				if len( selectedPaths ) == 1 :
 					parameterValue = selectedPaths[0]
 				else :
 					parameterValue = selectedPaths
 
-				menuDefinition.append( "/Actions", { "subMenu" : IECore.curry( Gaffer.WeakMethod( self.__actionsSubMenu ), parameterValue ) } )
-
-			else :
-
-				menuDefinition.append( "/Loading actions...", { "active" : False } )
+				menuDefinition.append( "/Actions", { "subMenu" : functools.partial( Gaffer.WeakMethod( self.__actionsSubMenu ), parameterValue ) } )
 
 			self.__menu = GafferUI.Menu( menuDefinition )
 			if len( menuDefinition.items() ) :
@@ -243,7 +252,7 @@ class BrowserEditor( GafferUI.EditorWidget ) :
 
 		cls.__modes.append( ( label, modeCreator ) )
 
-GafferUI.EditorWidget.registerType( "Browser", BrowserEditor )
+GafferUI.Editor.registerType( "Browser", BrowserEditor )
 
 class FileSystemMode( BrowserEditor.Mode ) :
 

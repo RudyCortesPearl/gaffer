@@ -34,79 +34,82 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/spin_mutex.h"
-#include "tbb/task.h"
-#include "tbb/parallel_for.h"
+#include "GafferScene/SceneAlgo.h"
 
-#include "boost/algorithm/string/predicate.hpp"
-
-#include "IECore/MatrixMotionTransform.h"
-#include "IECore/Camera.h"
-#include "IECore/CoordinateSystem.h"
-#include "IECore/ClippingPlane.h"
-#include "IECore/NullObject.h"
-#include "IECore/VisibleRenderable.h"
+#include "GafferScene/CameraTweaks.h"
+#include "GafferScene/Filter.h"
+#include "GafferScene/FilterProcessor.h"
+#include "GafferScene/PathFilter.h"
+#include "GafferScene/ScenePlug.h"
+#include "GafferScene/ShaderTweaks.h"
 
 #include "Gaffer/Context.h"
+#include "Gaffer/Monitor.h"
+#include "Gaffer/Process.h"
+#include "Gaffer/ScriptNode.h"
 
-#include "GafferScene/SceneAlgo.h"
-#include "GafferScene/Filter.h"
-#include "GafferScene/ScenePlug.h"
-#include "GafferScene/PathMatcher.h"
+#include "IECoreScene/Camera.h"
+#include "IECoreScene/ClippingPlane.h"
+#include "IECoreScene/CoordinateSystem.h"
+#include "IECoreScene/MatrixMotionTransform.h"
+#include "IECoreScene/VisibleRenderable.h"
+
+#include "IECore/MessageHandler.h"
+#include "IECore/NullObject.h"
+
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/unordered_map.hpp"
+
+#include "tbb/parallel_for.h"
+#include "tbb/spin_mutex.h"
+#include "tbb/task.h"
 
 using namespace std;
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-bool GafferScene::SceneAlgo::exists( const ScenePlug *scene, const ScenePlug::ScenePath &path )
-{
-	ScenePlug::PathScope pathScope( Context::current() );
-
-	ScenePlug::ScenePath p; p.reserve( path.size() );
-	for( ScenePlug::ScenePath::const_iterator it = path.begin(), eIt = path.end(); it != eIt; ++it )
-	{
-		pathScope.setPath( p );
-		ConstInternedStringVectorDataPtr childNamesData = scene->childNamesPlug()->getValue();
-		const vector<InternedString> &childNames = childNamesData->readable();
-		if( find( childNames.begin(), childNames.end(), *it ) == childNames.end() )
-		{
-			return false;
-		}
-		p.push_back( *it );
-	}
-
-	return true;
-}
-
-bool GafferScene::SceneAlgo::visible( const ScenePlug *scene, const ScenePlug::ScenePath &path )
-{
-	ScenePlug::PathScope pathScope( Context::current() );
-
-	ScenePlug::ScenePath p; p.reserve( path.size() );
-	for( ScenePlug::ScenePath::const_iterator it = path.begin(), eIt = path.end(); it != eIt; ++it )
-	{
-		p.push_back( *it );
-		pathScope.setPath( p );
-
-		ConstCompoundObjectPtr attributes = scene->attributesPlug()->getValue();
-		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
-		if( visibilityData && !visibilityData->readable() )
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
+//////////////////////////////////////////////////////////////////////////
+// Filter queries
+//////////////////////////////////////////////////////////////////////////
 
 namespace
 {
 
+void filteredNodesWalk( Plug *filterPlug, std::unordered_set<FilteredSceneProcessor *> &result )
+{
+	for( const auto &o : filterPlug->outputs() )
+	{
+		if( auto filteredSceneProcessor = runTimeCast<FilteredSceneProcessor>( o->node() ) )
+		{
+			if( o == filteredSceneProcessor->filterPlug() )
+			{
+				result.insert( filteredSceneProcessor );
+			}
+		}
+		else if( auto filterProcessor = runTimeCast<FilterProcessor>( o->node() ) )
+		{
+			if( o == filterProcessor->inPlug() || o->parent() == filterProcessor->inPlugs() )
+			{
+				filteredNodesWalk( filterProcessor->outPlug(), result );
+			}
+		}
+		else if( auto pathFilter = runTimeCast<PathFilter>( o->node() ) )
+		{
+			if( o == pathFilter->rootsPlug() )
+			{
+				filteredNodesWalk( pathFilter->outPlug(), result );
+			}
+		}
+		filteredNodesWalk( o, result );
+	}
+}
+
 struct ThreadablePathAccumulator
 {
-	ThreadablePathAccumulator( GafferScene::PathMatcher &result): m_result( result ){}
+	ThreadablePathAccumulator( PathMatcher &result): m_result( result ){}
 
 	bool operator()( const GafferScene::ScenePlug *scene, const GafferScene::ScenePlug::ScenePath &path )
 	{
@@ -116,11 +119,18 @@ struct ThreadablePathAccumulator
 	}
 
 	tbb::spin_mutex m_mutex;
-	GafferScene::PathMatcher &m_result;
+	PathMatcher &m_result;
 
 };
 
 } // namespace
+
+std::unordered_set<FilteredSceneProcessor *> GafferScene::SceneAlgo::filteredNodes( Filter *filter )
+{
+	std::unordered_set<FilteredSceneProcessor *> result;
+	filteredNodesWalk( filter->outPlug(), result );
+	return result;
+}
 
 void GafferScene::SceneAlgo::matchingPaths( const Filter *filter, const ScenePlug *scene, PathMatcher &paths )
 {
@@ -138,6 +148,10 @@ void GafferScene::SceneAlgo::matchingPaths( const PathMatcher &filter, const Sce
 	ThreadablePathAccumulator f( paths );
 	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filter, f );
 }
+
+//////////////////////////////////////////////////////////////////////////
+// Globals
+//////////////////////////////////////////////////////////////////////////
 
 IECore::ConstCompoundObjectPtr GafferScene::SceneAlgo::globalAttributes( const IECore::CompoundObject *globals )
 {
@@ -162,7 +176,7 @@ IECore::ConstCompoundObjectPtr GafferScene::SceneAlgo::globalAttributes( const I
 	return result;
 }
 
-Imath::V2f GafferScene::SceneAlgo::shutter( const IECore::CompoundObject *globals )
+Imath::V2f GafferScene::SceneAlgo::shutter( const IECore::CompoundObject *globals, const ScenePlug *scene )
 {
 	const BoolData *cameraBlurData = globals->member<BoolData>( "option:render:cameraBlur" );
 	const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
@@ -176,252 +190,32 @@ Imath::V2f GafferScene::SceneAlgo::shutter( const IECore::CompoundObject *global
 	V2f shutter( Context::current()->getFrame() );
 	if( cameraBlur || transformBlur || deformationBlur )
 	{
-		const V2fData *shutterData = globals->member<V2fData>( "option:render:shutter" );
-		const V2f relativeShutter = shutterData ? shutterData->readable() : V2f( -0.25, 0.25 );
+		ConstCameraPtr camera = nullptr;
+		const StringData *cameraOption = globals->member<StringData>( "option:render:camera" );
+		if( cameraOption && !cameraOption->readable().empty() )
+		{
+			ScenePlug::ScenePath cameraPath;
+			ScenePlug::stringToPath( cameraOption->readable(), cameraPath );
+			if( scene->exists( cameraPath ) )
+			{
+				camera = runTimeCast< const Camera>( scene->object( cameraPath ).get() );
+			}
+		}
+
+		V2f relativeShutter;
+		if( camera && camera->hasShutter() )
+		{
+			relativeShutter = camera->getShutter();
+		}
+		else
+		{
+			const V2fData *shutterData = globals->member<V2fData>( "option:render:shutter" );
+			relativeShutter = shutterData ? shutterData->readable() : V2f( -0.25, 0.25 );
+		}
 		shutter += relativeShutter;
 	}
 
 	return shutter;
-}
-
-IECore::TransformPtr GafferScene::SceneAlgo::transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur )
-{
-	int numSamples = 1;
-	if( motionBlur )
-	{
-		ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
-		const IntData *transformBlurSegmentsData = attributes->member<IntData>( "gaffer:transformBlurSegments" );
-		numSamples = transformBlurSegmentsData ? transformBlurSegmentsData->readable() + 1 : 2;
-
-		const BoolData *transformBlurData = attributes->member<BoolData>( "gaffer:transformBlur" );
-		if( transformBlurData && !transformBlurData->readable() )
-		{
-			numSamples = 1;
-		}
-	}
-
-	MatrixMotionTransformPtr result = new MatrixMotionTransform();
-	Context::EditableScope timeScope( Context::current() );
-	for( int i = 0; i < numSamples; i++ )
-	{
-		float frame = lerp( shutter[0], shutter[1], (float)i / std::max( 1, numSamples - 1 ) );
-		timeScope.setFrame( frame );
-		result->snapshots()[frame] = scene->fullTransform( path );
-	}
-
-	return result;
-}
-
-//////////////////////////////////////////////////////////////////////////
-// Camera algo
-// This is deprecated, and should be replaced by GafferScene::Preview::RendererAlgo::applyCameraGlobals
-// as we switch to new renderer backends, which will support the new renderRegion parameter
-//////////////////////////////////////////////////////////////////////////
-
-void GafferScene::SceneAlgo::applyCameraGlobals( IECore::Camera *camera, const IECore::CompoundObject *globals )
-{
-
-	// apply the resolution, aspect ratio and crop window
-
-	V2i resolution( 640, 480 );
-
-	const Box2fData *cropWindowData = NULL;
-	const V2iData *resolutionOverrideData = camera->parametersData()->member<V2iData>( "resolutionOverride" );
-	if( resolutionOverrideData )
-	{
-		// We allow a parameter on the camera to override the resolution from the globals - this
-		// is useful when defining secondary cameras for doing texture projections.
-		/// \todo Consider how this might fit in as part of a more comprehensive camera setup.
-		/// Perhaps we might actually want a specific Camera subclass for such things?
-		resolution = resolutionOverrideData->readable();
-	}
-	else
-	{
-		if( const V2iData *resolutionData = globals->member<V2iData>( "option:render:resolution" ) )
-		{
-			resolution = resolutionData->readable();
-		}
-
-		if( const FloatData *resolutionMultiplierData = globals->member<FloatData>( "option:render:resolutionMultiplier" ) )
-		{
-			resolution.x = int((float)resolution.x * resolutionMultiplierData->readable());
-			resolution.y = int((float)resolution.y * resolutionMultiplierData->readable());
-		}
-
-		const FloatData *pixelAspectRatioData = globals->member<FloatData>( "option:render:pixelAspectRatio" );
-		if( pixelAspectRatioData )
-		{
-			camera->parameters()["pixelAspectRatio"] = pixelAspectRatioData->copy();
-		}
-
-		cropWindowData = globals->member<Box2fData>( "option:render:cropWindow" );
-		if( cropWindowData )
-		{
-			camera->parameters()["cropWindow"] = cropWindowData->copy();
-		}
-	}
-
-	camera->parameters()["resolution"] = new V2iData( resolution );
-
-	// calculate an appropriate screen window
-
-	camera->addStandardParameters();
-
-	// apply overscan
-
-	const BoolData *overscanData = globals->member<BoolData>( "option:render:overscan" );
-	if( overscanData && overscanData->readable() && !resolutionOverrideData )
-	{
-
-		// get offsets for each corner of image (as a multiplier of the image width)
-		V2f minOffset( 0.1 ), maxOffset( 0.1 );
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanLeft" ) )
-		{
-			minOffset.x = overscanValueData->readable();
-		}
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanRight" ) )
-		{
-			maxOffset.x = overscanValueData->readable();
-		}
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanBottom" ) )
-		{
-			minOffset.y = overscanValueData->readable();
-		}
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanTop" ) )
-		{
-			maxOffset.y = overscanValueData->readable();
-		}
-
-		// convert those offsets into pixel values
-
-		V2i minPixelOffset(
-			int(minOffset.x * (float)resolution.x),
-			int(minOffset.y * (float)resolution.y)
-		);
-
-		V2i maxPixelOffset(
-			int(maxOffset.x * (float)resolution.x),
-			int(maxOffset.y * (float)resolution.y)
-		);
-
-		// recalculate original offsets to account for the rounding when
-		// converting to integer pixel space
-
-		minOffset = V2f(
-			(float)minPixelOffset.x / (float)resolution.x,
-			(float)minPixelOffset.y / (float)resolution.y
-		);
-
-		maxOffset = V2f(
-			(float)maxPixelOffset.x / (float)resolution.x,
-			(float)maxPixelOffset.y / (float)resolution.y
-		);
-
-		// adjust camera resolution and screen window appropriately
-
-		V2i &cameraResolution = camera->parametersData()->member<V2iData>( "resolution" )->writable();
-		Box2f &cameraScreenWindow = camera->parametersData()->member<Box2fData>( "screenWindow" )->writable();
-
-		cameraResolution += minPixelOffset + maxPixelOffset;
-
-		const Box2f originalScreenWindow = cameraScreenWindow;
-		cameraScreenWindow.min -= originalScreenWindow.size() * minOffset;
-		cameraScreenWindow.max += originalScreenWindow.size() * maxOffset;
-
-		// adjust crop window too, if it was specified by the user
-
-		if( cropWindowData )
-		{
-			Box2f &cameraCropWindow = camera->parametersData()->member<Box2fData>( "cropWindow" )->writable();
-			// convert into original screen space
-			Box2f cropWindowScreen(
-				V2f(
-					Imath::lerp( originalScreenWindow.min.x, originalScreenWindow.max.x, cameraCropWindow.min.x ),
-					Imath::lerp( originalScreenWindow.max.y, originalScreenWindow.min.y, cameraCropWindow.max.y )
-				),
-				V2f(
-					Imath::lerp( originalScreenWindow.min.x, originalScreenWindow.max.x, cameraCropWindow.max.x ),
-					Imath::lerp( originalScreenWindow.max.y, originalScreenWindow.min.y, cameraCropWindow.min.y )
-				)
-			);
-			// convert out of new screen space
-			cameraCropWindow = Box2f(
-				V2f(
-					lerpfactor( cropWindowScreen.min.x, cameraScreenWindow.min.x, cameraScreenWindow.max.x ),
-					lerpfactor( cropWindowScreen.max.y, cameraScreenWindow.max.y, cameraScreenWindow.min.y )
-				),
-				V2f(
-					lerpfactor( cropWindowScreen.max.x, cameraScreenWindow.min.x, cameraScreenWindow.max.x ),
-					lerpfactor( cropWindowScreen.min.y, cameraScreenWindow.max.y, cameraScreenWindow.min.y )
-				)
-			);
-		}
-
-	}
-
-	// apply the shutter
-
-	camera->parameters()["shutter"] = new V2fData( shutter( globals ) );
-
-}
-
-IECore::CameraPtr GafferScene::SceneAlgo::camera( const ScenePlug *scene, const IECore::CompoundObject *globals )
-{
-	ConstCompoundObjectPtr computedGlobals;
-	if( !globals )
-	{
-		computedGlobals = scene->globalsPlug()->getValue();
-		globals = computedGlobals.get();
-	}
-
-	const StringData *cameraPathData = globals->member<StringData>( "option:render:camera" );
-	if( cameraPathData && !cameraPathData->readable().empty() )
-	{
-		ScenePlug::ScenePath cameraPath;
-		ScenePlug::stringToPath( cameraPathData->readable(), cameraPath );
-		return camera( scene, cameraPath, globals );
-	}
-	else
-	{
-		CameraPtr defaultCamera = new IECore::Camera();
-		applyCameraGlobals( defaultCamera.get(), globals );
-		return defaultCamera;
-	}
-}
-
-IECore::CameraPtr GafferScene::SceneAlgo::camera( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals )
-{
-	ConstCompoundObjectPtr computedGlobals;
-	if( !globals )
-	{
-		computedGlobals = scene->globalsPlug()->getValue();
-		globals = computedGlobals.get();
-	}
-
-	std::string cameraName;
-	ScenePlug::pathToString( cameraPath, cameraName );
-
-	if( !exists( scene, cameraPath ) )
-	{
-		throw IECore::Exception( "Camera \"" + cameraName + "\" does not exist" );
-	}
-
-	IECore::ConstCameraPtr constCamera = runTimeCast<const IECore::Camera>( scene->object( cameraPath ) );
-	if( !constCamera )
-	{
-		std::string path; ScenePlug::pathToString( cameraPath, path );
-		throw IECore::Exception( "Location \"" + cameraName + "\" is not a camera" );
-	}
-
-	IECore::CameraPtr camera = constCamera->copy();
-	camera->setName( cameraName );
-
-	const BoolData *cameraBlurData = globals->member<BoolData>( "option:render:cameraBlur" );
-	const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
-	camera->setTransform( transform( scene, cameraPath, shutter( globals ), cameraBlur ) );
-
-	applyCameraGlobals( camera.get(), globals );
-	return camera;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -435,37 +229,6 @@ bool GafferScene::SceneAlgo::setExists( const ScenePlug *scene, const IECore::In
 	return std::find( setNames.begin(), setNames.end(), setName ) != setNames.end();
 }
 
-namespace
-{
-
-struct Sets
-{
-
-	Sets( const ScenePlug *scene, const Context *context, const std::vector<InternedString> &names, std::vector<GafferScene::ConstPathMatcherDataPtr> &sets )
-		:	m_scene( scene ), m_context( context ), m_names( names ), m_sets( sets )
-	{
-	}
-
-	void operator()( const tbb::blocked_range<size_t> &r ) const
-	{
-		Context::Scope scopedContext( m_context );
-		for( size_t i=r.begin(); i!=r.end(); ++i )
-		{
-			m_sets[i] = m_scene->set( m_names[i] );
-		}
-	}
-
-	private :
-
-		const ScenePlug *m_scene;
-		const Context *m_context;
-		const std::vector<InternedString> &m_names;
-		std::vector<GafferScene::ConstPathMatcherDataPtr> &m_sets;
-
-} ;
-
-} // namespace
-
 IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scene )
 {
 	ConstInternedStringVectorDataPtr setNamesData = scene->setNamesPlug()->getValue();
@@ -474,37 +237,404 @@ IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scen
 
 IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scene, const std::vector<IECore::InternedString> &setNames )
 {
-	std::vector<GafferScene::ConstPathMatcherDataPtr> setsVector;
-	setsVector.resize( setNames.size(), NULL );
+	std::vector<IECore::ConstPathMatcherDataPtr> setsVector;
+	setsVector.resize( setNames.size(), nullptr );
 
-	Sets setsCompute( scene, Context::current(), setNames, setsVector );
-	parallel_for( tbb::blocked_range<size_t>( 0, setsVector.size() ), setsCompute );
+	const ThreadState &threadState = ThreadState::current();
+
+	tbb::task_group_context taskGroupContext( tbb::task_group_context::isolated );
+	parallel_for(
+
+		tbb::blocked_range<size_t>( 0, setsVector.size() ),
+
+		[scene, &setNames, &threadState, &setsVector]( const tbb::blocked_range<size_t> &r ) {
+
+			ScenePlug::SetScope setScope( threadState );
+			for( size_t i=r.begin(); i!=r.end(); ++i )
+			{
+				setScope.setSetName( setNames[i] );
+				setsVector[i] = scene->setPlug()->getValue();
+			}
+
+		},
+
+		taskGroupContext // Prevents outer tasks silently cancelling our tasks
+
+	);
 
 	CompoundDataPtr result = new CompoundData;
 	for( size_t i = 0, e = setsVector.size(); i < e; ++i )
 	{
 		// The const_pointer_cast is ok because we're just using it to put the set into
 		// a container that will be const on return - we never modify the set itself.
-		result->writable()[setNames[i]] = boost::const_pointer_cast<GafferScene::PathMatcherData>( setsVector[i] );
+		result->writable()[setNames[i]] = boost::const_pointer_cast<PathMatcherData>( setsVector[i] );
 	}
 	return result;
 }
 
+//////////////////////////////////////////////////////////////////////////
+// History
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+struct CapturedProcess
+{
+
+	typedef std::unique_ptr<CapturedProcess> Ptr;
+	typedef vector<Ptr> PtrVector;
+
+	InternedString type;
+	ConstPlugPtr plug;
+	ConstPlugPtr destinationPlug;
+	ContextPtr context;
+
+	PtrVector children;
+
+};
+
+/// \todo Perhaps add this to the Gaffer module as a
+/// public class, and expose it within the stats app?
+/// Give a bit more thought to the CapturedProcess
+/// class if doing this.
+class CapturingMonitor : public Monitor
+{
+
+	public :
+
+		CapturingMonitor()
+		{
+		}
+
+		~CapturingMonitor() override
+		{
+		}
+
+		IE_CORE_DECLAREMEMBERPTR( CapturingMonitor )
+
+		const CapturedProcess::PtrVector &rootProcesses()
+		{
+			return m_rootProcesses;
+		}
+
+	protected :
+
+		void processStarted( const Process *process ) override
+		{
+			CapturedProcess::Ptr capturedProcess( new CapturedProcess );
+			capturedProcess->type = process->type();
+			capturedProcess->plug = process->plug();
+			capturedProcess->destinationPlug = process->destinationPlug();
+			capturedProcess->context = new Context( *process->context() );
+
+			Mutex::scoped_lock lock( m_mutex );
+
+			m_processMap[process] = capturedProcess.get();
+
+			ProcessMap::const_iterator it = m_processMap.find( process->parent() );
+			if( it != m_processMap.end() )
+			{
+				it->second->children.push_back( std::move( capturedProcess ) );
+			}
+			else
+			{
+				// Either `process->parent()` was null, or was started
+				// before we were made active via `Monitor::Scope`.
+				m_rootProcesses.push_back( std::move( capturedProcess ) );
+			}
+		}
+
+		void processFinished( const Process *process ) override
+		{
+			Mutex::scoped_lock lock( m_mutex );
+			m_processMap.erase( process );
+		}
+
+	private :
+
+		typedef tbb::spin_mutex Mutex;
+
+		Mutex m_mutex;
+		typedef boost::unordered_map<const Process *, CapturedProcess *> ProcessMap;
+		ProcessMap m_processMap;
+		CapturedProcess::PtrVector m_rootProcesses;
+
+};
+
+IE_CORE_DECLAREPTR( CapturingMonitor )
+
+InternedString g_contextUniquefierName = "__sceneAlgoHistory:uniquefier";
+uint64_t g_contextUniquefierValue = 0;
+
+SceneAlgo::History::Ptr historyWalk( const CapturedProcess *process, InternedString scenePlugChildName, SceneAlgo::History *parent )
+{
+	// Add a history item for each plug in the input chain
+	// between `process->destinationPlug()` and `process->plug()`
+	// (inclusive of each).
+
+	SceneAlgo::History::Ptr result;
+	Plug *plug = const_cast<Plug *>( process->destinationPlug.get() );
+	while( plug )
+	{
+		ScenePlug *scene = plug->parent<ScenePlug>();
+		if( scene && plug == scene->getChild( scenePlugChildName ) )
+		{
+			SceneAlgo::History::Ptr history = new SceneAlgo::History( scene, process->context );
+			if( !result )
+			{
+				result = history;
+			};
+			if( parent )
+			{
+				parent->predecessors.push_back( history );
+			}
+			parent = history.get();
+		}
+		plug = plug != process->plug ? plug->getInput() : nullptr;
+	}
+
+	// Add history items for upstream processes.
+
+	for( const auto &p : process->children )
+	{
+		// Parents may spawn other processes in support of the requested plug.
+		// We don't want these to show up in history output, so we only include
+		// ones that are directly in service of the requested plug.
+		if( p->plug->parent<ScenePlug>() && p->plug->getName() == scenePlugChildName )
+		{
+			historyWalk( p.get(), scenePlugChildName, parent );
+		}
+	}
+
+	return result;
+}
+
+/// \todo It's error prone to have to use SceneScope like this. Consider
+/// improvements to the FilterPlug so that you're forced to pass a scene
+/// somehow. The use of the context to provide the input scene is questionable
+/// anyway, and we don't tend to cache evaluations for `Filter.out`. So perhaps
+/// Filters shouldn't even be ComputeNodes, and FilterPlug shouldn't be an
+/// IntPlug, and instead we should pass a scene directly to some sort of
+/// `FilterPlug::match( const ScenePlug *scene )` method?
+int filterResult( const FilterPlug *filter, const ScenePlug *scene )
+{
+	FilterPlug::SceneScope scope( Context::current(), scene );
+	return filter->getValue();
+}
+
+SceneProcessor *objectTweaksWalk( const SceneAlgo::History *h )
+{
+	if( auto tweaks = h->scene->parent<CameraTweaks>() )
+	{
+		if( h->scene == tweaks->outPlug() )
+		{
+			Context::Scope contextScope( h->context.get() );
+			if( filterResult( tweaks->filterPlug(), tweaks->inPlug() ) & PathMatcher::ExactMatch )
+			{
+				return tweaks;
+			}
+		}
+	}
+
+	for( const auto &p : h->predecessors )
+	{
+		if( auto tweaks = objectTweaksWalk( p.get() ) )
+		{
+			return tweaks;
+		}
+	}
+
+	return nullptr;
+}
+
+ShaderTweaks *shaderTweaksWalk( const SceneAlgo::History *h, const IECore::InternedString &attributeName )
+{
+	if( auto tweaks = h->scene->parent<ShaderTweaks>() )
+	{
+		if( h->scene == tweaks->outPlug() )
+		{
+			Context::Scope contextScope( h->context.get() );
+			if(
+				StringAlgo::matchMultiple( attributeName, tweaks->shaderPlug()->getValue() ) &&
+				( filterResult( tweaks->filterPlug(), tweaks->inPlug() ) & PathMatcher::ExactMatch )
+			)
+			{
+				return tweaks;
+			}
+		}
+	}
+
+	for( const auto &p : h->predecessors )
+	{
+		if( auto tweaks = shaderTweaksWalk( p.get(), attributeName ) )
+		{
+			return tweaks;
+		}
+	}
+
+	return nullptr;
+}
+
+} // namespace
+
+SceneAlgo::History::Ptr SceneAlgo::history( const Gaffer::ValuePlug *scenePlugChild, const ScenePlug::ScenePath &path )
+{
+	if( !scenePlugChild->parent<ScenePlug>() )
+	{
+		throw IECore::Exception( boost::str(
+			boost::format( "Plug \"%1%\" is not a child of a ScenePlug." ) % scenePlugChild->fullName()
+		) );
+	}
+
+	CapturingMonitorPtr monitor = new CapturingMonitor;
+	{
+		ScenePlug::PathScope pathScope( Context::current(), path );
+		// Trick to bypass the hash cache and get a full upstream evaluation.
+		pathScope.set( g_contextUniquefierName, g_contextUniquefierValue++ );
+		Monitor::Scope monitorScope( monitor );
+		scenePlugChild->hash();
+	}
+
+	if( monitor->rootProcesses().size() == 0 )
+	{
+		return new History(
+			const_cast<ScenePlug *>( scenePlugChild->parent<ScenePlug>() ),
+			new Context( *Context::current() )
+		);
+	}
+
+	assert( monitor->rootProcesses().size() == 1 );
+	return historyWalk( monitor->rootProcesses().front().get(), scenePlugChild->getName(), nullptr );
+}
+
+ScenePlug *SceneAlgo::source( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+{
+	History::ConstPtr h = history( scene->objectPlug(), path );
+	if( h )
+	{
+		const History *c = h.get();
+		while( c )
+		{
+			if( c->predecessors.empty() )
+			{
+				return c->scene.get();
+			}
+			else
+			{
+				c = c->predecessors.front().get();
+			}
+		}
+	}
+	return nullptr;
+}
+
+SceneProcessor *SceneAlgo::objectTweaks( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+{
+	History::ConstPtr h = history( scene->objectPlug(), path );
+	if( h )
+	{
+		return objectTweaksWalk( h.get() );
+	}
+	return nullptr;
+}
+
+ShaderTweaks *SceneAlgo::shaderTweaks( const ScenePlug *scene, const ScenePlug::ScenePath &path, const IECore::InternedString &attributeName )
+{
+	ScenePlug::ScenePath inheritancePath = path;
+	while( inheritancePath.size() )
+	{
+		ConstCompoundObjectPtr attributes = scene->attributes( inheritancePath );
+		if( attributes->member<Object>( attributeName ) )
+		{
+			History::ConstPtr h = history( scene->attributesPlug(), inheritancePath );
+			if( h )
+			{
+				return shaderTweaksWalk( h.get(), attributeName );
+			}
+		}
+		inheritancePath.pop_back();
+	}
+	return nullptr;
+}
+
+std::string SceneAlgo::sourceSceneName( const GafferImage::ImagePlug *image )
+{
+	if( !image )
+	{
+		return "";
+	}
+
+	// See if the image has the `gaffer:sourceScene` metadata entry that gives
+	// the root-relative path to the source scene plug
+	const ConstCompoundDataPtr metadata = image->metadata();
+	const StringData *plugPathData = metadata->member<StringData>( "gaffer:sourceScene" );
+
+	return plugPathData ? plugPathData->readable() : "";
+}
+
+ScenePlug *SceneAlgo::sourceScene( GafferImage::ImagePlug *image )
+{
+	const std::string path = sourceSceneName( image );
+	if( path.empty() )
+	{
+		return nullptr;
+	}
+
+	ScriptNode *scriptNode = image->source()->node()->scriptNode();
+	if( !scriptNode )
+	{
+		return nullptr;
+	}
+
+	return scriptNode->descendant<ScenePlug>( path );
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Miscellaneous
+//////////////////////////////////////////////////////////////////////////
+
+bool GafferScene::SceneAlgo::exists( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+{
+	return scene->exists( path );
+}
+
+bool GafferScene::SceneAlgo::visible( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+{
+	ScenePlug::PathScope pathScope( Context::current() );
+
+	ScenePlug::ScenePath p; p.reserve( path.size() );
+	for( ScenePlug::ScenePath::const_iterator it = path.begin(), eIt = path.end(); it != eIt; ++it )
+	{
+		p.push_back( *it );
+		pathScope.setPath( p );
+
+		ConstCompoundObjectPtr attributes = scene->attributesPlug()->getValue();
+		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
+		if( visibilityData && !visibilityData->readable() )
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
 Imath::Box3f GafferScene::SceneAlgo::bound( const IECore::Object *object )
 {
-	if( const IECore::VisibleRenderable *renderable = IECore::runTimeCast<const IECore::VisibleRenderable>( object ) )
+	if( const IECoreScene::VisibleRenderable *renderable = IECore::runTimeCast<const IECoreScene::VisibleRenderable>( object ) )
 	{
 		return renderable->bound();
 	}
-	else if( object->isInstanceOf( IECore::Camera::staticTypeId() ) )
+	else if( object->isInstanceOf( IECoreScene::Camera::staticTypeId() ) )
 	{
 		return Imath::Box3f( Imath::V3f( -0.5, -0.5, 0 ), Imath::V3f( 0.5, 0.5, 2.0 ) );
 	}
-	else if( object->isInstanceOf( IECore::CoordinateSystem::staticTypeId() ) )
+	else if( object->isInstanceOf( IECoreScene::CoordinateSystem::staticTypeId() ) )
 	{
 		return Imath::Box3f( Imath::V3f( 0 ), Imath::V3f( 1 ) );
 	}
-	else if( object->isInstanceOf( IECore::ClippingPlane::staticTypeId() ) )
+	else if( object->isInstanceOf( IECoreScene::ClippingPlane::staticTypeId() ) )
 	{
 		return Imath::Box3f( Imath::V3f( -0.5, -0.5, 0 ), Imath::V3f( 0.5 ) );
 	}

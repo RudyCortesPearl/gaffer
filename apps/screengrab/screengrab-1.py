@@ -36,6 +36,7 @@
 
 import os
 import time
+import imath
 
 import IECore
 
@@ -108,12 +109,12 @@ class screengrab( Gaffer.Application ) :
 				),
 
 				IECore.CompoundParameter(
-					name = "scriptEditor",
-					description = "Parameters that configure ScriptEditors.",
+					name = "pythonEditor",
+					description = "Parameters that configure PythonEditors.",
 					members = [
 						IECore.StringParameter(
 							name = "execute",
-							description = "Some python code to execute in the script editor.",
+							description = "Some python code to execute in the editor.",
 							defaultValue = "",
 						),
 					]
@@ -137,18 +138,18 @@ class screengrab( Gaffer.Application ) :
 						IECore.V3fParameter(
 							name = "viewDirection",
 							description = "The direction to view the framed objects in.",
-							defaultValue = IECore.V3f( -0.64, -0.422, -0.64 ),
+							defaultValue = imath.V3f( -0.64, -0.422, -0.64 ),
 						),
 					]
 				),
 
 				IECore.CompoundParameter(
-					name = "nodeGraph",
-					description = "Parameters that configure NodeGraphs.",
+					name = "graphEditor",
+					description = "Parameters that configure GraphEditors.",
 					members = [
 						IECore.StringVectorParameter(
 							name = "frame",
-							description = "The names of nodes to frame in the NodeGraph.",
+							description = "The names of nodes to frame in the GraphEditor.",
 							defaultValue = IECore.StringVectorData(),
 						),
 					],
@@ -160,17 +161,17 @@ class screengrab( Gaffer.Application ) :
 					members = [
 						IECore.StringVectorParameter(
 							name = "expandedPaths",
-							description = "A list of locations to expand in the Viewer and SceneHierarchy.",
+							description = "A list of locations to expand in the Viewer and HierarchyView.",
 							defaultValue = IECore.StringVectorData(),
 						),
 						IECore.StringVectorParameter(
 							name = "fullyExpandedPaths",
-							description = "A list of locations to expand fully in the Viewer and SceneHierarchy.",
+							description = "A list of locations to expand fully in the Viewer and HierarchyView.",
 							defaultValue = IECore.StringVectorData(),
 						),
 						IECore.StringVectorParameter(
 							name = "selectedPaths",
-							description = "A list of locations to select in the Viewer and SceneHierarchy.",
+							description = "A list of locations to select in the Viewer and HierarchyView.",
 							defaultValue = IECore.StringVectorData(),
 						),
 					]
@@ -277,11 +278,11 @@ class screengrab( Gaffer.Application ) :
 
 		GafferUI.EventLoop.waitForIdle()
 
-		for nodeGraph in scriptWindow.getLayout().editors( GafferUI.NodeGraph ) :
-			if args["nodeGraph"]["frame"] :
-				nodeGraph.frame( [ script.descendant( n ) for n in args["nodeGraph"]["frame"] ] )
+		for graphEditor in scriptWindow.getLayout().editors( GafferUI.GraphEditor ) :
+			if args["graphEditor"]["frame"] :
+				graphEditor.frame( [ script.descendant( n ) for n in args["graphEditor"]["frame"] ] )
 			else :
-				nodeGraph.frame( script.children( Gaffer.Node ) )
+				graphEditor.frame( script.children( Gaffer.Node ) )
 
 		# Set up the NodeEditors as requested.
 
@@ -296,18 +297,18 @@ class screengrab( Gaffer.Application ) :
 					grabWidget = GafferUI.PlugValueWidget.acquire( script.descendant( args["nodeEditor"]["grab"].value ) )
 				self.setGrabWidget( grabWidget )
 
-		# Set up the ScriptEditors as requested.
+		# Set up the PythonEditors as requested.
 
-		for scriptEditor in scriptWindow.getLayout().editors( GafferUI.ScriptEditor ) :
+		for pythonEditor in scriptWindow.getLayout().editors( GafferUI.PythonEditor ) :
 
-			if args["scriptEditor"]["execute"].value :
-				scriptEditor.inputWidget().setText( args["scriptEditor"]["execute"].value )
-				scriptEditor.inputWidget()._qtWidget().selectAll()
-				scriptEditor.execute()
+			if args["pythonEditor"]["execute"].value :
+				pythonEditor.inputWidget().setText( args["pythonEditor"]["execute"].value )
+				pythonEditor.inputWidget()._qtWidget().selectAll()
+				pythonEditor.execute()
 
 		# Set up the Viewers as requested.
 
-		pathsToFrame = GafferScene.PathMatcher( list( args["viewer"]["framedObjects"] ) )
+		pathsToFrame = IECore.PathMatcher( list( args["viewer"]["framedObjects"] ) )
 		for viewer in scriptWindow.getLayout().editors( GafferUI.Viewer ) :
 			if isinstance( viewer.view(), GafferSceneUI.SceneView ) :
 				viewer.view()["minimumExpansionDepth"].setValue( args["viewer"]["minimumExpansionDepth"].value )
@@ -320,17 +321,17 @@ class screengrab( Gaffer.Application ) :
 
 		GafferSceneUI.ContextAlgo.clearExpansion( script.context() )
 
-		pathsToExpand = GafferScene.PathMatcher( list( args["scene"]["fullyExpandedPaths"] ) + list( args["scene"]["expandedPaths"] ) )
+		pathsToExpand = IECore.PathMatcher( list( args["scene"]["fullyExpandedPaths"] ) + list( args["scene"]["expandedPaths"] ) )
 		GafferSceneUI.ContextAlgo.expand( script.context(), pathsToExpand )
 
-		pathsToFullyExpand = GafferScene.PathMatcher( list( args["scene"]["fullyExpandedPaths"] ) )
+		pathsToFullyExpand = IECore.PathMatcher( list( args["scene"]["fullyExpandedPaths"] ) )
 
 		with script.context() :
 			for node in script.selection() :
 				for scenePlug in [ p for p in node.children( GafferScene.ScenePlug ) if p.direction() == Gaffer.Plug.Direction.Out ] :
 					GafferSceneUI.ContextAlgo.expandDescendants( script.context(), pathsToFullyExpand, scenePlug )
 
-		GafferSceneUI.ContextAlgo.setSelectedPaths( script.context(), GafferScene.PathMatcher( args["scene"]["selectedPaths"] ) )
+		GafferSceneUI.ContextAlgo.setSelectedPaths( script.context(), IECore.PathMatcher( args["scene"]["selectedPaths"] ) )
 
 		# Add a delay.
 

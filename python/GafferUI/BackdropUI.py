@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -45,12 +47,12 @@ import GafferUI
 # for particular applications append it if it suits their purposes.
 def nodeMenuCreateCommand( menu ) :
 
-	nodeGraph = menu.ancestor( GafferUI.NodeGraph )
-	assert( nodeGraph is not None )
-	gadgetWidget = nodeGraph.graphGadgetWidget()
-	graphGadget = nodeGraph.graphGadget()
+	graphEditor = menu.ancestor( GafferUI.GraphEditor )
+	assert( graphEditor is not None )
+	gadgetWidget = graphEditor.graphGadgetWidget()
+	graphGadget = graphEditor.graphGadget()
 
-	script = nodeGraph.scriptNode()
+	script = graphEditor.scriptNode()
 
 	with Gaffer.UndoScope( script ) :
 
@@ -65,10 +67,10 @@ def nodeMenuCreateCommand( menu ) :
 		else :
 			menuPosition = menu.popupPosition( relativeTo = gadgetWidget )
 			nodePosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
-				IECore.V2f( menuPosition.x, menuPosition.y ),
+				imath.V2f( menuPosition.x, menuPosition.y ),
 				gadget = graphGadget
 			).p0
-			graphGadget.setNodePosition( backdrop, IECore.V2f( nodePosition.x, nodePosition.y ) )
+			graphGadget.setNodePosition( backdrop, imath.V2f( nodePosition.x, nodePosition.y ) )
 
 	return backdrop
 

@@ -39,6 +39,9 @@ import IECore
 import Gaffer
 import GafferDispatch
 
+## \deprecated Use `Gaffer.Switch` instead.
+# \todo Move to a compatibility config, perhaps reimplemented
+# as a Switch node embedded inside a TaskNode.
 class TaskSwitch( GafferDispatch.TaskNode ) :
 
 	def __init__( self, name = "TaskSwitch" ) :
@@ -51,12 +54,7 @@ class TaskSwitch( GafferDispatch.TaskNode ) :
 
 		index = self["index"].getValue()
 		index = index % ( len( self["preTasks"] ) - 1 )
-
-		source = self["preTasks"][index].source()
-		if source.isSame( self["preTasks"][index] ) or not isinstance( source.node(), GafferDispatch.TaskNode ) :
-			return []
-
-		return [ self.Task( source.node(), context ) ]
+		return [ self.Task( self["preTasks"][index], context ) ]
 
 	def hash( self, context ) :
 

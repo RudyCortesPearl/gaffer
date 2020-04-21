@@ -51,14 +51,16 @@ class DeleteSceneContextVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		a = GafferScene.Attributes()
 		a["in"].setInput( p["out"] )
-		a["attributes"].addMember( "user:something", IECore.StringData( "$a" ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "user:something", IECore.StringData( "$a" ) ) )
 
-		d = GafferScene.DeleteSceneContextVariables()
+		d = Gaffer.DeleteContextVariables()
+		d.setup( GafferScene.ScenePlug() )
 		d["in"].setInput( a["out"] )
 
-		c = GafferScene.SceneContextVariables()
+		c = Gaffer.ContextVariables()
+		c.setup( GafferScene.ScenePlug() )
 		c["in"].setInput( d["out"] )
-		c["variables"].addMember( "a", IECore.StringData( "aardvark" ) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "a", IECore.StringData( "aardvark" ) ) )
 
 		self.assertEqual( a["out"].attributes( "/plane" )["user:something"], IECore.StringData( "" ) )
 		self.assertEqual( c["out"].attributes( "/plane" )["user:something"], IECore.StringData( "aardvark" ) )

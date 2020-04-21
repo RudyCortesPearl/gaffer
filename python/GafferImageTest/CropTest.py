@@ -37,6 +37,7 @@
 
 import unittest
 import os
+import imath
 
 import IECore
 
@@ -49,6 +50,8 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 
 	imageFileUndersizeDataWindow = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/blueWithDataWindow.100x100.exr" )
 	imageFileOversizeDataWindow = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checkerWithNegWindows.200x150.exr" )
+	representativeDeepImagePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/representativeDeepImage.exr" )
+
 
 	def testDefaultState( self ) :
 
@@ -71,14 +74,14 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		crop = GafferImage.Crop()
 		crop["in"].setInput(i["out"])
 		crop["areaSource"].setValue( GafferImage.Crop.AreaSource.Area )
-		crop["area"].setValue( IECore.Box2i( IECore.V2i( 40 ), IECore.V2i( 50 ) ) )
+		crop["area"].setValue( imath.Box2i( imath.V2i( 40 ), imath.V2i( 50 ) ) )
 		crop["affectDataWindow"].setValue( True )
 		crop["affectDisplayWindow"].setValue( True )
 		crop["resetOrigin"].setValue( False )
 
-		self.assertEqual(i['out'].channelDataHash( "R", IECore.V2i( 0 ) ), crop['out'].channelDataHash( "R", IECore.V2i( 0 ) ) )
-		self.assertEqual(i['out'].channelDataHash( "G", IECore.V2i( 0 ) ), crop['out'].channelDataHash( "G", IECore.V2i( 0 ) ) )
-		self.assertEqual(i['out'].channelDataHash( "B", IECore.V2i( 0 ) ), crop['out'].channelDataHash( "B", IECore.V2i( 0 ) ) )
+		self.assertEqual(i['out'].channelDataHash( "R", imath.V2i( 0 ) ), crop['out'].channelDataHash( "R", imath.V2i( 0 ) ) )
+		self.assertEqual(i['out'].channelDataHash( "G", imath.V2i( 0 ) ), crop['out'].channelDataHash( "G", imath.V2i( 0 ) ) )
+		self.assertEqual(i['out'].channelDataHash( "B", imath.V2i( 0 ) ), crop['out'].channelDataHash( "B", imath.V2i( 0 ) ) )
 
 		self.assertEqual( i["out"]["metadata"].hash(), crop["out"]["metadata"].hash() )
 		self.assertEqual( i["out"]["channelNames"].hash(), crop["out"]["channelNames"].hash() )
@@ -112,12 +115,12 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		crop2 = GafferImage.Crop()
 		crop2['in'].setInput( constant['out'] )
 		crop2['areaSource'].setValue( GafferImage.Crop.AreaSource.Area )
-		crop2['area'].setValue( IECore.Box2i( IECore.V2i( 0, 0 ), IECore.V2i( 2048, 1152 ) ) )
+		crop2['area'].setValue( imath.Box2i( imath.V2i( 0, 0 ), imath.V2i( 2048, 1152 ) ) )
 
 		self.assertEqual( crop1['out']['dataWindow'].getValue(), crop2['out']['dataWindow'].getValue() )
 
 		crop1['formatCenter'].setValue( True )
-		crop2['area'].setValue( IECore.Box2i( IECore.V2i( -512, -288 ), IECore.V2i( 1536, 864 ) ) )
+		crop2['area'].setValue( imath.Box2i( imath.V2i( -512, -288 ), imath.V2i( 1536, 864 ) ) )
 		crop2['resetOrigin'].setValue( True )
 
 		self.assertEqual( crop1['out']['dataWindow'].getValue(), crop2['out']['dataWindow'].getValue() )
@@ -130,11 +133,11 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		crop = GafferImage.Crop()
 		crop["in"].setInput(i["out"])
 		crop["areaSource"].setValue( GafferImage.Crop.AreaSource.Area )
-		crop["area"].setValue( IECore.Box2i( IECore.V2i( 40 ), IECore.V2i( 50 ) ) )
+		crop["area"].setValue( imath.Box2i( imath.V2i( 40 ), imath.V2i( 50 ) ) )
 		crop["affectDataWindow"].setValue( True )
 		crop["affectDisplayWindow"].setValue( False )
 
-		self.assertEqual( crop["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 40 ), IECore.V2i( 50 ) ) )
+		self.assertEqual( crop["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 40 ), imath.V2i( 50 ) ) )
 		self.assertEqual( i["out"]["format"].getValue(), crop["out"]["format"].getValue() )
 
 	def testAffectDisplayWindow( self ) :
@@ -145,18 +148,18 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		crop = GafferImage.Crop()
 		crop["in"].setInput(i["out"])
 		crop["areaSource"].setValue( GafferImage.Crop.AreaSource.Area )
-		crop["area"].setValue( IECore.Box2i( IECore.V2i( 40 ), IECore.V2i( 50 ) ) )
+		crop["area"].setValue( imath.Box2i( imath.V2i( 40 ), imath.V2i( 50 ) ) )
 		crop["affectDataWindow"].setValue( False )
 		crop["affectDisplayWindow"].setValue( True )
 		crop["resetOrigin"].setValue( False )
 
-		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), IECore.Box2i( IECore.V2i( 40 ), IECore.V2i( 50 ) ) )
+		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), imath.Box2i( imath.V2i( 40 ), imath.V2i( 50 ) ) )
 		self.assertEqual( i["out"]["dataWindow"].getValue(), crop["out"]["dataWindow"].getValue() )
 
 		crop["resetOrigin"].setValue( True )
 
-		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 10 ) ) )
-		self.assertEqual( crop["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( -10 ), IECore.V2i( 40 ) ) )
+		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), imath.Box2i( imath.V2i( 0 ), imath.V2i( 10 ) ) )
+		self.assertEqual( crop["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( -10 ), imath.V2i( 40 ) ) )
 
 	def testIntersectDataWindow( self ) :
 
@@ -166,11 +169,11 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		crop = GafferImage.Crop()
 		crop["in"].setInput(i["out"])
 		crop["areaSource"].setValue( GafferImage.Crop.AreaSource.Area )
-		crop["area"].setValue( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 50 ) ) )
+		crop["area"].setValue( imath.Box2i( imath.V2i( 0 ), imath.V2i( 50 ) ) )
 		crop["affectDataWindow"].setValue( True )
 		crop["affectDisplayWindow"].setValue( False )
 
-		self.assertEqual( crop["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 30 ), IECore.V2i( 50 ) ) )
+		self.assertEqual( crop["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 30 ), imath.V2i( 50 ) ) )
 
 	def testDataWindowToDisplayWindow( self ) :
 
@@ -189,8 +192,8 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 
 		crop["resetOrigin"].setValue( True )
 
-		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 50 ) ) )
-		self.assertEqual( crop["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 50 ) ) )
+		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), imath.Box2i( imath.V2i( 0 ), imath.V2i( 50 ) ) )
+		self.assertEqual( crop["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 0 ), imath.V2i( 50 ) ) )
 
 	def testDisplayWindowToDataWindow( self ) :
 
@@ -211,15 +214,15 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 
 		self.assertEqual(
 			set( c.affects( c["affectDisplayWindow"] ) ),
-			{ c["out"]["format"], c["out"]["dataWindow"], c["__offset"]["x"], c["__offset"]["y"] }
+			{ c["out"]["format"], c["__offset"]["x"], c["__offset"]["y"] }
 		)
 
 		self.assertEqual(
 			set( c.affects( c["affectDataWindow"] ) ),
-			{ c["out"]["dataWindow"] }
+			{ c["__cropDataWindow"] }
 		)
 
-		self.assertTrue( c["out"]["dataWindow"] in set( c.affects( c["in"]["dataWindow"] ) ) )
+		self.assertTrue( c["__cropDataWindow"] in set( c.affects( c["in"]["dataWindow"] ) ) )
 		self.assertTrue( c["out"]["format"] in set( c.affects( c["in"]["format"] ) ) )
 
 	def testResetOrigin( self ) :
@@ -233,11 +236,11 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( crop["affectDataWindow"].getValue(), True )
 		self.assertEqual( crop["resetOrigin"].getValue(), True )
 
-		area = IECore.Box2i( IECore.V2i( 50 ), IECore.V2i( 100, 190 ) )
+		area = imath.Box2i( imath.V2i( 50 ), imath.V2i( 100, 190 ) )
 		crop["area"].setValue( area )
 
-		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), IECore.Box2i( IECore.V2i( 0 ), area.size() ) )
-		self.assertEqual( crop["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 0 ), area.size() ) )
+		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), imath.Box2i( imath.V2i( 0 ), area.size() ) )
+		self.assertEqual( crop["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 0 ), area.size() ) )
 
 		crop["resetOrigin"].setValue( False )
 
@@ -258,15 +261,53 @@ class CropTest( GafferImageTest.ImageTestCase ) :
 		crop["affectDisplayWindow"].setValue( True )
 		crop["affectDataWindow"].setValue( False )
 
-		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), IECore.Box2i( IECore.V2i( 0 ), area.size() ) )
-		self.assertEqual( crop["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( -50 ), IECore.V2i( 50, 150 ) ) )
+		self.assertEqual( crop["out"]["format"].getValue().getDisplayWindow(), imath.Box2i( imath.V2i( 0 ), area.size() ) )
+		self.assertEqual( crop["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( -50 ), imath.V2i( 50, 150 ) ) )
 
 	def testEmptyInput( self ) :
 
 		crop = GafferImage.Crop()
 
-		crop["area"]["min"].setValue( IECore.V2i( 20 ) )
+		crop["area"]["min"].setValue( imath.V2i( 20 ) )
 		self.assertTrue( GafferImage.BufferAlgo.empty( crop["out"]["dataWindow"].getValue() ) )
+
+	def testDeep( self ) :
+		representativeDeep = GafferImage.ImageReader()
+		representativeDeep["fileName"].setValue( self.representativeDeepImagePath )
+
+		deepCrop = GafferImage.Crop()
+		deepCrop["in"].setInput( representativeDeep["out"] )
+
+		postFlatten = GafferImage.DeepToFlat()
+		postFlatten["in"].setInput( deepCrop["out"] )
+
+		preFlatten = GafferImage.DeepToFlat()
+		preFlatten["in"].setInput( representativeDeep["out"] )
+
+		flatCrop = GafferImage.Crop()
+		flatCrop["in"].setInput( preFlatten["out"] )
+
+		dataWindow = representativeDeep["out"].dataWindow()
+
+		for affectDisplay in [ True, False ]:
+			for area in [
+				imath.Box2i( imath.V2i( 0, 0 ), imath.V2i( 150, 100 ) ),
+				imath.Box2i( imath.V2i( -10, -13 ), imath.V2i( 157, 103 ) ),
+				imath.Box2i( imath.V2i( 10, 13 ), imath.V2i( 143, 77 ) ),
+				imath.Box2i( imath.V2i( 37, 65 ), imath.V2i( 101, 67 ) ),
+				imath.Box2i( imath.V2i( 0, 0 ), imath.V2i( 149, 99 ) )
+			] :
+				deepCrop["area"].setValue( area )
+				flatCrop["area"].setValue( area )
+
+				self.assertImagesEqual( postFlatten["out"], flatCrop["out"] )
+
+	def testFormatAffectsOutput( self ) :
+
+		crop = GafferImage.Crop()
+		cs = GafferTest.CapturingSlot( crop.plugDirtiedSignal() )
+		crop["format"].setValue( GafferImage.Format( 100, 200 ) )
+		self.assertIn( crop["out"]["dataWindow"], { x[0] for x in cs } )
 
 if __name__ == "__main__":
 	unittest.main()

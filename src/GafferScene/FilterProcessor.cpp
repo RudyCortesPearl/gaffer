@@ -34,15 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/ArrayPlug.h"
-
 #include "GafferScene/FilterProcessor.h"
+
+#include "Gaffer/ArrayPlug.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( FilterProcessor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FilterProcessor );
 
 size_t FilterProcessor::g_firstPlugIndex = 0;
 
@@ -68,7 +68,7 @@ FilterProcessor::~FilterProcessor()
 
 FilterPlug *FilterProcessor::inPlug()
 {
-	GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	GraphComponent *p = getChild( g_firstPlugIndex );
 	if( FilterPlug *s = IECore::runTimeCast<FilterPlug>( p ) )
 	{
 		return s;
@@ -81,7 +81,7 @@ FilterPlug *FilterProcessor::inPlug()
 
 const FilterPlug *FilterProcessor::inPlug() const
 {
-	const GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	const GraphComponent *p = getChild( g_firstPlugIndex );
 	if( const FilterPlug *s = IECore::runTimeCast<const FilterPlug>( p ) )
 	{
 		return s;
@@ -104,15 +104,21 @@ const Gaffer::ArrayPlug *FilterProcessor::inPlugs() const
 
 bool FilterProcessor::sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const
 {
-	for( InputIntPlugIterator it( inPlugs() ); !it.done(); ++it )
+	if( const ArrayPlug *arrayIn = this->inPlugs() )
 	{
-		const Filter *filter = IECore::runTimeCast<const Filter>( (*it)->source<Plug>()->node() );
-		if( filter && filter != this && filter->sceneAffectsMatch( scene, child ) )
+		for( InputFilterPlugIterator it( arrayIn ); !it.done(); ++it )
 		{
-			return true;
+			if( (*it)->sceneAffectsMatch( scene, child ) )
+			{
+				return true;
+			}
 		}
+		return false;
 	}
-	return false;
+	else
+	{
+		return inPlug()->sceneAffectsMatch( scene, child );
+	}
 }
 
 Gaffer::Plug *FilterProcessor::correspondingInput( const Gaffer::Plug *output )

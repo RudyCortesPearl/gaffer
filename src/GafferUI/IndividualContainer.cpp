@@ -38,7 +38,7 @@
 
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( IndividualContainer );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( IndividualContainer );
 
 IndividualContainer::IndividualContainer( GadgetPtr child )
 	:	ContainerGadget( defaultName<IndividualContainer>() )
@@ -61,7 +61,7 @@ bool IndividualContainer::acceptsChild( const Gaffer::GraphComponent *potentialC
 
 void IndividualContainer::setChild( GadgetPtr child )
 {
-	GadgetPtr c = getChild<Gadget>();
+	GadgetPtr c = getChild();
 	if( c )
 	{
 		removeChild( c );

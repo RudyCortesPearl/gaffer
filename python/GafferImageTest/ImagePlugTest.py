@@ -37,6 +37,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 import Gaffer
@@ -51,14 +52,14 @@ class ImagePlugTest( GafferImageTest.ImageTestCase ) :
 		ts = GafferImage.ImagePlug.tileSize()
 
 		testCases = [
-			( IECore.V2i( ts-1, ts-1 ), IECore.V2i( 0, 0 ) ),
-			( IECore.V2i( ts, ts-1 ), IECore.V2i( ts, 0 ) ),
-			( IECore.V2i( ts, ts ), IECore.V2i( ts, ts ) ),
-			( IECore.V2i( ts*3-1, ts+5 ), IECore.V2i( ts*2, ts ) ),
-			( IECore.V2i( ts*3, ts-5 ), IECore.V2i( ts*3, 0 ) ),
-			( IECore.V2i( -ts+ts/2, 0 ), IECore.V2i( -ts, 0 ) ),
-			( IECore.V2i( ts*5+ts/3, -ts*4 ), IECore.V2i( ts*5, -ts*4 ) ),
-			( IECore.V2i( -ts+1, -ts-1 ), IECore.V2i( -ts, -ts*2 ) )
+			( imath.V2i( ts-1, ts-1 ), imath.V2i( 0, 0 ) ),
+			( imath.V2i( ts, ts-1 ), imath.V2i( ts, 0 ) ),
+			( imath.V2i( ts, ts ), imath.V2i( ts, ts ) ),
+			( imath.V2i( ts*3-1, ts+5 ), imath.V2i( ts*2, ts ) ),
+			( imath.V2i( ts*3, ts-5 ), imath.V2i( ts*3, 0 ) ),
+			( imath.V2i( -ts+ts/2, 0 ), imath.V2i( -ts, 0 ) ),
+			( imath.V2i( ts*5+ts/3, -ts*4 ), imath.V2i( ts*5, -ts*4 ) ),
+			( imath.V2i( -ts+1, -ts-1 ), imath.V2i( -ts, -ts*2 ) )
 		]
 
 		for input, expectedResult in testCases :
@@ -72,23 +73,23 @@ class ImagePlugTest( GafferImageTest.ImageTestCase ) :
 		ts = GafferImage.ImagePlug.tileSize()
 
 		for position, tileIndex in [
-			( IECore.V2i( -ts ), IECore.V2i( -1 ) ),
-			( IECore.V2i( -ts -1 ), IECore.V2i( -2 ) ),
-			( IECore.V2i( 0 ), IECore.V2i( 0 ) ),
-			( IECore.V2i( ts ), IECore.V2i( 1 ) ),
-			( IECore.V2i( ts - 1 ), IECore.V2i( 0 ) ),
+			( imath.V2i( -ts ), imath.V2i( -1 ) ),
+			( imath.V2i( -ts -1 ), imath.V2i( -2 ) ),
+			( imath.V2i( 0 ), imath.V2i( 0 ) ),
+			( imath.V2i( ts ), imath.V2i( 1 ) ),
+			( imath.V2i( ts - 1 ), imath.V2i( 0 ) ),
 		] :
 			self.assertEqual(
 				GafferImage.ImagePlug.tileIndex( position ),
 				tileIndex
 			)
 
-	def testDefaultChannelNamesMethod( self ) :
+	def testDefaultChannelNames( self ) :
 
-		channelNames = GafferImage.ImagePlug()['channelNames'].defaultValue()
-		self.assertTrue( 'R' in channelNames )
-		self.assertTrue( 'G' in channelNames )
-		self.assertTrue( 'B' in channelNames )
+		self.assertEqual(
+			GafferImage.ImagePlug()['channelNames'].defaultValue(),
+			IECore.StringVectorData()
+		)
 
 	def testCreateCounterpart( self ) :
 
@@ -131,12 +132,25 @@ class ImagePlugTest( GafferImageTest.ImageTestCase ) :
 
 	def testTypeNamePrefixes( self ) :
 
-		self.assertTypeNamesArePrefixed( GafferImage )
+		self.assertTypeNamesArePrefixed(
+			GafferImage,
+			namesToIgnore = {
+				"Gaffer::Switch", "Gaffer::ContextVariables",
+				"Gaffer::DeleteContextVariables",
+				"Gaffer::TimeWarp", "Gaffer::Loop",
+			}
+		)
 		self.assertTypeNamesArePrefixed( GafferImageTest )
 
 	def testDefaultNames( self ) :
 
-		self.assertDefaultNamesAreCorrect( GafferImage )
+		self.assertDefaultNamesAreCorrect(
+			GafferImage,
+			namesToIgnore = {
+				"ImageSwitch", "ImageContextVariables", "DeleteImageContextVariables", "ImageTimeWarp",
+				"ImageLoop",
+			}
+		)
 		self.assertDefaultNamesAreCorrect( GafferImageTest )
 
 	def testImageHash( self ) :
@@ -144,14 +158,14 @@ class ImagePlugTest( GafferImageTest.ImageTestCase ) :
 		r = GafferImage.ImageReader()
 		r['fileName'].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" ) )
 
-		h = r['out'].imageHash()
+		h = GafferImage.ImageAlgo.imageHash( r['out'] )
 
 		for i in range( 20 ) :
-			self.assertEqual( h, r['out'].imageHash() )
+			self.assertEqual( h, GafferImage.ImageAlgo.imageHash( r['out'] ) )
 
 		r['refreshCount'].setValue( 2 )
 
-		self.assertNotEqual( h, r['out'].imageHash() )
+		self.assertNotEqual( h, GafferImage.ImageAlgo.imageHash( r['out'] ) )
 
 	def testDefaultFormatForImage( self ) :
 
@@ -160,10 +174,137 @@ class ImagePlugTest( GafferImageTest.ImageTestCase ) :
 		with Gaffer.Context() as c :
 
 			GafferImage.FormatPlug.setDefaultFormat( c, GafferImage.Format( 100, 200 ) )
-			self.assertEqual( constant["out"].image().displayWindow, IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99, 199 ) ) )
+			self.assertEqual( GafferImage.ImageAlgo.image( constant["out"] ).displayWindow, imath.Box2i( imath.V2i( 0 ), imath.V2i( 99, 199 ) ) )
 
 			GafferImage.FormatPlug.setDefaultFormat( c, GafferImage.Format( 200, 300 ) )
-			self.assertEqual( constant["out"].image().displayWindow, IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 199, 299 ) ) )
+			self.assertEqual( GafferImage.ImageAlgo.image( constant["out"] ).displayWindow, imath.Box2i( imath.V2i( 0 ), imath.V2i( 199, 299 ) ) )
+
+	def testGlobalConvenienceMethods( self ) :
+
+		checker = GafferImage.Checkerboard()
+
+		metadata = GafferImage.ImageMetadata()
+		metadata["in"].setInput( checker["out"] )
+		metadata["metadata"].addChild( Gaffer.NameValuePlug( "test", 10 ) )
+
+		self.assertEqual( metadata["out"].format(), metadata["out"]["format"].getValue() )
+		self.assertEqual( metadata["out"].formatHash(), metadata["out"]["format"].hash() )
+
+		self.assertEqual( metadata["out"].dataWindow(), metadata["out"]["dataWindow"].getValue() )
+		self.assertEqual( metadata["out"].dataWindowHash(), metadata["out"]["dataWindow"].hash() )
+
+		self.assertEqual( metadata["out"].channelNames(), metadata["out"]["channelNames"].getValue() )
+		self.assertFalse( metadata["out"].channelNames().isSame( metadata["out"]["channelNames"].getValue( _copy = False ) ) )
+		self.assertTrue( metadata["out"].channelNames( _copy = False ).isSame( metadata["out"]["channelNames"].getValue( _copy = False ) ) )
+		self.assertEqual( metadata["out"].channelNamesHash(), metadata["out"]["channelNames"].hash() )
+
+		self.assertEqual( metadata["out"].metadata(), metadata["out"]["metadata"].getValue() )
+		self.assertFalse( metadata["out"].metadata().isSame( metadata["out"]["metadata"].getValue( _copy = False ) ) )
+		self.assertTrue( metadata["out"].metadata( _copy = False ).isSame( metadata["out"]["metadata"].getValue( _copy = False ) ) )
+		self.assertEqual( metadata["out"].metadataHash(), metadata["out"]["metadata"].hash() )
+
+	def testImageDeepException( self ) :
+
+		constant1 = GafferImage.Constant()
+		constant1["color"].setValue( imath.Color4f( 1 ) )
+
+		constant2 = GafferImage.Constant()
+		constant2["color"].setValue( imath.Color4f( 1 ) )
+
+		merge = GafferImage.DeepMerge()
+		merge["in"][0].setInput( constant1["out"] )
+		merge["in"][1].setInput( constant2["out"] )
+
+		with self.assertRaises( RuntimeError ) :
+			GafferImage.ImageAlgo.image( merge["out"] )
+
+	def testBlackTile( self ) :
+
+		ts = GafferImage.ImagePlug.tileSize()
+		tileDataCopiedA = GafferImage.ImagePlug.blackTile()
+		tileDataCopiedB = GafferImage.ImagePlug.blackTile()
+		self.__testTileData( tileDataCopiedA, ts*ts, value = 0.0 )
+
+		self.assertFalse( tileDataCopiedA.isSame( tileDataCopiedB ) )
+
+		tileDataNoCopyA = GafferImage.ImagePlug.blackTile( _copy = False )
+		tileDataNoCopyB = GafferImage.ImagePlug.blackTile( _copy = False )
+		self.__testTileData( tileDataNoCopyA, ts*ts, value = 0.0 )
+
+		self.assertTrue( tileDataNoCopyA.isSame( tileDataNoCopyB ) )
+
+	def testWhiteTile( self ) :
+
+		ts = GafferImage.ImagePlug.tileSize()
+		tileDataCopiedA = GafferImage.ImagePlug.whiteTile()
+		tileDataCopiedB = GafferImage.ImagePlug.whiteTile()
+		self.__testTileData( tileDataCopiedA, ts*ts, value = 1.0 )
+
+		self.assertFalse( tileDataCopiedA.isSame( tileDataCopiedB ) )
+
+		tileDataNoCopyA = GafferImage.ImagePlug.whiteTile( _copy = False )
+		tileDataNoCopyB = GafferImage.ImagePlug.whiteTile( _copy = False )
+		self.__testTileData( tileDataNoCopyA, ts*ts, value = 1.0 )
+
+		self.assertTrue( tileDataNoCopyA.isSame( tileDataNoCopyB ) )
+
+	def testEmptyTile( self ) :
+
+		tileDataCopiedA = GafferImage.ImagePlug.emptyTile()
+		tileDataCopiedB = GafferImage.ImagePlug.emptyTile()
+		self.__testTileData( tileDataCopiedA, 0, value = 0.0 )
+
+		self.assertFalse( tileDataCopiedA.isSame( tileDataCopiedB ) )
+
+		tileDataNoCopyA = GafferImage.ImagePlug.emptyTile( _copy = False )
+		tileDataNoCopyB = GafferImage.ImagePlug.emptyTile( _copy = False )
+		self.__testTileData( tileDataNoCopyA, 0, value = 0.0 )
+
+		self.assertTrue( tileDataNoCopyA.isSame( tileDataNoCopyB ) )
+
+	def testEmptyTileSampleOffsets( self ) :
+
+		ts = GafferImage.ImagePlug.tileSize()
+		tileDataCopiedA = GafferImage.ImagePlug.emptyTileSampleOffsets()
+		tileDataCopiedB = GafferImage.ImagePlug.emptyTileSampleOffsets()
+
+		self.__testTileData( tileDataCopiedA, (ts*ts), value = 0 )
+
+		self.assertFalse( tileDataCopiedA.isSame( tileDataCopiedB ) )
+
+		tileDataNoCopyA = GafferImage.ImagePlug.emptyTileSampleOffsets( _copy = False )
+		tileDataNoCopyB = GafferImage.ImagePlug.emptyTileSampleOffsets( _copy = False )
+		self.__testTileData( tileDataNoCopyA, (ts*ts), value = 0 )
+
+		self.assertTrue( tileDataNoCopyA.isSame( tileDataNoCopyB ) )
+
+	def testFlatTileSampleOffsets( self ) :
+
+		def valueFunc( i ) :
+			return i+1
+
+		ts = GafferImage.ImagePlug.tileSize()
+		tileDataCopiedA = GafferImage.ImagePlug.flatTileSampleOffsets()
+		tileDataCopiedB = GafferImage.ImagePlug.flatTileSampleOffsets()
+
+		self.__testTileData( tileDataCopiedA, (ts*ts), valueFunc = valueFunc )
+
+		self.assertFalse( tileDataCopiedA.isSame( tileDataCopiedB ) )
+
+		tileDataNoCopyA = GafferImage.ImagePlug.flatTileSampleOffsets( _copy = False )
+		tileDataNoCopyB = GafferImage.ImagePlug.flatTileSampleOffsets( _copy = False )
+		self.__testTileData( tileDataNoCopyA, (ts*ts), valueFunc = valueFunc )
+
+		self.assertTrue( tileDataNoCopyA.isSame( tileDataNoCopyB ) )
+
+	def __testTileData( self, tileData, numSamples, value = None, valueFunc = None ) :
+
+		self.assertEqual( len(tileData), numSamples )
+		for i in range( numSamples ) :
+			if valueFunc is not None:
+				self.assertEqual( tileData[i], valueFunc( i ) )
+			else:
+				self.assertEqual( tileData[i], value )
 
 if __name__ == "__main__":
 	unittest.main()

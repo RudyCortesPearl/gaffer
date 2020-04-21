@@ -34,25 +34,27 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "OpenEXR/ImathRandom.h"
-
-#include "IECore/Shader.h"
+#include "GafferScene/AttributeVisualiser.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/AttributeVisualiser.h"
+#include "IECoreScene/Shader.h"
+#include "IECoreScene/ShaderNetwork.h"
+
+#include "OpenEXR/ImathRandom.h"
 
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( AttributeVisualiser );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( AttributeVisualiser );
 
 size_t AttributeVisualiser::g_firstPlugIndex = 0;
 
 AttributeVisualiser::AttributeVisualiser( const std::string &name )
-	:	SceneElementProcessor( name, Filter::EveryMatch )
+	:	AttributeProcessor( name, IECore::PathMatcher::EveryMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -62,21 +64,14 @@ AttributeVisualiser::AttributeVisualiser( const std::string &name )
 	addChild( new FloatPlug( "min", Plug::In, 0.0f ) );
 	addChild( new FloatPlug( "max", Plug::In, 1.0f ) );
 
-	SplinefColor3f rampDefault;
-	rampDefault.points.insert( SplinefColor3f::Point( 1.0f, Color3f( 0.0f, 1.0f, 0.0f ) ) );
-	rampDefault.points.insert( SplinefColor3f::Point( 1.0f, Color3f( 0.0f, 1.0f, 0.0f ) ) );
-	rampDefault.points.insert( SplinefColor3f::Point( 0.0f, Color3f( 1.0f, 0.0f, 0.0f ) ) );
-	rampDefault.points.insert( SplinefColor3f::Point( 0.0f, Color3f( 1.0f, 0.0f, 0.0f ) ) );
+	SplinefColor3fPlug::ValueType rampDefault;
+	rampDefault.points.insert( SplinefColor3fPlug::ValueType::Point( 1.0f, Color3f( 0.0f, 1.0f, 0.0f ) ) );
+	rampDefault.points.insert( SplinefColor3fPlug::ValueType::Point( 0.0f, Color3f( 1.0f, 0.0f, 0.0f ) ) );
 	addChild( new SplinefColor3fPlug( "ramp", Plug::In, rampDefault ) );
 
 	addChild( new StringPlug( "shaderType", Plug::In, "gl:surface" ) );
 	addChild( new StringPlug( "shaderName", Plug::In, "Constant" ) );
 	addChild( new StringPlug( "shaderParameter", Plug::In, "Cs" ) );
-
-	// Fast pass-throughs for the things we don't alter.
-	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
-	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
-	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
 }
 
 AttributeVisualiser::~AttributeVisualiser()
@@ -163,11 +158,10 @@ const Gaffer::StringPlug *AttributeVisualiser::shaderParameterPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 7 );
 }
 
-void AttributeVisualiser::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+bool AttributeVisualiser::affectsProcessedAttributes( const Gaffer::Plug *input ) const
 {
-	SceneElementProcessor::affects( input, outputs );
-
-	if(
+	return
+		AttributeProcessor::affectsProcessedAttributes( input ) ||
 		input == attributeNamePlug() ||
 		input == modePlug() ||
 		input == minPlug() ||
@@ -176,19 +170,12 @@ void AttributeVisualiser::affects( const Gaffer::Plug *input, AffectedPlugsConta
 		input == shaderNamePlug() ||
 		input == shaderParameterPlug() ||
 		rampPlug()->isAncestorOf( input )
-	)
-	{
-		outputs.push_back( outPlug()->attributesPlug() );
-	}
-}
-
-bool AttributeVisualiser::processesAttributes() const
-{
-	return true;
+	;
 }
 
 void AttributeVisualiser::hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	AttributeProcessor::hashProcessedAttributes( path, context, h );
 	attributeNamePlug()->hash( h );
 	modePlug()->hash( h );
 	minPlug()->hash( h );
@@ -199,7 +186,7 @@ void AttributeVisualiser::hashProcessedAttributes( const ScenePath &path, const 
 	shaderParameterPlug()->hash( h );
 }
 
-IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const
+IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, const IECore::CompoundObject *inputAttributes ) const
 {
 	const std::string attributeName = attributeNamePlug()->getValue();
 	if( !attributeName.size() )
@@ -252,12 +239,9 @@ IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( 
 		const Shader *shader = runTimeCast<const Shader>( attribute );
 		if( !shader )
 		{
-			if( const ObjectVector *objectVector = runTimeCast<const ObjectVector>( attribute ) )
+			if( const ShaderNetwork *network = runTimeCast<const ShaderNetwork>( attribute ) )
 			{
-				if( objectVector->members().size() )
-				{
-					shader = runTimeCast<const Shader>( objectVector->members()[0].get() );
-				}
+				shader = network->outputShader();
 			}
 		}
 		if( shader )
@@ -286,6 +270,9 @@ IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( 
 			case BoolDataTypeId :
 				color = Color3f( static_cast<const BoolData *>( attribute )->readable() );
 				break;
+			case Color3fDataTypeId :
+				color = static_cast<const Color3fData *>( attribute )->readable();
+				break;
 			default :
 				throw IECore::Exception( boost::str(
 					boost::format( "Unsupported attribute data type \"%s\"" ) % attribute->typeName()
@@ -296,7 +283,7 @@ IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( 
 		color = ( color - min ) / ( max - min );
 		if( mode == FalseColor )
 		{
-			const SplinefColor3f ramp = rampPlug()->getValue();
+			const SplinefColor3f ramp = rampPlug()->getValue().spline();
 			color = ramp( color[0] );
 		}
 	}
@@ -305,8 +292,11 @@ IECore::ConstCompoundObjectPtr AttributeVisualiser::computeProcessedAttributes( 
 
 	ShaderPtr shader = new Shader( shaderNamePlug()->getValue(), shaderType );
 	shader->parameters()[shaderParameterPlug()->getValue()] = new Color3fData( color );
+	ShaderNetworkPtr shaderNetwork = new ShaderNetwork;
+	const InternedString handle = shaderNetwork->addShader( "surface", std::move( shader ) );
+	shaderNetwork->setOutput( handle );
 
-	result->members()[shaderType] = shader;
+	result->members()[shaderType] = shaderNetwork;
 
 	return result;
 }

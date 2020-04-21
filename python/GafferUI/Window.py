@@ -37,6 +37,7 @@
 
 import sys
 import warnings
+import imath
 
 import IECore
 
@@ -46,6 +47,7 @@ import Gaffer
 from Qt import QtCore
 from Qt import QtGui
 from Qt import QtWidgets
+import Qt
 
 class Window( GafferUI.ContainerWidget ) :
 
@@ -73,7 +75,7 @@ class Window( GafferUI.ContainerWidget ) :
 		if len( self.__caughtKeys() ):
 			# set up a key press handler, so we can catch various key presses and stop them being handled by the
 			# host application
-			self.__keyPressConnection = self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
+			self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
 
 
 		# \todo Does this hurt performance? Maybe keyPressSignal() should set this up when it's called?
@@ -82,8 +84,6 @@ class Window( GafferUI.ContainerWidget ) :
 		self._qtWidget().setLayout( self.__qtLayout )
 
 		self._qtWidget().installEventFilter( _windowEventFilter )
-
-		self._qtWidget().setObjectName("gafferWindow")
 
 		self._setStyleSheet()
 
@@ -170,6 +170,9 @@ class Window( GafferUI.ContainerWidget ) :
 		assert( isinstance( childWindow, Window ) )
 
 		oldParent = childWindow.parent()
+		if oldParent is self :
+			return
+
 		if oldParent is not None :
 			oldParent.removeChild( childWindow )
 
@@ -195,11 +198,19 @@ class Window( GafferUI.ContainerWidget ) :
 		# things, but on the whole the Dialog type seems best for X11.
 		childWindowType = QtCore.Qt.Tool if sys.platform == "darwin" else QtCore.Qt.Dialog
 		childWindowFlags = ( childWindow._qtWidget().windowFlags() & ~QtCore.Qt.WindowType_Mask ) | childWindowType
-		childWindow._qtWidget().setParent( self._qtWidget(), childWindowFlags )
-		childWindow._applyVisibility()
+
+		if sys.platform == "darwin" and Qt.__binding__ in ( "PySide2", "PyQt5" ) :
+			# Alternative order of operations to work around crashes
+			# on OSX with Qt5.
+			childWindow._qtWidget().setParent( self._qtWidget() )
+			childWindow._applyVisibility()
+			childWindow._qtWidget().setWindowFlags( childWindowFlags )
+		else :
+			childWindow._qtWidget().setParent( self._qtWidget(), childWindowFlags )
+			childWindow._applyVisibility()
 
 		if removeOnClose :
-			childWindow.__removeOnCloseConnection = childWindow.closedSignal().connect( lambda w : w.parent().removeChild( w ) )
+			childWindow.closedSignal().connect( lambda w : w.parent().removeChild( w ), scoped = False )
 
 	## Returns a list of all the windows parented to this one.
 	def childWindows( self ) :
@@ -255,7 +266,7 @@ class Window( GafferUI.ContainerWidget ) :
 
 	def getPosition( self ) :
 
-		return IECore.V2i( self._qtWidget().x(), self._qtWidget().y() )
+		return imath.V2i( self._qtWidget().x(), self._qtWidget().y() )
 
 	def setFullScreen( self, fullScreen ) :
 

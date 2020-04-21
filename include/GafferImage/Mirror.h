@@ -37,22 +37,22 @@
 #ifndef GAFFERIMAGE_MIRROR_H
 #define GAFFERIMAGE_MIRROR_H
 
-#include "Gaffer/CompoundNumericPlug.h"
+#include "GafferImage/FlatImageProcessor.h"
 
-#include "GafferImage/ImageProcessor.h"
+#include "Gaffer/CompoundNumericPlug.h"
 
 namespace GafferImage
 {
 
-class Mirror : public ImageProcessor
+class GAFFERIMAGE_API Mirror : public FlatImageProcessor
 {
 
 	public :
 
 		Mirror( const std::string &name=defaultName<Mirror>() );
-		virtual ~Mirror();
+		~Mirror() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Mirror, MirrorTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Mirror, MirrorTypeId, FlatImageProcessor );
 
 		Gaffer::BoolPlug *horizontalPlug();
 		const Gaffer::BoolPlug *horizontalPlug() const;
@@ -60,15 +60,15 @@ class Mirror : public ImageProcessor
 		Gaffer::BoolPlug *verticalPlug();
 		const Gaffer::BoolPlug *verticalPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 	private :
 

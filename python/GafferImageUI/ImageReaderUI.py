@@ -39,14 +39,7 @@ import IECore
 import Gaffer
 import GafferUI
 import GafferImage
-
-def __colorSpacePresetNames( plug ) :
-
-	return IECore.StringVectorData( [ "Default" ] + GafferImage.OpenColorIOTransform.availableColorSpaces() )
-
-def __colorSpacePresetValues( plug ) :
-
-	return IECore.StringVectorData( [ "" ] + GafferImage.OpenColorIOTransform.availableColorSpaces() )
+import OpenColorIOTransformUI
 
 Gaffer.Metadata.registerNode(
 
@@ -209,8 +202,8 @@ Gaffer.Metadata.registerNode(
 			registered with `ImageReader::setDefaultColorSpaceFunction()`.
 			""",
 
-			"presetNames", __colorSpacePresetNames,
-			"presetValues", __colorSpacePresetValues,
+			"presetNames", OpenColorIOTransformUI.colorSpacePresetNames,
+			"presetValues", OpenColorIOTransformUI.colorSpacePresetValues,
 
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
@@ -258,7 +251,7 @@ class _FrameMaskPlugValueWidget( GafferUI.PlugValueWidget ) :
 			if isinstance( w, GafferUI.PlugValueWidget ) :
 				w.setReadOnly( readOnly )
 
-	def childPlugValueWidget( self, childPlug, lazy=True ) :
+	def childPlugValueWidget( self, childPlug ) :
 
 		for i, p in enumerate( self.getPlug().children() ) :
 			if p.isSame( childPlug ) :

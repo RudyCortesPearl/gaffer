@@ -40,24 +40,25 @@
 
 #include "boost/python.hpp"
 
-#include "IECorePython/ScopedGILLock.h"
-
-#include "Gaffer/Node.h"
-
 #include "GafferBindings/GraphComponentBinding.h"
 #include "GafferBindings/Serialisation.h"
 
+#include "Gaffer/Node.h"
+
+#include "IECorePython/ExceptionAlgo.h"
+#include "IECorePython/ScopedGILLock.h"
+
+#include <utility>
+
 namespace GafferBindings
 {
-
-void bindNode();
 
 template<typename T, typename TWrapper=T>
 class NodeClass : public GraphComponentClass<T, TWrapper>
 {
 	public :
 
-		NodeClass( const char *docString = NULL );
+		NodeClass( const char *docString = nullptr );
 		NodeClass( const char *docString, boost::python::no_init_t );
 
 };
@@ -69,24 +70,13 @@ class NodeWrapper : public GraphComponentWrapper<T>
 
 		typedef T WrappedType;
 
-		NodeWrapper( PyObject *self, const std::string &name )
-			:	GraphComponentWrapper<T>( self, name )
+		template<typename... Args>
+		NodeWrapper( PyObject *self, Args&&... args )
+			:	GraphComponentWrapper<T>( self, std::forward<Args>( args )... )
 		{
 		}
 
-		template<typename Arg1, typename Arg2>
-		NodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2 )
-			:	GraphComponentWrapper<WrappedType>( self, arg1, arg2 )
-		{
-		}
-
-		template<typename Arg1, typename Arg2, typename Arg3>
-		NodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2, Arg3 arg3 )
-			:	GraphComponentWrapper<WrappedType>( self, arg1, arg2, arg3 )
-		{
-		}
-
-		virtual bool isInstanceOf( IECore::TypeId typeId ) const
+		bool isInstanceOf( IECore::TypeId typeId ) const override
 		{
 			// Optimise for common queries we know should fail.
 			// The standard wrapper implementation of isInstanceOf()
@@ -106,8 +96,7 @@ class NodeWrapper : public GraphComponentWrapper<T>
 				typeId == (IECore::TypeId)Gaffer::ScriptNodeTypeId ||
 				typeId == (IECore::TypeId)Gaffer::DependencyNodeTypeId ||
 				typeId == (IECore::TypeId)Gaffer::PlugTypeId ||
-				typeId == (IECore::TypeId)Gaffer::ValuePlugTypeId ||
-				typeId == (IECore::TypeId)Gaffer::CompoundPlugTypeId
+				typeId == (IECore::TypeId)Gaffer::ValuePlugTypeId
 			)
 			{
 				return false;
@@ -115,15 +104,22 @@ class NodeWrapper : public GraphComponentWrapper<T>
 			return GraphComponentWrapper<T>::isInstanceOf( typeId );
 		}
 
-		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const
+		bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "acceptsInput" );
-				if( f )
+				try
 				{
-					return f( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( plug ) ), Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( inputPlug ) ) );
+					boost::python::object f = this->methodOverride( "acceptsInput" );
+					if( f )
+					{
+						return f( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( plug ) ), Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( inputPlug ) ) );
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return T::acceptsInput( plug, inputPlug );
@@ -131,20 +127,22 @@ class NodeWrapper : public GraphComponentWrapper<T>
 
 };
 
-class NodeSerialiser : public Serialisation::Serialiser
+class GAFFERBINDINGS_API NodeSerialiser : public Serialisation::Serialiser
 {
 
 	public :
 
-		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const;
+		IE_CORE_DECLAREMEMBERPTR( NodeSerialiser )
+
+		void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const override;
 		/// Implemented to serialise per-instance metadata.
-		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
+		std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const override;
 		/// Implemented so that only plugs are serialised - child nodes are expected to
 		/// be a part of the implementation of the node rather than something the user
 		/// has created themselves.
-		virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const;
+		bool childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const override;
 		/// Implemented so that dynamic plugs are constructed appropriately.
-		virtual bool childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const;
+		bool childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const override;
 
 };
 

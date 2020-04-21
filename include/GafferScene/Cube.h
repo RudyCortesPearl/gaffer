@@ -37,32 +37,32 @@
 #ifndef GAFFERSCENE_CUBE_H
 #define GAFFERSCENE_CUBE_H
 
-#include "Gaffer/CompoundNumericPlug.h"
-
 #include "GafferScene/ObjectSource.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
 
 namespace GafferScene
 {
 
-class Cube : public ObjectSource
+class GAFFERSCENE_API Cube : public ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Cube, CubeTypeId, ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Cube, CubeTypeId, ObjectSource );
 
 		Cube( const std::string &name=defaultName<Cube>() );
-		virtual ~Cube();
+		~Cube() override;
 
 		Gaffer::V3fPlug *dimensionsPlug();
 		const Gaffer::V3fPlug *dimensionsPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
 	private :
 

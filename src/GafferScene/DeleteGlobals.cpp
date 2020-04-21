@@ -34,17 +34,18 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/algorithm/string/predicate.hpp"
+#include "GafferScene/DeleteGlobals.h"
 
-#include "Gaffer/StringAlgo.h"
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/DeleteGlobals.h"
+#include "IECore/StringAlgo.h"
+
+#include "boost/algorithm/string/predicate.hpp"
 
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( DeleteGlobals );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeleteGlobals );
 
 size_t DeleteGlobals::g_firstPlugIndex = 0;
 
@@ -123,7 +124,7 @@ IECore::ConstCompoundObjectPtr DeleteGlobals::computeProcessedGlobals( const Gaf
 		bool keep = true;
 		if( boost::starts_with( it->first.c_str(), prefix ) )
 		{
-			if( StringAlgo::matchMultiple( it->first.c_str() + prefix.size(), names.c_str() ) != invert )
+			if( IECore::StringAlgo::matchMultiple( it->first.c_str() + prefix.size(), names.c_str() ) != invert )
 			{
 				keep = false;
 			}

@@ -38,7 +38,7 @@ import Gaffer
 
 Gaffer.Metadata.registerNode(
 
-	Gaffer.ContextVariablesComputeNode,
+	Gaffer.ContextVariables,
 
 	"description",
 	"""
@@ -48,6 +48,18 @@ Gaffer.Metadata.registerNode(
 
 	plugs = {
 
+		"in" : [
+
+			"plugValueWidget:type", "",
+
+		],
+
+		"out" : [
+
+			"plugValueWidget:type", "",
+
+		],
+
 		"variables" : [
 
 			"description",
@@ -55,7 +67,9 @@ Gaffer.Metadata.registerNode(
 			The variables to be added. Each variable is represented
 			as a child plug, created either through the UI or using the
 			CompoundDataPlug API.
-			"""
+			""",
+
+			"nodule:type", "",
 
 		],
 
@@ -75,6 +89,7 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"layout:section", "Extra",
+			"nodule:type", "",
 
 		],
 

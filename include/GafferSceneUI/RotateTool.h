@@ -37,37 +37,41 @@
 #ifndef GAFFERSCENEUI_ROTATETOOL_H
 #define GAFFERSCENEUI_ROTATETOOL_H
 
+#include "GafferSceneUI/TransformTool.h"
+
 #include "GafferUI/Style.h"
 
-#include "GafferSceneUI/TransformTool.h"
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathEuler.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace GafferSceneUI
 {
 
 IE_CORE_FORWARDDECLARE( SceneView )
 
-class RotateTool : public TransformTool
+class GAFFERSCENEUI_API RotateTool : public TransformTool
 {
 
 	public :
 
 		RotateTool( SceneView *view, const std::string &name = defaultName<RotateTool>() );
-		virtual ~RotateTool();
+		~RotateTool() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::RotateTool, RotateToolTypeId, TransformTool );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::RotateTool, RotateToolTypeId, TransformTool );
 
 		Gaffer::IntPlug *orientationPlug();
 		const Gaffer::IntPlug *orientationPlug() const;
 
-		/// Rotates the current selection as if the specified
-		/// handle had been dragged interactively. Exists mainly
+		/// Rotates the current selection as if the handles
+		/// had been dragged interactively. Exists mainly
 		/// for use in the unit tests.
-		void rotate( int axis, float degrees );
+		void rotate( const Imath::Eulerf &degrees );
 
 	protected :
 
-		virtual bool affectsHandles( const Gaffer::Plug *input ) const;
-		virtual void updateHandles();
+		bool affectsHandles( const Gaffer::Plug *input ) const override;
+		void updateHandles( float rasterScale ) override;
 
 	private :
 
@@ -76,21 +80,49 @@ class RotateTool : public TransformTool
 		// method.
 		struct Rotation
 		{
-			Imath::V3f originalRotation;
-			Imath::V3f axis;
+
+			Rotation( const Selection &selection, Orientation orientation );
+
+			bool canApply( const Imath::V3i &axisMask ) const;
+			void apply( const Imath::Eulerf &rotation );
+
+			private :
+
+				Imath::V3f updatedRotateValue( const Gaffer::V3fPlug *rotatePlug, const Imath::Eulerf &rotation, Imath::V3f *currentValue = nullptr ) const;
+
+				// For the validity of this reference, we rely
+				// on `TransformTool::selection()` not changing
+				// during drags.
+				const Selection &m_selection;
+				Imath::M44f m_gadgetToTransform;
+
+				// Initialised lazily when we first
+				// acquire the transform plug.
+				mutable boost::optional<Imath::Eulerf> m_originalRotation; // Radians
+
 		};
 
-		Rotation createRotation( int axis );
-		Imath::V3f rotation( const Rotation &rotation, float radians ) const;
-		void applyRotation( const Rotation &rotation, float radians );
+		// Handle Drag handling.
 
-		// Drag handling.
+		IECore::RunTimeTypedPtr handleDragBegin();
+		bool handleDragMove( GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event );
+		bool handleDragEnd();
 
-		IECore::RunTimeTypedPtr dragBegin( int axis );
-		bool dragMove( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event );
-		bool dragEnd();
+		// Target mode handling
 
-		Rotation m_drag;
+		bool keyPress( const GafferUI::KeyEvent &event );
+		bool keyRelease( const GafferUI::KeyEvent &event );
+		void sceneGadgetLeave( const GafferUI::ButtonEvent &event );
+		void visibilityChanged( GafferUI::Gadget *gadget );
+		void plugSet( Gaffer::Plug *plug );
+
+		bool buttonPress( const GafferUI::ButtonEvent &event );
+
+		void setTargetedMode( bool targeted );
+		inline bool getTargetedMode() const { return m_targetedMode; }
+		bool m_targetedMode;
+
+		std::vector<Rotation> m_drag;
 
 		static ToolDescription<RotateTool, SceneView> g_toolDescription;
 		static size_t g_firstPlugIndex;

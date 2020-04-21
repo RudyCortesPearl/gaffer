@@ -35,11 +35,13 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "Gaffer/Action.h"
+
+#include "Gaffer/BackgroundTask.h"
+#include "Gaffer/ScriptNode.h"
+
 #include "IECore/Exception.h"
 #include "IECore/RunTimeTyped.h"
-
-#include "Gaffer/Action.h"
-#include "Gaffer/ScriptNode.h"
 
 using namespace Gaffer;
 
@@ -49,8 +51,8 @@ using namespace Gaffer;
 
 IE_CORE_DEFINERUNTIMETYPED( Action );
 
-Action::Action()
-	:	m_done( false )
+Action::Action( bool cancelBackgroundTasks )
+	:	m_done( false ), m_cancelBackgroundTasks( cancelBackgroundTasks )
 {
 }
 
@@ -83,6 +85,10 @@ void Action::doAction()
 	{
 		throw IECore::Exception( "Action cannot be done again without being undone first." );
 	}
+	if( m_cancelBackgroundTasks )
+	{
+		BackgroundTask::cancelAffectedTasks( subject() );
+	}
 	m_done = true;
 }
 
@@ -91,6 +97,10 @@ void Action::undoAction()
 	if( !m_done )
 	{
 		throw IECore::Exception( "Action cannot be undone without being done first." );
+	}
+	if( m_cancelBackgroundTasks )
+	{
+		BackgroundTask::cancelAffectedTasks( subject() );
 	}
 	m_done = false;
 }
@@ -116,8 +126,8 @@ class SimpleAction : public Action
 
 	public :
 
-		SimpleAction( const GraphComponentPtr subject, const Function &doFn, const Function &undoFn )
-			:	m_subject( subject.get() ), m_doFn( doFn ), m_undoFn( undoFn )
+		SimpleAction( const GraphComponentPtr subject, const Function &doFn, const Function &undoFn, bool cancelBackgroundTasks )
+			:	Action( cancelBackgroundTasks ), m_subject( subject.get() ), m_doFn( doFn ), m_undoFn( undoFn )
 		{
 			// In the documentation for Action::enact(), we promise that we'll keep
 			// the subject alive for as long as the Functions are in use. If the subject
@@ -130,7 +140,7 @@ class SimpleAction : public Action
 			}
 		}
 
-		virtual ~SimpleAction()
+		~SimpleAction() override
 		{
 			if( !m_subject->isInstanceOf( Gaffer::ScriptNode::staticTypeId() ) )
 			{
@@ -142,35 +152,35 @@ class SimpleAction : public Action
 
 	protected :
 
-		virtual GraphComponent *subject() const
+		GraphComponent *subject() const override
 		{
 			return m_subject;
 		}
 
-		void doAction()
+		void doAction() override
 		{
 			Action::doAction();
-			if( !m_doFn.empty() )
+			if( m_doFn )
 			{
 				m_doFn();
 			}
 		}
 
-		void undoAction()
+		void undoAction() override
 		{
 			Action::undoAction();
-			if( !m_undoFn.empty() )
+			if( m_undoFn )
 			{
 				m_undoFn();
 			}
 		}
 
-		bool canMerge( const Action *other ) const
+		bool canMerge( const Action *other ) const override
 		{
 			return false;
 		}
 
-		void merge( const Action *other )
+		void merge( const Action *other ) override
 		{
 		}
 
@@ -184,13 +194,13 @@ class SimpleAction : public Action
 
 IE_CORE_DEFINERUNTIMETYPED( SimpleAction );
 
-void Action::enact( GraphComponentPtr subject, const Function &doFn, const Function &undoFn )
+void Action::enact( GraphComponentPtr subject, const Function &doFn, const Function &undoFn, bool cancelBackgroundTasks )
 {
 	/// \todo We might want to optimise away the construction of a SimpleAction
 	/// when we know that enact() will just call doFn and throw it away (when undo
 	/// is disabled). If we do that we should make it easy for other subclasses to do
 	/// the same.
-	enact( new SimpleAction( subject, doFn, undoFn ) );
+	enact( new SimpleAction( subject, doFn, undoFn, cancelBackgroundTasks ) );
 }
 
 } // namespace Gaffer

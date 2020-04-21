@@ -35,18 +35,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferCortex/ParameterisedHolder.h"
+
+#include "GafferCortex/CompoundParameterHandler.h"
+
+#include "Gaffer/BlockedConnection.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECore/MessageHandler.h"
+#include "IECore/ParameterisedInterface.h"
+
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
-
-#include "IECore/ParameterisedInterface.h"
-#include "IECore/MessageHandler.h"
-
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/BlockedConnection.h"
-
-#include "GafferCortex/ParameterisedHolder.h"
-#include "GafferCortex/CompoundParameterHandler.h"
 
 using namespace GafferCortex;
 
@@ -55,7 +56,7 @@ const IECore::RunTimeTyped::TypeDescription<ParameterisedHolder<BaseType> > Para
 
 template<typename BaseType>
 ParameterisedHolder<BaseType>::ParameterisedHolder( const std::string &name )
-	:	BaseType( name ), m_parameterised( 0 ), m_parameterHandler( 0 )
+	:	BaseType( name ), m_parameterised( nullptr ), m_parameterHandler( nullptr )
 {
 	BaseType::addChild( new Gaffer::StringPlug( "__className" ) );
 	BaseType::addChild( new Gaffer::IntPlug( "__classVersion", Gaffer::Plug::In, -1 ) );
@@ -264,20 +265,19 @@ ParameterisedHolder<BaseType>::ParameterModificationContext::~ParameterModificat
 	}
 }
 
-// specialisation
-
 namespace GafferCortex
 {
 
+// specialisation
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( GafferCortex::ParameterisedHolderNode, ParameterisedHolderNodeTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( GafferCortex::ParameterisedHolderDependencyNode, ParameterisedHolderDependencyNodeTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( GafferCortex::ParameterisedHolderComputeNode, ParameterisedHolderComputeNodeTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( GafferCortex::ParameterisedHolderTaskNode, ParameterisedHolderTaskNodeTypeId )
-
-} // namespace GafferCortex
 
 // explicit instantiation
 template class ParameterisedHolder<Gaffer::Node>;
 template class ParameterisedHolder<Gaffer::DependencyNode>;
 template class ParameterisedHolder<Gaffer::ComputeNode>;
 template class ParameterisedHolder<GafferDispatch::TaskNode>;
+
+} // namespace GafferCortex

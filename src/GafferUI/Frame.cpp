@@ -36,20 +36,22 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "GafferUI/Frame.h"
+
+#include "GafferUI/GraphGadget.h"
 #include "GafferUI/Style.h"
 
-#include "IECore/CurvesPrimitive.h"
-#include "IECore/MeshPrimitive.h"
-#include "IECore/SimpleTypedData.h"
+#include "IECoreScene/CurvesPrimitive.h"
+#include "IECoreScene/MeshPrimitive.h"
 
-#include "math.h"
+#include "IECore/SimpleTypedData.h"
 
 using namespace GafferUI;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Imath;
 using namespace boost;
 
-IE_CORE_DEFINERUNTIMETYPED( Frame );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Frame );
 
 Frame::Frame( GadgetPtr child )
 	:	IndividualContainer( child ), m_border( 1 )
@@ -72,11 +74,14 @@ Imath::Box3f Frame::bound() const
 	return b;
 }
 
-void Frame::doRender( const Style *style ) const
+void Frame::doRenderLayer( Layer layer, const Style *style ) const
 {
+	IndividualContainer::doRenderLayer( layer, style );
+	if( layer != Layer::Main )
+	{
+		return;
+	}
+
 	Imath::Box3f b = IndividualContainer::bound();
-
 	style->renderFrame( Box2f( V2f( b.min.x, b.min.y ), V2f( b.max.x, b.max.y ) ), m_border );
-
-	IndividualContainer::doRender( style );
 }

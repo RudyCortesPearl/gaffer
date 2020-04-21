@@ -38,17 +38,46 @@
 #ifndef GAFFER_PLUG_H
 #define GAFFER_PLUG_H
 
-#include "IECore/Object.h"
-
-#include "Gaffer/GraphComponent.h"
 #include "Gaffer/FilteredChildIterator.h"
 #include "Gaffer/FilteredRecursiveChildIterator.h"
+#include "Gaffer/GraphComponent.h"
+
+#include "IECore/Object.h"
 
 namespace Gaffer
 {
 
 IE_CORE_FORWARDDECLARE( Plug )
 IE_CORE_FORWARDDECLARE( Node )
+
+#define GAFFER_PLUG_DECLARE_TYPE_ALIASES( TYPE ) \
+	using Iterator = Gaffer::FilteredChildIterator<Gaffer::Plug::TypePredicate<TYPE>>; \
+	using InputIterator = Gaffer::FilteredChildIterator<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::In>>; \
+	using OutputIterator = Gaffer::FilteredChildIterator<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::Out>>; \
+	using RecursiveIterator = Gaffer::FilteredRecursiveChildIterator<Gaffer::Plug::TypePredicate<TYPE>, Gaffer::Plug::TypePredicate<>>; \
+	using RecursiveInputIterator = Gaffer::FilteredRecursiveChildIterator<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::In>, Gaffer::Plug::TypePredicate<>>; \
+	using RecursiveOutputIterator = Gaffer::FilteredRecursiveChildIterator<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::Out>, Gaffer::Plug::TypePredicate<>>; \
+	using Range = Gaffer::FilteredChildRange<Gaffer::Plug::TypePredicate<TYPE>>; \
+	using InputRange = Gaffer::FilteredChildRange<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::In>>; \
+	using OutputRange = Gaffer::FilteredChildRange<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::Out>>; \
+	using RecursiveRange = Gaffer::FilteredRecursiveChildRange<Gaffer::Plug::TypePredicate<TYPE>, Gaffer::Plug::TypePredicate<>>;\
+	using RecursiveInputRange = Gaffer::FilteredRecursiveChildRange<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::In>, Gaffer::Plug::TypePredicate<>>; \
+	using RecursiveOutputRange = Gaffer::FilteredRecursiveChildRange<Gaffer::Plug::TypePredicate<TYPE, Gaffer::Plug::Out>, Gaffer::Plug::TypePredicate<>>;
+
+#define GAFFER_PLUG_DECLARE_TYPE( TYPE, TYPEID, BASETYPE ) \
+	IE_CORE_DECLARERUNTIMETYPEDEXTENSION( TYPE, TYPEID, BASETYPE ) \
+	GAFFER_PLUG_DECLARE_TYPE_ALIASES( TYPE )
+
+#define GAFFER_PLUG_DEFINE_TYPE( TYPE ) \
+	IE_CORE_DEFINERUNTIMETYPED( TYPE )
+
+#define GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( TYPE, BASETYPE ) \
+	IECORE_RUNTIMETYPED_DECLARETEMPLATE( TYPE, BASETYPE ) \
+	IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( TYPE ) \
+	GAFFER_PLUG_DECLARE_TYPE_ALIASES( TYPE )
+
+#define GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( TYPE, TYPEID ) \
+	IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( TYPE, TYPEID )
 
 /// The Plug class defines a means of making point to point connections
 /// between Nodes. A plug may receive a single input connection from
@@ -66,7 +95,7 @@ IE_CORE_FORWARDDECLARE( Node )
 /// When two parent plugs are connected, and children are added to or removed
 /// from the source plug, the equivalent operation will be automatically
 /// performed on the destination plug so as to maintain the parent connection.
-class Plug : public GraphComponent
+class GAFFER_API Plug : public GraphComponent
 {
 
 	public :
@@ -92,22 +121,9 @@ class Plug : public GraphComponent
 			/// If the AcceptsInputs flag is not set, then acceptsInput() always returns
 			/// false.
 			AcceptsInputs = 0x00000004,
-			/// If the PerformsSubstitutions flag is set then tokens from the plug value
-			/// will automatically be substituted with values from the context during
-			/// computation. Note that currently this only applies to the StringPlug.
-			/// \deprecated. Use the substitutions argument to the StringPlug constructor
-			/// instead - this provides finer grained control.
-			PerformsSubstitutions = 0x00000008,
-			/// If the Cacheable flag is set then values computed during getValue()
-			/// calls will be stored in a cache and reused if equivalent computations
-			/// are requested in the future.
-			Cacheable = 0x00000010,
-			/// Read only plugs do not accept any changes to their inputs, and will throw
-			/// an exception if an attempt is made to call their setValue() method. It is
-			/// not valid to make an output plug read only - in the case of an attempt to
-			/// do so an exception will be thrown from setFlags().
-			/// \deprecated Use MetadataAlgo instead.
-			ReadOnly = 0x00000020,
+			/// \deprecated Implement `ComputeNode::hashPolicy()` and `ComputeNode::computePolicy()`
+			/// instead.
+			Cacheable = 0x0000008,
 			/// Generally it is an error to have cyclic dependencies between plugs,
 			/// and creating them will cause an exception to be thrown during dirty
 			/// propagation. However, it is possible to design nodes that create
@@ -117,25 +133,28 @@ class Plug : public GraphComponent
 			/// not infinite. Because dirty propagation is performed independent of context,
 			/// this flag must be used by such nodes to indicate that the cycle is
 			/// intentional in this case, and is guaranteed to terminate during compute.
-			AcceptsDependencyCycles = 0x00000040,
+			AcceptsDependencyCycles = 0x00000010,
 			/// When adding values, don't forget to update the Default and All values below,
 			/// and to update PlugBinding.cpp too!
-			Default = Serialisable | AcceptsInputs | PerformsSubstitutions | Cacheable,
-			All = Dynamic | Serialisable | AcceptsInputs | PerformsSubstitutions | Cacheable | ReadOnly | AcceptsDependencyCycles
+			Default = Serialisable | AcceptsInputs | Cacheable,
+			All = Dynamic | Serialisable | AcceptsInputs | Cacheable | AcceptsDependencyCycles
 		};
 
 		Plug( const std::string &name=defaultName<Plug>(), Direction direction=In, unsigned flags=Default );
-		virtual ~Plug();
+		~Plug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Plug, PlugTypeId, GraphComponent );
+		template<typename T=Plug, Plug::Direction D=Plug::Invalid>
+		struct TypePredicate;
+
+		GAFFER_PLUG_DECLARE_TYPE( Gaffer::Plug, PlugTypeId, GraphComponent );
 
 		/// @name Parent-child relationships
 		//////////////////////////////////////////////////////////////////////
 		//@{
 		/// Accepts only Plugs with the same direction.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
 		/// Accepts only Nodes or Plugs as a parent.
-		virtual bool acceptsParent( const GraphComponent *potentialParent ) const;
+		bool acceptsParent( const GraphComponent *potentialParent ) const override;
 		/// Just returns ancestor<Node>() as a syntactic convenience.
 		Node *node();
 		/// Just returns ancestor<Node>() as a syntactic convenience.
@@ -168,20 +187,19 @@ class Plug : public GraphComponent
 		/// implementation accepts inputs provided that :
 		///
 		///  - direction()==In and the AcceptsInputs flag is set
-		///  - the ReadOnly flag is not set
 		///  - node()->acceptsInput() also accepts the input
 		///  - corresponding child plugs also accept the input
 		virtual bool acceptsInput( const Plug *input ) const;
 		/// Sets the input to this plug if acceptsInput( input )
 		/// returns true, otherwise throws an IECore::Exception.
-		/// Pass NULL to remove the current input.
+		/// Pass nullptr to remove the current input.
 		/// \undoable
 		virtual void setInput( PlugPtr input );
 		/// Returns the immediate input to this Plug - the
 		/// one set with setInput().
-		template<typename T>
+		template<typename T=Plug>
 		T *getInput();
-		template<typename T>
+		template<typename T=Plug>
 		const T *getInput() const;
 		/// The immediate input to this Plug as returned by getInput() may
 		/// itself have an input, which may itself have an input and so on.
@@ -193,9 +211,9 @@ class Plug : public GraphComponent
 		/// \note The cast to type T is performed after finding the
 		/// source, and not on the intermediate inputs along
 		/// the way.
-		template<typename T>
+		template<typename T=Plug>
 		T *source();
-		template<typename T>
+		template<typename T=Plug>
 		const T *source() const;
 		/// Removes all outputs from this plug.
 		void removeOutputs();
@@ -208,7 +226,8 @@ class Plug : public GraphComponent
 
 	protected :
 
-		virtual void parentChanging( Gaffer::GraphComponent *newParent );
+		void parentChanging( Gaffer::GraphComponent *newParent ) override;
+		void parentChanged( Gaffer::GraphComponent *oldParent ) override;
 
 		/// Initiates the propagation of dirtiness from the specified
 		/// plug to its outputs and affected plugs (as defined by
@@ -225,7 +244,6 @@ class Plug : public GraphComponent
 
 	private :
 
-		void parentChanged();
 		static void propagateDirtinessForParentChange( Plug *plugToDirty );
 
 		void setFlagsInternal( unsigned flags );
@@ -258,6 +276,27 @@ class Plug : public GraphComponent
 
 IE_CORE_DECLAREPTR( Plug );
 
+template<typename T, Plug::Direction D>
+struct Plug::TypePredicate
+{
+	typedef T ChildType;
+
+	bool operator()( const GraphComponentPtr &g ) const
+	{
+		const T *p = IECore::runTimeCast<T>( g.get() );
+		if( !p )
+		{
+			return false;
+		}
+		if( D==Plug::Invalid )
+		{
+			return true;
+		}
+		return D==p->direction();
+	}
+};
+
+/// \deprecated Use Plug::TypePredicate instead
 template<Plug::Direction D=Plug::Invalid, typename T=Plug>
 struct PlugPredicate
 {
@@ -278,6 +317,7 @@ struct PlugPredicate
 	}
 };
 
+/// \deprecated Use Plug::Iterator etc instead
 typedef FilteredChildIterator<PlugPredicate<> > PlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Plug> > InputPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Plug> > OutputPlugIterator;

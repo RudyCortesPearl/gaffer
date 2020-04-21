@@ -37,26 +37,25 @@
 #ifndef GAFFERUI_BACKDROPNODEGADGET_H
 #define GAFFERUI_BACKDROPNODEGADGET_H
 
+#include "GafferUI/NodeGadget.h"
+
 #include "Gaffer/Backdrop.h"
 #include "Gaffer/BoxPlug.h"
-
-#include "GafferUI/NodeGadget.h"
 
 namespace GafferUI
 {
 
-
-class BackdropNodeGadget : public NodeGadget
+class GAFFERUI_API BackdropNodeGadget : public NodeGadget
 {
 
 	public :
 
 		BackdropNodeGadget( Gaffer::NodePtr node );
-		virtual ~BackdropNodeGadget();
+		~BackdropNodeGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::BackdropNodeGadget, BackdropNodeGadgetTypeId, NodeGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::BackdropNodeGadget, BackdropNodeGadgetTypeId, NodeGadget );
 
-		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
+		std::string getToolTip( const IECore::LineSegment3f &line ) const override;
 
 		/// Resizes the backdrop to frame the specified nodes.
 		/// \undoable
@@ -64,14 +63,15 @@ class BackdropNodeGadget : public NodeGadget
 		/// Fills nodes with all the nodes currently enclosed by the backdrop.
 		void framed( std::vector<Gaffer::Node *> &nodes ) const;
 
-		Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 	private :
 
+		void contextChanged();
 		void plugDirtied( const Gaffer::Plug *plug );
 
 		bool mouseMove( Gadget *gadget, const ButtonEvent &event );
@@ -98,6 +98,7 @@ class BackdropNodeGadget : public NodeGadget
 		bool m_hovered;
 		int m_horizontalDragEdge;
 		int m_verticalDragEdge;
+		int m_mergeGroupId;
 
 		boost::optional<Imath::Color3f> m_userColor;
 

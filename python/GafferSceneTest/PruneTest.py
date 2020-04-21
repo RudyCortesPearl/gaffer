@@ -37,6 +37,7 @@
 import unittest
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -46,7 +47,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 	def testPassThrough( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -108,7 +109,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 	def testPruning( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -159,8 +160,8 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 	def testAdjustBounds( self ) :
 
-		sphere1 = IECore.SpherePrimitive()
-		sphere2 = IECore.SpherePrimitive( 2 )
+		sphere1 = IECoreScene.SpherePrimitive()
+		sphere2 = IECoreScene.SpherePrimitive( 2 )
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -285,28 +286,6 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		Gaffer.PlugAlgo.promote( b["n"]["filter"] )
 		self.assertTrue( Gaffer.PlugAlgo.isPromoted( b["n"]["filter"] ) )
 
-	def testGlobalsDoNotDependOnScenePath( self ) :
-
-		pathFilter = GafferScene.PathFilter()
-		pathFilter["paths"].setValue( IECore.StringVectorData( [ "/grid/borderLines" ] ) )
-
-		grid = GafferScene.Grid()
-
-		prune = GafferScene.Prune()
-		prune["in"].setInput( grid["out"] )
-		prune["filter"].setInput( pathFilter["out"] )
-
-		c = Gaffer.Context()
-		with c :
-			h1 = prune["out"]["globals"].hash()
-			c["scene:path"] = IECore.InternedStringVectorData( [ "grid" ] )
-			h2 = prune["out"]["globals"].hash()
-			c["scene:path"] = IECore.InternedStringVectorData( [ "grid", "centerLines" ] )
-			h3 = prune["out"]["globals"].hash()
-
-		self.assertEqual( h1, h2 )
-		self.assertEqual( h2, h3 )
-
 	def testSets( self ) :
 
 		setPaths = [
@@ -351,9 +330,9 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 				prune["filter"].setInput( pathFilter["out"] )
 
 				outputSet = set( prune["out"].set( "set" ).value.paths() )
-				filterMatcher = GafferScene.PathMatcher( p )
+				filterMatcher = IECore.PathMatcher( p )
 				for inputSetPath in s :
-					if filterMatcher.match( inputSetPath ) & ( pathFilter.Result.ExactMatch | pathFilter.Result.AncestorMatch ) :
+					if filterMatcher.match( inputSetPath ) & ( IECore.PathMatcher.Result.ExactMatch | IECore.PathMatcher.Result.AncestorMatch ) :
 						self.assertTrue( inputSetPath not in outputSet )
 					else :
 						self.assertTrue( inputSetPath in outputSet )

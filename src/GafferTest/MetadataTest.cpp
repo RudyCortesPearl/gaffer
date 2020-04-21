@@ -34,16 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/tbb.h"
+#include "GafferTest/MetadataTest.h"
+
+#include "GafferTest/Assert.h"
+
+#include "Gaffer/Metadata.h"
+#include "Gaffer/Node.h"
+#include "Gaffer/Plug.h"
 
 #include "IECore/SimpleTypedData.h"
 
-#include "Gaffer/Node.h"
-#include "Gaffer/Plug.h"
-#include "Gaffer/Metadata.h"
-
-#include "GafferTest/Assert.h"
-#include "GafferTest/MetadataTest.h"
+#include "tbb/tbb.h"
 
 using namespace tbb;
 using namespace IECore;
@@ -59,8 +60,8 @@ struct TestThreading
 			NodePtr n = new Node();
 			PlugPtr p = new Plug();
 
-			GAFFERTEST_ASSERT( Metadata::value<Data>( n.get(), "threadingTest" ) == NULL );
-			GAFFERTEST_ASSERT( Metadata::value<Data>( p.get(), "threadingTest" ) == NULL );
+			GAFFERTEST_ASSERT( Metadata::value( n.get(), "threadingTest" ) == nullptr );
+			GAFFERTEST_ASSERT( Metadata::value( p.get(), "threadingTest" ) == nullptr );
 
 			Metadata::registerValue( n.get(), "threadingTest", new IECore::IntData( 1 ) );
 			Metadata::registerValue( p.get(), "threadingTest", new IECore::IntData( 2 ) );

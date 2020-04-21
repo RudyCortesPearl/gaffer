@@ -34,16 +34,18 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-
-#include "Gaffer/Switch.h"
-#include "Gaffer/ArrayPlug.h"
-#include "Gaffer/UndoScope.h"
-#include "Gaffer/ScriptNode.h"
-
 #include "GafferUI/Nodule.h"
-#include "GafferUI/PlugAdder.h"
 #include "GafferUI/NoduleLayout.h"
+#include "GafferUI/PlugAdder.h"
+
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/NameSwitch.h"
+#include "Gaffer/NameValuePlug.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/Switch.h"
+#include "Gaffer/UndoScope.h"
+
+#include "boost/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -57,8 +59,8 @@ class SwitchPlugAdder : public PlugAdder
 
 	public :
 
-		SwitchPlugAdder( SwitchComputeNodePtr node, StandardNodeGadget::Edge edge )
-			:	PlugAdder( edge ), m_switch( node )
+		SwitchPlugAdder( SwitchPtr node )
+			:	m_switch( node )
 		{
 			node->childAddedSignal().connect( boost::bind( &SwitchPlugAdder::childAdded, this ) );
 			node->childRemovedSignal().connect( boost::bind( &SwitchPlugAdder::childRemoved, this ) );
@@ -68,28 +70,51 @@ class SwitchPlugAdder : public PlugAdder
 
 	protected :
 
-		virtual bool acceptsPlug( const Plug *connectionEndPoint ) const
+		bool canCreateConnection( const Plug *endpoint ) const override
 		{
-			return true;
+			return PlugAdder::canCreateConnection( endpoint );
 		}
 
-		virtual void addPlug( Plug *connectionEndPoint )
+		void createConnection( Plug *endpoint ) override
 		{
-			UndoScope undoScope( m_switch->ancestor<ScriptNode>() );
+			auto nameSwitch = runTimeCast<NameSwitch>( m_switch.get() );
+			if( nameSwitch  )
+			{
+				/// \todo Should `Switch::setup()` be virtual so that we don't
+				/// need to downcast?
+				nameSwitch->setup( endpoint );
+			}
+			else
+			{
+				m_switch->setup( endpoint );
+			}
 
-			m_switch->setup( connectionEndPoint );
 			ArrayPlug *inPlug = m_switch->getChild<ArrayPlug>( "in" );
 			Plug *outPlug = m_switch->getChild<Plug>( "out" );
 
 			bool inOpposite = false;
-			if( connectionEndPoint->direction() == Plug::Out )
+			if( endpoint->direction() == Plug::Out )
 			{
-				inPlug->getChild<Plug>( 0 )->setInput( connectionEndPoint );
+				if( nameSwitch )
+				{
+					inPlug->getChild<NameValuePlug>( 0 )->valuePlug()->setInput( endpoint );
+				}
+				else
+				{
+					inPlug->getChild<Plug>( 0 )->setInput( endpoint );
+				}
 				inOpposite = false;
 			}
 			else
 			{
-				connectionEndPoint->setInput( outPlug );
+				if( nameSwitch )
+				{
+					endpoint->setInput( static_cast<NameValuePlug *>( outPlug )->valuePlug() );
+				}
+				else
+				{
+					endpoint->setInput( outPlug );
+				}
 				inOpposite = true;
 			}
 
@@ -111,10 +136,10 @@ class SwitchPlugAdder : public PlugAdder
 
 		void updateVisibility()
 		{
-			setVisible( m_switch->getChild<ArrayPlug>( "in" ) == NULL );
+			setVisible( m_switch->getChild<ArrayPlug>( "in" ) == nullptr );
 		}
 
-		SwitchComputeNodePtr m_switch;
+		SwitchPtr m_switch;
 
 };
 
@@ -123,23 +148,20 @@ struct Registration
 
 	Registration()
 	{
-		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder.Top", boost::bind( &create, ::_1, StandardNodeGadget::TopEdge ) );
-		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder.Bottom", boost::bind( &create, ::_1, StandardNodeGadget::BottomEdge ) );
-		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder.Left", boost::bind( &create, ::_1, StandardNodeGadget::LeftEdge ) );
-		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder.Right", boost::bind( &create, ::_1, StandardNodeGadget::RightEdge ) );
+		NoduleLayout::registerCustomGadget( "GafferUI.SwitchUI.PlugAdder", boost::bind( &create, ::_1 ) );
 	}
 
 	private :
 
-		static GadgetPtr create( GraphComponentPtr parent, StandardNodeGadget::Edge edge )
+		static GadgetPtr create( GraphComponentPtr parent )
 		{
-			SwitchComputeNodePtr switchNode = runTimeCast<SwitchComputeNode>( parent );
+			SwitchPtr switchNode = runTimeCast<Switch>( parent );
 			if( !switchNode )
 			{
-				throw Exception( "SwitchPlugAdder requires a SwitchComputeNode" );
+				throw Exception( "SwitchPlugAdder requires a Switch" );
 			}
 
-			return new SwitchPlugAdder( switchNode, edge );
+			return new SwitchPlugAdder( switchNode );
 		}
 
 };

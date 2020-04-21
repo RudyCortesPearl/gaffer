@@ -39,41 +39,52 @@
 
 #include "GafferScene/ObjectSource.h"
 
+#include "Gaffer/CompoundDataPlug.h"
+
+#include "IECoreScene/ShaderNetwork.h"
+
 namespace GafferScene
 {
 
-class Light : public ObjectSource
+class GAFFERSCENE_API Light : public ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Light, LightTypeId, ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Light, LightTypeId, ObjectSource );
 
 		Light( const std::string &name=defaultName<Light>() );
-		virtual ~Light();
+		~Light() override;
 
 		Gaffer::Plug *parametersPlug();
 		const Gaffer::Plug *parametersPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::BoolPlug *defaultLightPlug();
+		const Gaffer::BoolPlug *defaultLightPlug() const;
+
+		Gaffer::CompoundDataPlug *visualiserAttributesPlug();
+		const Gaffer::CompoundDataPlug *visualiserAttributesPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
-		virtual void hashAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		void hashAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 
-		virtual void hashBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual Imath::Box3f computeBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		void hashBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		Imath::Box3f computeBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 
-		virtual IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const;
+		void hashStandardSetNames( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const override;
 
 		/// Must be implemented by derived classes to hash and generate the light to be placed
 		/// in the scene graph.
 		virtual void hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const = 0;
-		virtual IECore::ObjectVectorPtr computeLight( const Gaffer::Context *context ) const = 0;
+		virtual IECoreScene::ConstShaderNetworkPtr computeLight( const Gaffer::Context *context ) const = 0;
 
 	private :
 

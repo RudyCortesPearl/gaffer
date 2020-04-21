@@ -49,38 +49,38 @@ namespace GafferScene
 /// is feeling a bit unwieldy, and it seems that typical derived classes only ever modify
 /// one thing anyway. Perhaps we'd be better off with individual TransformProcessor,
 /// AttributeProcessor, ObjectProcessor and Deformer base classes.
-class SceneElementProcessor : public FilteredSceneProcessor
+class GAFFERSCENE_API SceneElementProcessor : public FilteredSceneProcessor
 {
 
 	public :
 
-		SceneElementProcessor( const std::string &name=defaultName<SceneElementProcessor>(), Filter::Result filterDefault = Filter::EveryMatch );
-		virtual ~SceneElementProcessor();
+		SceneElementProcessor( const std::string &name=defaultName<SceneElementProcessor>(), IECore::PathMatcher::Result filterDefault = IECore::PathMatcher::EveryMatch );
+		~SceneElementProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SceneElementProcessor, SceneElementProcessorTypeId, FilteredSceneProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::SceneElementProcessor, SceneElementProcessorTypeId, FilteredSceneProcessor );
 
 		/// Implemented so that each child of inPlug() affects the corresponding child of outPlug()
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
 		/// Implemented to call hashProcessedBound() where appropriate.
-		virtual void hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		void hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
 		/// Implemented to call hashProcessedTransform() where appropriate.
-		virtual void hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		void hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
 		/// Implemented to call hashProcessedAttributes() where appropriate.
-		virtual void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
 		/// Implemented to call hashProcessedObject() where appropriate.
-		virtual void hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		void hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
 
 		/// Implemented to call computeProcessedBound() where appropriate.
-		virtual Imath::Box3f computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		Imath::Box3f computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 		/// Implemented to call computeProcessedTransform() where appropriate.
-		virtual Imath::M44f computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		Imath::M44f computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 		/// Implemented to call computeProcessedAttributes() where appropriate.
-		virtual IECore::ConstCompoundObjectPtr computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		IECore::ConstCompoundObjectPtr computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 		/// Implemented to call computeProcessedObject() where appropriate.
-		virtual IECore::ConstObjectPtr computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		IECore::ConstObjectPtr computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 
 		/// @name Scene processing methods
 		/// These methods should be reimplemented by derived classes to process the input scene - they will be called as

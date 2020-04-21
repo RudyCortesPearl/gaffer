@@ -37,31 +37,26 @@
 #ifndef GAFFERUI_PLUGADDER_H
 #define GAFFERUI_PLUGADDER_H
 
+#include "GafferUI/ConnectionCreator.h"
 #include "GafferUI/StandardNodeGadget.h"
 
 namespace GafferUI
 {
 
-class PlugAdder : public Gadget
+class GAFFERUI_API PlugAdder : public ConnectionCreator
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::PlugAdder, PlugAdderTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::PlugAdder, PlugAdderTypeId, ConnectionCreator );
 
-		PlugAdder( StandardNodeGadget::Edge edge );
-		virtual ~PlugAdder();
+		PlugAdder();
+		~PlugAdder() override;
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
-		void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent );
-
-		/// Returns `true` if a call to `addPlug( connectionEndPoint )` is possible.
-		/// Should be implemented by derived classes.
-		virtual bool acceptsPlug( const Gaffer::Plug *connectionEndPoint ) const = 0;
-		/// Adds a plug compatible with `connectionEndPoint` and connects them together.
-		/// Should be implemented by derived classes.
-		virtual void addPlug( Gaffer::Plug *connectionEndPoint ) = 0;
+		bool canCreateConnection( const Gaffer::Plug *endpoint ) const override;
+		void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent ) override;
 
 		/// When emitted, shows a menu containing the specified plugs, and returns
 		/// the chosen plug. Implemented as a signal so the menu can be implemented
@@ -69,9 +64,13 @@ class PlugAdder : public Gadget
 		typedef boost::signal<Gaffer::Plug *( const std::string &title, const std::vector<Gaffer::Plug *> & )> PlugMenuSignal;
 		static PlugMenuSignal &plugMenuSignal();
 
+		/// A simpler menu that just shows a list of strings.  Should the previous form be deprecated?
+		typedef boost::signal<std::string ( const std::string &title, const std::vector<std::string> & )> MenuSignal;
+		static MenuSignal &menuSignal();
+
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 		void applyEdgeMetadata( Gaffer::Plug *plug, bool opposite = false ) const;
 
@@ -86,8 +85,6 @@ class PlugAdder : public Gadget
 		bool dragLeave( const DragDropEvent &event );
 		bool drop( const DragDropEvent &event );
 		bool dragEnd( const DragDropEvent &event );
-
-		StandardNodeGadget::Edge m_edge;
 
 		bool m_dragging;
 		Imath::V3f m_dragPosition;

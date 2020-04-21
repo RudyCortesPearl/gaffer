@@ -38,9 +38,12 @@
 #ifndef GAFFERBINDINGS_GRAPHCOMPONENTBINDING_H
 #define GAFFERBINDINGS_GRAPHCOMPONENTBINDING_H
 
+#include "Gaffer/GraphComponent.h"
+
+#include "IECorePython/ExceptionAlgo.h"
 #include "IECorePython/RunTimeTypedBinding.h"
 
-#include "Gaffer/GraphComponent.h"
+#include <utility>
 
 namespace GafferBindings
 {
@@ -50,7 +53,7 @@ class GraphComponentClass : public IECorePython::RunTimeTypedClass<T, TWrapper>
 {
 	public :
 
-		GraphComponentClass( const char *docString = 0 );
+		GraphComponentClass( const char *docString = nullptr );
 
 };
 
@@ -60,75 +63,99 @@ class GraphComponentWrapper : public IECorePython::RunTimeTypedWrapper<WrappedTy
 
 	public :
 
-		GraphComponentWrapper( PyObject *self )
-			:	IECorePython::RunTimeTypedWrapper<WrappedType>( self )
+		template<typename... Args>
+		GraphComponentWrapper( PyObject *self, Args&&... args )
+			:	IECorePython::RunTimeTypedWrapper<WrappedType>( self, std::forward<Args>( args )... )
 		{
 		}
 
-		template<typename Arg1>
-		GraphComponentWrapper( PyObject *self, Arg1 arg1 )
-			:	IECorePython::RunTimeTypedWrapper<WrappedType>( self, arg1 )
-		{
-		}
-
-		template<typename Arg1, typename Arg2>
-		GraphComponentWrapper( PyObject *self, Arg1 arg1, Arg2 arg2 )
-			:	IECorePython::RunTimeTypedWrapper<WrappedType>( self, arg1, arg2 )
-		{
-		}
-
-		template<typename Arg1, typename Arg2, typename Arg3>
-		GraphComponentWrapper( PyObject *self, Arg1 arg1, Arg2 arg2, Arg3 arg3 )
-			:	IECorePython::RunTimeTypedWrapper<WrappedType>( self, arg1, arg2, arg3 )
-		{
-		}
-
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const
+		bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "acceptsChild" );
-				if( f )
+				try
 				{
-					return f( Gaffer::GraphComponentPtr( const_cast<Gaffer::GraphComponent *>( potentialChild ) ) );
+					boost::python::object f = this->methodOverride( "acceptsChild" );
+					if( f )
+					{
+						return f( Gaffer::GraphComponentPtr( const_cast<Gaffer::GraphComponent *>( potentialChild ) ) );
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::acceptsChild( potentialChild );
 		}
 
-		virtual bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const
+		bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "acceptsParent" );
-				if( f )
+				try
 				{
-					return f( Gaffer::GraphComponentPtr( const_cast<Gaffer::GraphComponent *>( potentialParent ) ) );
+					boost::python::object f = this->methodOverride( "acceptsParent" );
+					if( f )
+					{
+						return f( Gaffer::GraphComponentPtr( const_cast<Gaffer::GraphComponent *>( potentialParent ) ) );
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::acceptsParent( potentialParent );
 		}
 
-		virtual void parentChanging( Gaffer::GraphComponent *newParent )
+		void parentChanging( Gaffer::GraphComponent *newParent ) override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "_parentChanging" );
-				if( f )
+				try
 				{
-					f( Gaffer::GraphComponentPtr( newParent ) );
-					return;
+					boost::python::object f = this->methodOverride( "_parentChanging" );
+					if( f )
+					{
+						f( Gaffer::GraphComponentPtr( newParent ) );
+						return;
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::parentChanging( newParent );
 		}
 
-};
+		void parentChanged( Gaffer::GraphComponent *oldParent ) override
+		{
+			if( this->isSubclassed() )
+			{
+				IECorePython::ScopedGILLock gilLock;
+				try
+				{
+					boost::python::object f = this->methodOverride( "_parentChanged" );
+					if( f )
+					{
+						f( Gaffer::GraphComponentPtr( oldParent ) );
+						return;
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
+				}
+			}
+			WrappedType::parentChanged( oldParent );
+		}
 
-void bindGraphComponent();
+};
 
 } // namespace GafferBindings
 

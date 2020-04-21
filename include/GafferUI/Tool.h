@@ -37,10 +37,13 @@
 #ifndef GAFFERUI_TOOL_H
 #define GAFFERUI_TOOL_H
 
+#include "GafferUI/Export.h"
+#include "GafferUI/TypeIds.h"
+
 #include "Gaffer/Node.h"
 #include "Gaffer/TypedPlug.h"
 
-#include "GafferUI/TypeIds.h"
+#include <functional>
 
 namespace GafferUI
 {
@@ -68,14 +71,17 @@ IE_CORE_FORWARDDECLARE( View )
 /// It is recommended that such updates are performed via
 /// ViewportGadget::preRenderSignal(), so that they are
 /// performed lazily only when needed.
-class Tool : public Gaffer::Node
+class GAFFERUI_API Tool : public Gaffer::Node
 {
 
 	public :
 
-		virtual ~Tool();
+		~Tool() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Tool, ToolTypeId, Gaffer::Node );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::Tool, ToolTypeId, Gaffer::Node );
+
+		View *view();
+		const View *view() const;
 
 		/// Plug to define whether or not this tool
 		/// is currently active.
@@ -87,7 +93,7 @@ class Tool : public Gaffer::Node
 		//@{
 		/// Creates a Tool for the specified View.
 		static ToolPtr create( const std::string &toolName, View *view );
-		typedef boost::function<ToolPtr ( View * )> ToolCreator;
+		typedef std::function<ToolPtr ( View * )> ToolCreator;
 		/// Registers a function which will return a Tool instance for a
 		/// view of a specific type.
 		static void registerTool( const std::string &toolName, IECore::TypeId viewType, ToolCreator creator );
@@ -98,9 +104,6 @@ class Tool : public Gaffer::Node
 	protected :
 
 		Tool( View *view, const std::string &name = defaultName<Tool>() );
-
-		View *view();
-		const View *view() const;
 
 		template<typename ToolType, typename ViewType>
 		struct ToolDescription

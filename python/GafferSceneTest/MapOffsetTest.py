@@ -36,6 +36,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
@@ -62,20 +63,14 @@ class MapOffsetTest( GafferSceneTest.SceneTestCase ) :
 		offset["udim"].setValue( 1022 )
 		self.assertSceneValid( offset["out"] )
 
-		for i, s in enumerate( offset["out"].object( "/plane" )["s"].data ) :
-			self.assertEqual( s, inputObject["s"].data[i] + 1 )
+		for i, uv in enumerate( offset["out"].object( "/plane" )["uv"].data ) :
+			self.assertEqual( uv, imath.V2f( inputObject["uv"].data[i] + imath.V2f( 1, 2 ) ) )
 
-		for i, t in enumerate( offset["out"].object( "/plane" )["t"].data ) :
-			self.assertEqual( t, inputObject["t"].data[i] + 2 )
-
-		offset["offset"].setValue( IECore.V2f( 0.5, 1.5 ) )
+		offset["offset"].setValue( imath.V2f( 0.5, 1.5 ) )
 		self.assertSceneValid( offset["out"] )
 
-		for i, s in enumerate( offset["out"].object( "/plane" )["s"].data ) :
-			self.assertEqual( s, inputObject["s"].data[i] + 1.5 )
-
-		for i, t in enumerate( offset["out"].object( "/plane" )["t"].data ) :
-			self.assertEqual( t, inputObject["t"].data[i] + 3.5 )
+		for i, uv in enumerate( offset["out"].object( "/plane" )["uv"].data ) :
+			self.assertEqual( uv, imath.V2f( inputObject["uv"].data[i] + imath.V2f( 1.5, 3.5 ) ) )
 
 if __name__ == "__main__":
 	unittest.main()

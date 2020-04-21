@@ -37,9 +37,9 @@
 #ifndef GAFFERSCENE_SET_H
 #define GAFFERSCENE_SET_H
 
-#include "Gaffer/TypedObjectPlug.h"
-
 #include "GafferScene/FilteredSceneProcessor.h"
+
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace Gaffer
 {
@@ -53,15 +53,15 @@ namespace GafferScene
 
 /// Node to define sets of locations in the scene - not to be confused
 /// with the Gaffer::Set class which is for an entirely different purpose.
-class Set : public FilteredSceneProcessor
+class GAFFERSCENE_API Set : public FilteredSceneProcessor
 {
 
 	public :
 
 		Set( const std::string &name=defaultName<Set>() );
-		virtual ~Set();
+		~Set() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Set, SetTypeId, FilteredSceneProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Set, SetTypeId, FilteredSceneProcessor );
 
 		enum Mode
 		{
@@ -76,29 +76,30 @@ class Set : public FilteredSceneProcessor
 		Gaffer::StringPlug *namePlug();
 		const Gaffer::StringPlug *namePlug() const;
 
+		/// \deprecated
 		Gaffer::StringVectorDataPlug *pathsPlug();
 		const Gaffer::StringVectorDataPlug *pathsPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
-		virtual void hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual void hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		void hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		void hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
 
-		virtual IECore::ConstInternedStringVectorDataPtr computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const;
-		virtual ConstPathMatcherDataPtr computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		IECore::ConstInternedStringVectorDataPtr computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const override;
+		IECore::ConstPathMatcherDataPtr computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 
 	private :
 
-		PathMatcherDataPlug *filterResultsPlug();
-		const PathMatcherDataPlug *filterResultsPlug() const;
+		Gaffer::PathMatcherDataPlug *filterResultsPlug();
+		const Gaffer::PathMatcherDataPlug *filterResultsPlug() const;
 
-		PathMatcherDataPlug *pathMatcherPlug();
-		const PathMatcherDataPlug *pathMatcherPlug() const;
+		Gaffer::PathMatcherDataPlug *pathMatcherPlug();
+		const Gaffer::PathMatcherDataPlug *pathMatcherPlug() const;
 
 		static size_t g_firstPlugIndex;
 

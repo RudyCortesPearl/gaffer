@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import Gaffer
 import GafferUI
 
@@ -61,8 +59,8 @@ class NumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__lastChangedReason = None
 		self.__mergeGroupId = 0
 
-		self.__keyPressConnection = self.__numericWidget.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
-		self.__valueChangedConnection = self.__numericWidget.valueChangedSignal().connect( Gaffer.WeakMethod( self.__valueChanged ) )
+		self.__numericWidget.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
+		self.__valueChangedConnection = self.__numericWidget.valueChangedSignal().connect( Gaffer.WeakMethod( self.__valueChanged ), scoped = False )
 
 		self._updateFromPlug()
 		self.__updateWidth()
@@ -87,9 +85,10 @@ class NumericPlugValueWidget( GafferUI.PlugValueWidget ) :
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
 		if self.getPlug() is not None :
-			result += "<ul>"
-			result += "<li>Cursor up/down to increment/decrement</li>"
-			result += "<ul>"
+			if result :
+				result += "\n"
+			result += "## Actions\n"
+			result += " - Cursor up/down to increment/decrement\n"
 
 		return result
 

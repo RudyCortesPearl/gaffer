@@ -35,7 +35,7 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
+import imath
 
 import IECore
 import IECoreGL
@@ -63,24 +63,24 @@ class GadgetWidget( GafferUI.GLWidget ) :
 
 		self.__requestedDepthBuffer = self.BufferOptions.Depth in bufferOptions
 
-		self.__enterConnection = self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ) )
-		self.__leaveConnection = self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ) )
-		self.__keyPressConnection = self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
-		self.__keyReleaseConnection = self.keyReleaseSignal().connect( Gaffer.WeakMethod( self.__keyRelease ) )
-		self.__buttonPressConnection = self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
-		self.__buttonReleaseConnection = self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
-		self.__buttonDoubleClickConnection = self.buttonDoubleClickSignal().connect( Gaffer.WeakMethod( self.__buttonDoubleClick ) )
-		self.__mouseMoveConnection = self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ) )
-		self.__dragBeginConnection = self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
-		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
-		self.__dragMoveConnection = self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ) )
-		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
-		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
-		self.__dragEndConnection = self.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
+		self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ), scoped = False )
+		self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
+		self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
+		self.keyReleaseSignal().connect( Gaffer.WeakMethod( self.__keyRelease ), scoped = False )
+		self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
+		self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ), scoped = False )
+		self.buttonDoubleClickSignal().connect( Gaffer.WeakMethod( self.__buttonDoubleClick ), scoped = False )
+		self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ), scoped = False )
+		self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
+		self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ), scoped = False )
+		self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ), scoped = False )
+		self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ), scoped = False )
+		self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ), scoped = False )
+		self.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
 
-		self.__wheelConnection = self.wheelSignal().connect( Gaffer.WeakMethod( self.__wheel ) )
+		self.wheelSignal().connect( Gaffer.WeakMethod( self.__wheel ), scoped = False )
 
-		self.__visibilityChangedConnection = self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
+		self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ), scoped = False )
 
 		self.__viewportGadget = None
 		if isinstance( gadget, GafferUI.ViewportGadget ) :
@@ -127,7 +127,6 @@ class GadgetWidget( GafferUI.GLWidget ) :
 
 	def _draw( self ) :
 
-		self.__viewportGadget.preRenderSignal()( self.__viewportGadget )
 		self.__viewportGadget.render()
 
 	def __enter( self, widget ) :
@@ -135,9 +134,41 @@ class GadgetWidget( GafferUI.GLWidget ) :
 		if not isinstance( QtWidgets.QApplication.focusWidget(), ( QtWidgets.QLineEdit, QtWidgets.QPlainTextEdit ) ) :
 			self._qtWidget().setFocus()
 
+		## \todo Widget.enterSignal() should be providing this
+		# event itself.
+		p = self.mousePosition( relativeTo = self )
+		event = GafferUI.ButtonEvent(
+			GafferUI.ButtonEvent.Buttons.None,
+			GafferUI.ButtonEvent.Buttons.None,
+			IECore.LineSegment3f(
+				imath.V3f( p.x, p.y, 1 ),
+				imath.V3f( p.x, p.y, 0 )
+			)
+		)
+
+		if not self._makeCurrent() :
+			return False
+
+		self.__viewportGadget.enterSignal()( self.__viewportGadget, event )
+
 	def __leave( self, widget ) :
 
 		self._qtWidget().clearFocus()
+
+		p = self.mousePosition( relativeTo = self )
+		event = GafferUI.ButtonEvent(
+			GafferUI.ButtonEvent.Buttons.None,
+			GafferUI.ButtonEvent.Buttons.None,
+			IECore.LineSegment3f(
+				imath.V3f( p.x, p.y, 1 ),
+				imath.V3f( p.x, p.y, 0 )
+			)
+		)
+
+		if not self._makeCurrent() :
+			return False
+
+		self.__viewportGadget.leaveSignal()( self.__viewportGadget, event )
 
 	def __renderRequest( self, gadget ) :
 
@@ -285,11 +316,15 @@ class _EventFilter( QtCore.QObject ) :
 
 			toolTip = widget.getViewportGadget().getToolTip(
 				IECore.LineSegment3f(
-					IECore.V3f( qEvent.x(), qEvent.y(), 1 ),
-					IECore.V3f( qEvent.x(), qEvent.y(), 0 )
+					imath.V3f( qEvent.x(), qEvent.y(), 1 ),
+					imath.V3f( qEvent.x(), qEvent.y(), 0 )
 				)
 			 )
 
+			if not toolTip :
+				return False
+
+			toolTip = GafferUI.DocumentationAlgo.markdownToHTML( toolTip )
 			QtWidgets.QToolTip.showText( qEvent.globalPos(), toolTip, qObject )
 
 			return True

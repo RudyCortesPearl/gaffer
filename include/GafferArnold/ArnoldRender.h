@@ -37,22 +37,23 @@
 #ifndef GAFFERARNOLD_ARNOLDRENDER_H
 #define GAFFERARNOLD_ARNOLDRENDER_H
 
-#include "GafferScene/Preview/Render.h"
-
+#include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
+
+#include "GafferScene/Render.h"
 
 namespace GafferArnold
 {
 
-class ArnoldRender : public GafferScene::Preview::Render
+class GAFFERARNOLD_API ArnoldRender : public GafferScene::Render
 {
 
 	public :
 
 		ArnoldRender( const std::string &name=defaultName<ArnoldRender>() );
-		virtual ~ArnoldRender();
+		~ArnoldRender() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferArnold::ArnoldRender, ArnoldRenderTypeId, GafferScene::Preview::Render );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldRender, ArnoldRenderTypeId, GafferScene::Render );
 
 };
 

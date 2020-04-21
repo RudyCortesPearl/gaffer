@@ -37,31 +37,32 @@
 #ifndef GAFFERAPPLESEED_APPLESEEDLIGHT_H
 #define GAFFERAPPLESEED_APPLESEEDLIGHT_H
 
-#include "foundation/utility/api/specializedapiarrays.h"
+#include "GafferAppleseed/Export.h"
+#include "GafferAppleseed/TypeIds.h"
 
 #include "GafferScene/Light.h"
 
-#include "GafferAppleseed/TypeIds.h"
+#include "foundation/utility/api/specializedapiarrays.h"
 
 namespace GafferAppleseed
 {
 
-class AppleseedLight : public GafferScene::Light
+class GAFFERAPPLESEED_API AppleseedLight : public GafferScene::Light
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferAppleseed::AppleseedLight, AppleseedLightTypeId, GafferScene::Light );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferAppleseed::AppleseedLight, AppleseedLightTypeId, GafferScene::Light );
 
 		AppleseedLight( const std::string &name=defaultName<AppleseedLight>() );
-		virtual ~AppleseedLight();
+		~AppleseedLight() override;
 
 		void loadShader( const std::string &shaderName );
 
 	protected :
 
-		virtual void hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ObjectVectorPtr computeLight( const Gaffer::Context *context ) const;
+		void hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECoreScene::ConstShaderNetworkPtr computeLight( const Gaffer::Context *context ) const override;
 
 	private :
 

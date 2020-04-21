@@ -34,21 +34,23 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/algorithm/string/replace.hpp"
-
-#include "Gaffer/StringPlug.h"
 #include "Gaffer/BoxIO.h"
+
+#include "Gaffer/ArrayPlug.h"
 #include "Gaffer/Box.h"
+#include "Gaffer/BoxIn.h"
+#include "Gaffer/BoxOut.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
 #include "Gaffer/PlugAlgo.h"
 #include "Gaffer/ScriptNode.h"
-#include "Gaffer/BoxIn.h"
-#include "Gaffer/BoxOut.h"
-#include "Gaffer/Box.h"
-#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/Switch.h"
 
+#include "boost/algorithm/string/replace.hpp"
+#include "boost/bind.hpp"
+
+using namespace std;
 using namespace IECore;
 using namespace Gaffer;
 
@@ -63,6 +65,9 @@ InternedString g_inName( "in" );
 InternedString g_inNamePrivate( "__in" );
 InternedString g_outName( "out" );
 InternedString g_outNamePrivate( "__out" );
+InternedString g_passThroughName( "passThrough" );
+InternedString g_enabledName( "enabled" );
+InternedString g_switchName( "__switch" );
 InternedString g_sectionName( "noduleLayout:section" );
 
 std::string oppositeSection( const std::string &section )
@@ -111,13 +116,58 @@ void setupNoduleSectionMetadata( Plug *dst, const Plug *src )
 
 }
 
+// See equivalent function in PlugAlgo.cpp for an explanation of
+// why this nonsense is necessary.
+// \todo Abolish the Dynamic flag and instead make the serialisers
+// smart enough to always do the right thing.
+void applyDynamicFlag( Plug *plug )
+{
+	plug->setFlags( Plug::Dynamic, true );
+
+	auto compoundTypes = { PlugTypeId, ValuePlugTypeId, ArrayPlugTypeId };
+	if( find( begin( compoundTypes ), end( compoundTypes ), (Gaffer::TypeId)plug->typeId() ) != end( compoundTypes ) )
+	{
+		for( RecursivePlugIterator it( plug ); !it.done(); ++it )
+		{
+			(*it)->setFlags( Plug::Dynamic, true );
+			if( find( begin( compoundTypes ), end( compoundTypes ), (Gaffer::TypeId)(*it)->typeId() ) != end( compoundTypes ) )
+			{
+				it.prune();
+			}
+		}
+	}
+}
+
+// \todo This also exists in PlugAlgo.cpp. Should it be a public method,
+// and if so, what should happen when the plugs don't match (the asserts
+// wouldn't be appropriate). Or, more radically, should the `setFrom()`
+// virtual method be moved from ValuePlug to Plug?
+void setFrom( Plug *dst, const Plug *src )
+{
+	assert( dst->typeId() == src->typeId() );
+	if( ValuePlug *dstValuePlug = IECore::runTimeCast<ValuePlug>( dst ) )
+	{
+		dstValuePlug->setFrom( static_cast<const ValuePlug *>( src ) );
+	}
+	else
+	{
+		for( PlugIterator it( dst ); !it.done(); ++it )
+		{
+			Plug *dstChild = it->get();
+			const Plug *srcChild = src->getChild<Plug>( dstChild->getName() );
+			assert( srcChild );
+			setFrom( dstChild, srcChild );
+		}
+	}
+}
+
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // BoxIO
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( BoxIO );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( BoxIO );
 
 size_t BoxIO::g_firstPlugIndex = 0;
 
@@ -132,14 +182,7 @@ BoxIO::BoxIO( Plug::Direction direction, const std::string &name )
 	// Connect to the signals we need to syncronise the namePlug() value
 	// with the name of the promotedPlug().
 	plugSetSignal().connect( boost::bind( &BoxIO::plugSet, this, ::_1 ) );
-	if( direction == Plug::In )
-	{
-		plugInputChangedSignal().connect( boost::bind( &BoxIO::plugInputChanged, this, ::_1 ) );
-	}
-	else
-	{
-		parentChangedSignal().connect( boost::bind( &BoxIO::parentChanged, this, ::_2 ) );
-	}
+	plugInputChangedSignal().connect( boost::bind( &BoxIO::plugInputChanged, this, ::_1 ) );
 }
 
 BoxIO::~BoxIO()
@@ -158,42 +201,93 @@ const StringPlug *BoxIO::namePlug() const
 
 void BoxIO::setup( const Plug *plug )
 {
-	if( plug )
+	if( inPlugInternal() )
 	{
-		if( inPlugInternal() )
-		{
-			throw IECore::Exception( "Plugs already set up" );
-		}
-		addChild( plug->createCounterpart( inPlugName(), Plug::In ) );
-		addChild( plug->createCounterpart( outPlugName(), Plug::Out ) );
+		throw IECore::Exception( "Plugs already set up" );
+	}
+	addChild( plug->createCounterpart( inPlugName(), Plug::In ) );
+	addChild( plug->createCounterpart( outPlugName(), Plug::Out ) );
 
-		inPlugInternal()->setFlags( Plug::Dynamic | Plug::Serialisable, true );
-		outPlugInternal()->setFlags( Plug::Dynamic | Plug::Serialisable, true );
+	inPlugInternal()->setFlags( Plug::Serialisable, true );
+	outPlugInternal()->setFlags( Plug::Serialisable, true );
+	applyDynamicFlag( inPlugInternal() );
+	applyDynamicFlag( outPlugInternal() );
+
+	MetadataAlgo::copy(
+		plug,
+		m_direction == Plug::In ? inPlugInternal() : outPlugInternal(),
+		/* exclude = */ "layout:*"
+	);
+
+	setupNoduleSectionMetadata(
+		m_direction == Plug::In ? outPlugInternal() : inPlugInternal(),
+		plug
+	);
+
+	if( m_direction == Plug::Out )
+	{
+		setupPassThrough();
+	}
+	else
+	{
 		outPlugInternal()->setInput( inPlugInternal() );
-
-		MetadataAlgo::copy(
-			plug,
-			m_direction == Plug::In ? inPlugInternal() : outPlugInternal(),
-			/* exclude = */ "layout:*"
-		);
-
-		setupNoduleSectionMetadata(
-			m_direction == Plug::In ? outPlugInternal() : inPlugInternal(),
-			plug
-		);
 	}
 
-	if( promotedPlug<Plug>() )
+	// We also want to set up our promoted plug.  But if we're
+	// being created from a script execution, we don't need to
+	// do that ourselves because it'll have been serialised into
+	// the script.
+	ScriptNode *script = scriptNode();
+	if( !script || !script->isExecuting() )
 	{
-		throw IECore::Exception( "Promoted plug already set up" );
+		setupPromotedPlug();
+	}
+}
+
+void BoxIO::setupPassThrough()
+{
+	addChild( inPlugInternal()->createCounterpart( g_passThroughName, Plug::In ) );
+	addChild( new BoolPlug( g_enabledName, Plug::In, true ) );
+	addChild( new Switch( g_switchName ) );
+	switchInternal()->setup( inPlugInternal() );
+	switchInternal()->enabledPlug()->setInput( enabledPlugInternal() );
+	switchInternal()->inPlugs()->getChild<Plug>( 0 )->setInput( passThroughPlugInternal() );
+	switchInternal()->inPlugs()->getChild<Plug>( 1 )->setInput( inPlugInternal() );
+	switchInternal()->indexPlug()->setValue( 1 );
+	outPlugInternal()->setInput( switchInternal()->outPlug() );
+}
+
+void BoxIO::setupPromotedPlug()
+{
+	Plug *toPromote = m_direction == Plug::In ? inPlugInternal() : outPlugInternal();
+	if( toPromote && parent<Box>() )
+	{
+		Plug *promoted = PlugAlgo::promoteWithName( toPromote, namePlug()->getValue() );
+		namePlug()->setValue( promoted->getName() );
+	}
+}
+
+void BoxIO::setupBoxEnabledPlug()
+{
+	if( m_direction != Plug::Out )
+	{
+		return;
 	}
 
-	if( parent<Box>() )
+	Box *box = parent<Box>();
+	if( !box )
 	{
-		Plug *toPromote = m_direction == Plug::In ? inPlugInternal() : outPlugInternal();
-		Plug *promoted = PlugAlgo::promote( toPromote );
-		promoted->setName( namePlug()->getValue() );
+		return;
 	}
+
+	BoolPlug *boxEnabledPlug = box->enabledPlug();
+	if( !boxEnabledPlug )
+	{
+		BoolPlugPtr p = new BoolPlug( g_enabledName, Plug::In, true, Plug::Default | Plug::Dynamic );
+		box->addChild( p );
+		boxEnabledPlug = p.get();
+	}
+	enabledPlugInternal()->setInput( boxEnabledPlug );
 }
 
 Plug::Direction BoxIO::direction() const
@@ -219,6 +313,36 @@ Gaffer::Plug *BoxIO::outPlugInternal()
 const Gaffer::Plug *BoxIO::outPlugInternal() const
 {
 	return getChild<Plug>( outPlugName() );
+}
+
+Gaffer::Plug *BoxIO::passThroughPlugInternal()
+{
+	return getChild<Plug>( g_passThroughName );
+}
+
+const Gaffer::Plug *BoxIO::passThroughPlugInternal() const
+{
+	return getChild<Plug>( g_passThroughName );
+}
+
+Gaffer::Switch *BoxIO::switchInternal()
+{
+	return getChild<Switch>( g_switchName );
+}
+
+const Gaffer::Switch *BoxIO::switchInternal() const
+{
+	return getChild<Switch>( g_switchName );
+}
+
+BoolPlug *BoxIO::enabledPlugInternal()
+{
+	return getChild<BoolPlug>( g_enabledName );
+}
+
+const BoolPlug *BoxIO::enabledPlugInternal() const
+{
+	return getChild<BoolPlug>( g_enabledName );
 }
 
 void BoxIO::parentChanging( Gaffer::GraphComponent *newParent )
@@ -268,7 +392,7 @@ void BoxIO::plugSet( Plug *plug )
 {
 	if( plug == namePlug() )
 	{
-		if( Plug *p = promotedPlug<Plug>() )
+		if( Plug *p = promotedPlug() )
 		{
 			const InternedString newName = p->setName( namePlug()->getValue() );
 			// Name may have been adjusted due to
@@ -281,6 +405,8 @@ void BoxIO::plugSet( Plug *plug )
 
 void BoxIO::parentChanged( GraphComponent *oldParent )
 {
+	Node::parentChanged( oldParent );
+
 	// Manage inputChanged connections on our parent box,
 	// so we can discover our promoted plug when an output
 	// connection is made to it.
@@ -304,12 +430,12 @@ void BoxIO::plugInputChanged( Plug *plug )
 	// the parent box node. This gives us the opportunity
 	// to discover our promoted plug and connect to its
 	// signals.
-	Plug *promoted = NULL;
+	Plug *promoted = nullptr;
 	if( m_direction == Plug::In && plug == inPlugInternal() )
 	{
-		promoted = promotedPlug<Plug>();
+		promoted = promotedPlug();
 	}
-	else if( m_direction == Plug::Out && plug == promotedPlug<Plug>() )
+	else if( m_direction == Plug::Out && plug == promotedPlug() )
 	{
 		promoted = plug;
 	}
@@ -323,11 +449,32 @@ void BoxIO::plugInputChanged( Plug *plug )
 			boost::bind( &BoxIO::promotedPlugParentChanged, this, ::_1 )
 		);
 	}
+
+	// Detect manual setups created by legacy scripts from before
+	// we added the pass-through, and fix them to include a pass-through.
+
+	if(
+		m_direction == Plug::Out &&
+		plug == outPlugInternal() &&
+		plug->getInput() == inPlugInternal() &&
+		!passThroughPlugInternal()
+	)
+	{
+		setupPassThrough();
+	}
+
+	// If a connection has been made to our passThrough plug
+	// for the first time, then we also want to create an enabled
+	// plug for the Box and connect to it.
+	if( plug == passThroughPlugInternal() && passThroughPlugInternal()->getInput() )
+	{
+		setupBoxEnabledPlug();
+	}
 }
 
 void BoxIO::promotedPlugNameChanged( GraphComponent *graphComponent )
 {
-	if( graphComponent == promotedPlug<Plug>() )
+	if( graphComponent == promotedPlug() )
 	{
 		namePlug()->setValue( graphComponent->getName() );
 	}
@@ -351,9 +498,9 @@ void BoxIO::promotedPlugParentChanged( GraphComponent *graphComponent )
 		}
 	}
 
-	if( !graphComponent->parent<GraphComponent>() )
+	if( !graphComponent->parent() )
 	{
-		if( GraphComponent *p = parent<GraphComponent>() )
+		if( GraphComponent *p = parent() )
 		{
 			p->removeChild( this );
 		}
@@ -393,7 +540,7 @@ bool hasNodule( const Plug *plug )
 {
 	for( const Plug *p = plug; p; p = p->parent<Plug>() )
 	{
-		ConstStringDataPtr d = Metadata::plugValue<StringData>( p, g_noduleTypeName );
+		ConstStringDataPtr d = Metadata::value<StringData>( p, g_noduleTypeName );
 		if( d && d->readable() == "" )
 		{
 			return false;
@@ -415,7 +562,7 @@ Box *enclosingBox( Plug *plug )
 	Node *node = plug->node();
 	if( !node )
 	{
-		return NULL;
+		return nullptr;
 	}
 	return node->parent<Box>();
 }
@@ -451,7 +598,12 @@ Plug *BoxIO::promote( Plug *plug )
 	boxIO->namePlug()->setValue( promotedName( plug ) );
 	boxIO->setup( plug );
 
-	connect( plug, boxIO->plug<Plug>() );
+	if( plug->direction() == Plug::In )
+	{
+		setFrom( boxIO->promotedPlug(), plug );
+	}
+
+	connect( plug, boxIO->plug() );
 
 	if( runTimeCast<ArrayPlug>( plug ) )
 	{
@@ -460,10 +612,10 @@ Plug *BoxIO::promote( Plug *plug )
 		// promotion of the parent plug, so hide the
 		// individual elements.
 		Metadata::registerValue( plug, g_noduleTypeName, new StringData( "GafferUI::StandardNodule" ) );
-		Metadata::registerValue( boxIO->plug<Plug>(), g_noduleTypeName, new StringData( "GafferUI::StandardNodule" ) );
+		Metadata::registerValue( boxIO->plug(), g_noduleTypeName, new StringData( "GafferUI::StandardNodule" ) );
 	}
 
-	return boxIO->promotedPlug<Plug>();
+	return boxIO->promotedPlug();
 }
 
 bool BoxIO::canInsert( const Box *box )
@@ -476,7 +628,7 @@ bool BoxIO::canInsert( const Box *box )
 			const Plug::OutputContainer &outputs = plug->outputs();
 			for( Plug::OutputContainer::const_iterator oIt = outputs.begin(), oeIt = outputs.end(); oIt != oeIt; ++oIt )
 			{
-				if( hasNodule( *oIt ) && !runTimeCast<BoxIn>( (*oIt)->node() ) )
+				if( hasNodule( *oIt ) && !runTimeCast<BoxIO>( (*oIt)->node() ) )
 				{
 					return true;
 				}
@@ -484,8 +636,8 @@ bool BoxIO::canInsert( const Box *box )
 		}
 		else
 		{
-			const Plug *input = plug->getInput<Plug>();
-			if( input && hasNodule( input ) && !runTimeCast<const BoxOut>( input->node() ) )
+			const Plug *input = plug->getInput();
+			if( input && hasNodule( input ) && !runTimeCast<const BoxIO>( input->node() ) )
 			{
 				return true;
 			}
@@ -509,7 +661,7 @@ void BoxIO::insert( Box *box )
 			const Plug::OutputContainer &outputs = plug->outputs();
 			for( Plug::OutputContainer::const_iterator oIt = outputs.begin(), oeIt = outputs.end(); oIt != oeIt; ++oIt )
 			{
-				if( hasNodule( *oIt ) && !runTimeCast<BoxIn>( (*oIt)->node() ) )
+				if( hasNodule( *oIt ) && !runTimeCast<BoxIO>( (*oIt)->node() ) )
 				{
 					outputsNeedingBoxIn.push_back( *oIt );
 				}
@@ -523,20 +675,20 @@ void BoxIO::insert( Box *box )
 			BoxInPtr boxIn = new BoxIn;
 			boxIn->namePlug()->setValue( plug->getName() );
 			boxIn->setup( plug );
+			box->addChild( boxIn );
+
 			boxIn->inPlugInternal()->setInput( plug );
 			for( std::vector<Plug *>::const_iterator oIt = outputsNeedingBoxIn.begin(), oeIt = outputsNeedingBoxIn.end(); oIt != oeIt; ++oIt )
 			{
-				(*oIt)->setInput( boxIn->plug<Plug>() );
+				(*oIt)->setInput( boxIn->plug() );
 			}
-
-			box->addChild( boxIn );
 		}
 		else
 		{
 			// Output plug
 
-			Plug *input = plug->getInput<Plug>();
-			if( !input || !hasNodule( input ) || runTimeCast<BoxOut>( input->node() ) )
+			Plug *input = plug->getInput();
+			if( !input || !hasNodule( input ) || runTimeCast<BoxIO>( input->node() ) )
 			{
 				continue;
 			}
@@ -544,9 +696,10 @@ void BoxIO::insert( Box *box )
 			BoxOutPtr boxOut = new BoxOut;
 			boxOut->namePlug()->setValue( plug->getName() );
 			boxOut->setup( plug );
-			boxOut->plug<Plug>()->setInput( input );
-			plug->setInput( boxOut->outPlugInternal() );
 			box->addChild( boxOut );
+
+			boxOut->plug()->setInput( input );
+			plug->setInput( boxOut->outPlugInternal() );
 		}
 	}
 

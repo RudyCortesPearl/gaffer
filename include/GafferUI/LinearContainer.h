@@ -43,7 +43,7 @@
 namespace GafferUI
 {
 
-class LinearContainer : public ContainerGadget
+class GAFFERUI_API LinearContainer : public ContainerGadget
 {
 
 	public :
@@ -74,9 +74,9 @@ class LinearContainer : public ContainerGadget
 		LinearContainer( const std::string &name=defaultName<LinearContainer>(), Orientation orientation=X,
 			Alignment alignment=Centre, float spacing = 0.0f, Direction=Increasing );
 
-		virtual ~LinearContainer();
+		~LinearContainer() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::LinearContainer, LinearContainerTypeId, ContainerGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::LinearContainer, LinearContainerTypeId, ContainerGadget );
 
 		void setOrientation( Orientation orientation );
 		Orientation getOrientation() const;
@@ -90,11 +90,11 @@ class LinearContainer : public ContainerGadget
 		void setDirection( Direction direction );
 		Direction getDirection() const;
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 	private :
 

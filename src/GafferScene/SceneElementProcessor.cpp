@@ -35,21 +35,22 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Exception.h"
-
 #include "GafferScene/SceneElementProcessor.h"
+
 #include "GafferScene/Filter.h"
 #include "GafferScene/SceneAlgo.h"
+
+#include "IECore/Exception.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( SceneElementProcessor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SceneElementProcessor );
 
 size_t SceneElementProcessor::g_firstPlugIndex = 0;
 
-SceneElementProcessor::SceneElementProcessor( const std::string &name, Filter::Result filterDefault )
+SceneElementProcessor::SceneElementProcessor( const std::string &name, IECore::PathMatcher::Result filterDefault )
 	:	FilteredSceneProcessor( name, filterDefault )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
@@ -70,19 +71,28 @@ SceneElementProcessor::~SceneElementProcessor()
 
 void SceneElementProcessor::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	/// \todo Our base classes will say that enabledPlug() affects all children of outPlug() - perhaps
-	/// we can do better by affecting only the plugs we know we're going to process?
 	FilteredSceneProcessor::affects( input, outputs );
 
 	const ScenePlug *in = inPlug();
 	if( input->parent<ScenePlug>() == in )
 	{
-		outputs.push_back( outPlug()->getChild<ValuePlug>( input->getName() ) );
+		const ValuePlug *output = outPlug()->getChild<ValuePlug>( input->getName() );
+		if( !output->getInput() )
+		{
+			outputs.push_back( output );
+		}
 	}
 	else if( input == filterPlug() )
 	{
 		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
 		{
+			if( (*it)->getInput() )
+			{
+				// If the output has been connected as a pass-through,
+				// then it clearly can't be affected by the filter plug,
+				// because there won't even be a compute() call for it.
+				continue;
+			}
 			outputs.push_back( it->get() );
 		}
 	}
@@ -156,13 +166,13 @@ Imath::Box3f SceneElementProcessor::computeBound( const ScenePath &path, const G
 
 void SceneElementProcessor::hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = Filter::NoMatch;
+	IECore::PathMatcher::Result match = IECore::PathMatcher::NoMatch;
 	if( processesTransform() )
 	{
 		match = filterValue( context );
 	}
 
-	if( match & Filter::ExactMatch )
+	if( match & IECore::PathMatcher::ExactMatch )
 	{
 		FilteredSceneProcessor::hashTransform( path, context, parent, h );
 		inPlug()->transformPlug()->hash( h );
@@ -177,7 +187,7 @@ void SceneElementProcessor::hashTransform( const ScenePath &path, const Gaffer::
 
 Imath::M44f SceneElementProcessor::computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterValue( context ) & Filter::ExactMatch )
+	if( filterValue( context ) & IECore::PathMatcher::ExactMatch )
 	{
 		return computeProcessedTransform( path, context, inPlug()->transformPlug()->getValue() );
 	}
@@ -189,13 +199,13 @@ Imath::M44f SceneElementProcessor::computeTransform( const ScenePath &path, cons
 
 void SceneElementProcessor::hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = Filter::NoMatch;
+	IECore::PathMatcher::Result match = IECore::PathMatcher::NoMatch;
 	if( processesAttributes() )
 	{
 		match = filterValue( context );
 	}
 
-	if( match & Filter::ExactMatch )
+	if( match & IECore::PathMatcher::ExactMatch )
 	{
 		FilteredSceneProcessor::hashAttributes( path, context, parent, h );
 		inPlug()->attributesPlug()->hash( h );
@@ -210,7 +220,7 @@ void SceneElementProcessor::hashAttributes( const ScenePath &path, const Gaffer:
 
 IECore::ConstCompoundObjectPtr SceneElementProcessor::computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterValue( context ) & Filter::ExactMatch )
+	if( filterValue( context ) & IECore::PathMatcher::ExactMatch )
 	{
 		return computeProcessedAttributes( path, context, inPlug()->attributesPlug()->getValue() );
 	}
@@ -222,13 +232,13 @@ IECore::ConstCompoundObjectPtr SceneElementProcessor::computeAttributes( const S
 
 void SceneElementProcessor::hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = Filter::NoMatch;
+	IECore::PathMatcher::Result match = IECore::PathMatcher::NoMatch;
 	if( processesObject() )
 	{
 		match = filterValue( context );
 	}
 
-	if( match & Filter::ExactMatch )
+	if( match & IECore::PathMatcher::ExactMatch )
 	{
 		FilteredSceneProcessor::hashObject( path, context, parent, h );
 		inPlug()->objectPlug()->hash( h );
@@ -243,7 +253,7 @@ void SceneElementProcessor::hashObject( const ScenePath &path, const Gaffer::Con
 
 IECore::ConstObjectPtr SceneElementProcessor::computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterValue( context ) & Filter::ExactMatch )
+	if( filterValue( context ) & IECore::PathMatcher::ExactMatch )
 	{
 		return computeProcessedObject( path, context, inPlug()->objectPlug()->getValue() );
 	}
@@ -316,13 +326,13 @@ SceneElementProcessor::BoundMethod SceneElementProcessor::boundMethod( const Gaf
 
 	if( pBound || pTransform )
 	{
-		const Filter::Result f = filterValue( context );
-		if( pBound && (f & Filter::ExactMatch) )
+		const IECore::PathMatcher::Result f = filterValue( context );
+		if( pBound && (f & IECore::PathMatcher::ExactMatch) )
 		{
 			return Processed;
 		}
 
-		if( f & Filter::DescendantMatch )
+		if( f & IECore::PathMatcher::DescendantMatch )
 		{
 			return Union;
 		}

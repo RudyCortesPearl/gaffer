@@ -35,16 +35,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/MeshPrimitive.h"
-
 #include "GafferScene/Plane.h"
+
+#include "IECoreScene/MeshPrimitive.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 
-IE_CORE_DEFINERUNTIMETYPED( Plane );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Plane );
 
 size_t Plane::g_firstPlugIndex = 0;
 

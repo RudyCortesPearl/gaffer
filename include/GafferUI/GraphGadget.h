@@ -38,10 +38,10 @@
 #ifndef GAFFERUI_GRAPHGADGET_H
 #define GAFFERUI_GRAPHGADGET_H
 
-#include "Gaffer/Plug.h"
-#include "Gaffer/CompoundNumericPlug.h"
-
 #include "GafferUI/ContainerGadget.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/Plug.h"
 
 namespace Gaffer
 {
@@ -57,9 +57,21 @@ IE_CORE_FORWARDDECLARE( NodeGadget );
 IE_CORE_FORWARDDECLARE( Nodule );
 IE_CORE_FORWARDDECLARE( ConnectionGadget );
 IE_CORE_FORWARDDECLARE( GraphLayout );
+IE_CORE_FORWARDDECLARE( AuxiliaryConnectionsGadget );
+
+/// Aliases that define the intended use of each
+/// Gadget::Layer by the GraphGadget components.
+namespace GraphLayer
+{
+	constexpr Gadget::Layer Backdrops = Gadget::Layer::Back;
+	constexpr Gadget::Layer Connections = Gadget::Layer::MidBack;
+	constexpr Gadget::Layer Nodes = Gadget::Layer::Main;
+	constexpr Gadget::Layer Highlighting = Gadget::Layer::MidFront;
+	constexpr Gadget::Layer Overlay = Gadget::Layer::Front;
+};
 
 /// The GraphGadget class provides a ui for connecting nodes together.
-class GraphGadget : public ContainerGadget
+class GAFFERUI_API GraphGadget : public ContainerGadget
 {
 
 	public :
@@ -67,32 +79,32 @@ class GraphGadget : public ContainerGadget
 		/// Creates a graph showing the children of root, optionally
 		/// filtered by the specified set. Nodes are only displayed if
 		/// they are both a child of root and a member of filter.
-		GraphGadget( Gaffer::NodePtr root, Gaffer::SetPtr filter = NULL );
+		GraphGadget( Gaffer::NodePtr root, Gaffer::SetPtr filter = nullptr );
 
-		virtual ~GraphGadget();
+		~GraphGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::GraphGadget, GraphGadgetTypeId, ContainerGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::GraphGadget, GraphGadgetTypeId, ContainerGadget );
 
 		Gaffer::Node *getRoot();
 		const Gaffer::Node *getRoot() const;
-		void setRoot( Gaffer::NodePtr root, Gaffer::SetPtr filter = NULL );
+		void setRoot( Gaffer::NodePtr root, Gaffer::SetPtr filter = nullptr );
 		typedef boost::signal<void ( GraphGadget *, Gaffer::Node * )> RootChangedSignal;
 		/// A signal emitted when the root has been changed - the signature
 		/// of the signal is ( graphGadget, previousRoot ).
 		RootChangedSignal &rootChangedSignal();
 
-		/// May return NULL if no filter has been specified.
+		/// May return nullptr if no filter has been specified.
 		Gaffer::Set *getFilter();
 		const Gaffer::Set *getFilter() const;
 		void setFilter( Gaffer::SetPtr filter );
 
-		/// Returns the NodeGadget representing the specified node or NULL
+		/// Returns the NodeGadget representing the specified node or nullptr
 		/// if none exists.
 		NodeGadget *nodeGadget( const Gaffer::Node *node );
 		const NodeGadget *nodeGadget( const Gaffer::Node *node ) const;
 
 		/// Returns the ConnectionGadget representing the specified
-		/// destination Plug or NULL if none exists.
+		/// destination Plug or nullptr if none exists.
 		ConnectionGadget *connectionGadget( const Gaffer::Plug *dstPlug );
 		const ConnectionGadget *connectionGadget( const Gaffer::Plug *dstPlug ) const;
 
@@ -100,20 +112,24 @@ class GraphGadget : public ContainerGadget
 		/// to the specified plug and appends them to the connections vector.
 		/// Returns the new size of the vector. If excludedNodes is specified,
 		/// then connections to any nodes it contains will be ignored.
-		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL );
-		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL ) const;
+		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = nullptr );
+		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = nullptr ) const;
 
 		/// Finds all the ConnectionGadgets connected to the specified node and
 		/// appends them to the connections vector. Returns the new size of the
 		/// vector. If excludedNodes is specified, then connections to any
 		/// nodes it contains will be ignored.
-		size_t connectionGadgets( const Gaffer::Node *node, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL );
-		size_t connectionGadgets( const Gaffer::Node *node, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL ) const;
+		size_t connectionGadgets( const Gaffer::Node *node, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = nullptr );
+		size_t connectionGadgets( const Gaffer::Node *node, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = nullptr ) const;
+
+		/// Returns the Gadget responsible for representing auxiliary connections.
+		AuxiliaryConnectionsGadget *auxiliaryConnectionsGadget();
+		const AuxiliaryConnectionsGadget *auxiliaryConnectionsGadget() const;
 
 		/// Finds all the upstream NodeGadgets connected to the specified node
 		/// and appends them to the specified vector. Returns the new size of the vector.
 		/// \note Here "upstream" nodes are defined as nodes at the end of input
-		/// connections as shown in the graph - invisible connections and
+		/// connections as shown in the graph - auxiliary connections and
 		/// invisible nodes are not considered at all.
 		size_t upstreamNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &upstreamNodeGadgets, size_t degreesOfSeparation = Imath::limits<size_t>::max() );
 		size_t upstreamNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &upstreamNodeGadgets, size_t degreesOfSeparation = Imath::limits<size_t>::max() ) const;
@@ -121,7 +137,7 @@ class GraphGadget : public ContainerGadget
 		/// Finds all the downstream NodeGadgets connected to the specified node
 		/// and appends them to the specified vector. Returns the new size of the vector.
 		/// \note Here "downstream" nodes are defined as nodes at the end of output
-		/// connections as shown in the graph - invisible connections and
+		/// connections as shown in the graph - auxiliary connections and
 		/// invisible nodes are not considered at all.
 		size_t downstreamNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &downstreamNodeGadgets, size_t degreesOfSeparation = Imath::limits<size_t>::max() );
 		size_t downstreamNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &downstreamNodeGadgets, size_t degreesOfSeparation = Imath::limits<size_t>::max() ) const;
@@ -129,7 +145,7 @@ class GraphGadget : public ContainerGadget
 		/// Finds all the NodeGadgets connected to the specified node
 		/// and appends them to the specified vector. Returns the new size of the vector.
 		/// \note Here "connected" nodes are defined as nodes at the end of
-		/// connections as shown in the graph - invisible connections and
+		/// connections as shown in the graph - auxiliary connections and
 		/// invisible nodes are not considered at all.
 		size_t connectedNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction = Gaffer::Plug::Invalid, size_t degreesOfSeparation = Imath::limits<size_t>::max() );
 		size_t connectedNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction = Gaffer::Plug::Invalid, size_t degreesOfSeparation = Imath::limits<size_t>::max() ) const;
@@ -173,7 +189,7 @@ class GraphGadget : public ContainerGadget
 
 	protected :
 
-		void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 	private :
 
@@ -203,10 +219,11 @@ class GraphGadget : public ContainerGadget
 		bool dragEnd( GadgetPtr gadget, const DragDropEvent &event );
 		void calculateDragSnapOffsets( Gaffer::Set *nodes );
 		void offsetNodes( Gaffer::Set *nodes, const Imath::V2f &offset );
-		void updateDragSelection( bool dragEnd );
+
+		void updateDragSelection( bool dragEnd, ModifiableEvent::Modifiers modifiers );
 
 		void updateGraph();
-		/// May return NULL if NodeGadget::create() returns NULL, signifying that
+		/// May return nullptr if NodeGadget::create() returns nullptr, signifying that
 		/// someone has registered a creator in order to hide all nodes of a certain type.
 		NodeGadget *addNodeGadget( Gaffer::Node *node );
 		void removeNodeGadget( const Gaffer::Node *node );
@@ -270,6 +287,7 @@ class GraphGadget : public ContainerGadget
 		Nodule *m_dragReconnectSrcNodule;
 		Nodule *m_dragReconnectDstNodule;
 		std::vector<float> m_dragSnapOffsets[2]; // offsets in x and y
+		std::vector<Imath::V2f> m_dragSnapPoints; // specific points that are also target for point snapping
 
 		GraphLayoutPtr m_layout;
 

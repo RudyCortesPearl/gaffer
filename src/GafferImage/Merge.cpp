@@ -34,13 +34,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/BoxOps.h"
+#include "GafferImage/Merge.h"
+
+#include "GafferImage/ImageAlgo.h"
 
 #include "Gaffer/ArrayPlug.h"
 #include "Gaffer/Context.h"
 
-#include "GafferImage/Merge.h"
-#include "GafferImage/ImageAlgo.h"
+#include "IECore/BoxOps.h"
 
 using namespace std;
 using namespace Imath;
@@ -68,12 +69,12 @@ float opMax( float A, float B, float a, float b){ return std::max( A, B ); }
 
 } // namespace
 
-IE_CORE_DEFINERUNTIMETYPED( Merge );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Merge );
 
 size_t Merge::g_firstPlugIndex = 0;
 
 Merge::Merge( const std::string &name )
-	:	ImageProcessor( name, 2 )
+	:	FlatImageProcessor( name, 2 )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild(
@@ -107,7 +108,7 @@ const Gaffer::IntPlug *Merge::operationPlug() const
 
 void Merge::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	if( input == operationPlug() )
 	{
@@ -124,7 +125,7 @@ void Merge::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs 
 
 void Merge::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashDataWindow( output, context, h );
+	FlatImageProcessor::hashDataWindow( output, context, h );
 
 	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
 	{
@@ -149,7 +150,7 @@ Imath::Box2i Merge::computeDataWindow( const Gaffer::Context *context, const Ima
 
 void Merge::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashChannelNames( output, context, h );
+	FlatImageProcessor::hashChannelNames( output, context, h );
 
 	for( ImagePlugIterator it( inPlugs() ); !it.done(); ++it )
 	{
@@ -191,7 +192,7 @@ IECore::ConstStringVectorDataPtr Merge::computeChannelNames( const Gaffer::Conte
 
 void Merge::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashChannelData( output, context, h );
+	FlatImageProcessor::hashChannelData( output, context, h );
 
 	const std::string channelName = context->get<std::string>( ImagePlug::channelNameContextName );
 	const V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
@@ -212,17 +213,25 @@ void Merge::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer:
 			channelNamesData = (*it)->channelNamesPlug()->getValue();
 			dataWindow = (*it)->dataWindowPlug()->getValue();
 		}
-		
-		const std::vector<std::string> &channelNames = channelNamesData->readable();
 
-		if( ImageAlgo::channelExists( channelNames, channelName ) )
+		const Box2i validBound = boxIntersection( tileBound, dataWindow );
+		if( BufferAlgo::empty( validBound ) )
 		{
-			(*it)->channelDataPlug()->hash( h );
+			h.append( 0 );
 		}
-
-		if( ImageAlgo::channelExists( channelNames, "A" ) )
+		else
 		{
-			h.append( (*it)->channelDataHash( "A", tileOrigin ) );
+			const std::vector<std::string> &channelNames = channelNamesData->readable();
+
+			if( ImageAlgo::channelExists( channelNames, channelName ) )
+			{
+				(*it)->channelDataPlug()->hash( h );
+			}
+
+			if( ImageAlgo::channelExists( channelNames, "A" ) )
+			{
+				h.append( (*it)->channelDataHash( "A", tileOrigin ) );
+			}
 		}
 
 		// The hash of the channel data we include above represents just the data in
@@ -235,7 +244,6 @@ void Merge::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer:
 		// input data windows, we may be using/revealing the invalid parts of a tile. We
 		// deal with this in computeChannelData() by treating the invalid parts as black,
 		// and must therefore hash in the valid bound here to take that into account.
-		const Box2i validBound = boxIntersection( tileBound, dataWindow );
 		h.append( validBound );
 	}
 
@@ -282,9 +290,9 @@ IECore::ConstFloatVectorDataPtr Merge::computeChannelData( const std::string &ch
 template<typename F>
 IECore::ConstFloatVectorDataPtr Merge::merge( F f, const std::string &channelName, const Imath::V2i &tileOrigin ) const
 {
-	FloatVectorDataPtr resultData = NULL;
+	FloatVectorDataPtr resultData = nullptr;
 	// Temporary buffer for computing the alpha of intermediate composited layers.
-	FloatVectorDataPtr resultAlphaData = NULL;
+	FloatVectorDataPtr resultAlphaData = nullptr;
 
 	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
 
@@ -308,7 +316,9 @@ IECore::ConstFloatVectorDataPtr Merge::merge( F f, const std::string &channelNam
 		ConstFloatVectorDataPtr channelData;
 		ConstFloatVectorDataPtr alphaData;
 
-		if( ImageAlgo::channelExists( channelNames, channelName ) )
+		const Box2i validBound = boxIntersection( tileBound, dataWindow );
+
+		if( ImageAlgo::channelExists( channelNames, channelName ) && !BufferAlgo::empty( validBound ) )
 		{
 			channelData = (*it)->channelDataPlug()->getValue();
 		}
@@ -317,7 +327,7 @@ IECore::ConstFloatVectorDataPtr Merge::merge( F f, const std::string &channelNam
 			channelData = ImagePlug::blackTile();
 		}
 
-		if( ImageAlgo::channelExists( channelNames, "A" ) )
+		if( ImageAlgo::channelExists( channelNames, "A" ) && !BufferAlgo::empty( validBound ) )
 		{
 			alphaData = (*it)->channelData( "A", tileOrigin );
 		}
@@ -326,7 +336,14 @@ IECore::ConstFloatVectorDataPtr Merge::merge( F f, const std::string &channelNam
 			alphaData = ImagePlug::blackTile();
 		}
 
-		const Box2i validBound = boxIntersection( tileBound, dataWindow );
+		if( (int)alphaData->readable().size() != ImagePlug::tilePixels()  )
+		{
+			throw IECore::Exception( "Merge::computeChannelData : Cannot process deep data." );
+		}
+		if( (int)channelData->readable().size() != ImagePlug::tilePixels() )
+		{
+			throw IECore::Exception( "Merge::computeChannelData : Cannot process deep data." );
+		}
 
 		if( !resultData )
 		{

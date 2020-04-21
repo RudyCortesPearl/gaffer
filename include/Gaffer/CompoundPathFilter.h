@@ -44,15 +44,15 @@ namespace Gaffer
 
 /// The CompoundPathFilter class simply combines a number of other
 /// PathFilters, applying them in sequence.
-class CompoundPathFilter : public Gaffer::PathFilter
+class GAFFER_API CompoundPathFilter : public Gaffer::PathFilter
 {
 
 	public :
 
 		typedef std::vector<PathFilterPtr> Filters;
 
-		CompoundPathFilter( IECore::CompoundDataPtr userData = NULL );
-		virtual ~CompoundPathFilter();
+		CompoundPathFilter( IECore::CompoundDataPtr userData = nullptr );
+		~CompoundPathFilter() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::CompoundPathFilter, CompoundPathFilterTypeId, PathFilter );
 
@@ -64,7 +64,7 @@ class CompoundPathFilter : public Gaffer::PathFilter
 
 	protected :
 
-		virtual void doFilter( std::vector<PathPtr> &paths ) const;
+		void doFilter( std::vector<PathPtr> &paths ) const override;
 
 	private :
 

@@ -35,14 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
+
+#include "Gaffer/Context.h"
 #include "Gaffer/Process.h"
 
 using namespace IECore;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( StringPlug );
+GAFFER_PLUG_DEFINE_TYPE( StringPlug );
 
 StringPlug::StringPlug(
 	const std::string &name,
@@ -104,9 +105,8 @@ std::string StringPlug::getValue( const IECore::MurmurHash *precomputedHash ) co
 	const bool performSubstitutions =
 		m_substitutions &&
 		direction() == In &&
-		getFlags( PerformsSubstitutions ) &&
 		Process::current() &&
-		Context::hasSubstitutions( s->readable() )
+		IECore::StringAlgo::hasSubstitutions( s->readable() )
 	;
 
 	return performSubstitutions ? Context::current()->substitute( s->readable(), m_substitutions ) : s->readable();
@@ -129,8 +129,7 @@ IECore::MurmurHash StringPlug::hash() const
 {
 	const bool performSubstitutions =
 		m_substitutions &&
-		direction() == In &&
-		getFlags( PerformsSubstitutions )
+		direction() == In
 	;
 
 	if( performSubstitutions )
@@ -142,7 +141,7 @@ IECore::MurmurHash StringPlug::hash() const
 			throw IECore::Exception( "StringPlug::getObjectValue() didn't return StringData - is the hash being computed correctly?" );
 		}
 
-		if( Context::hasSubstitutions( s->readable() ) )
+		if( IECore::StringAlgo::hasSubstitutions( s->readable() ) )
 		{
 			IECore::MurmurHash result;
 			result.append( Context::current()->substitute( s->readable(), m_substitutions ) );

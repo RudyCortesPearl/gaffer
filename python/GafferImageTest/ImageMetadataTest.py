@@ -35,6 +35,7 @@
 ##########################################################################
 
 import os
+import imath
 
 import IECore
 
@@ -59,17 +60,17 @@ class ImageMetadataTest( GafferImageTest.ImageTestCase ) :
 		# check that the image is passed through
 
 		self.assertEqual( m["out"]["metadata"].getValue(), inMetadata )
-		self.assertEqual( m["out"].image(), i["out"].image() )
+		self.assertImagesEqual( m["out"], i["out"] )
 
 		# check that we can make metadata
 
-		m["metadata"].addMember( "comment", IECore.StringData( "my favorite image!" ) )
-		m["metadata"].addOptionalMember( "range", IECore.V2iData( IECore.V2i( 5, 10 ) ), enabled = True )
+		m["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "my favorite image!" ), "member1" ) )
+		m["metadata"].addChild( Gaffer.NameValuePlug( "range", IECore.V2iData( imath.V2i( 5, 10 ) ), True, "member1" ) )
 
 		metadata = m["out"]["metadata"].getValue()
 		self.assertEqual( len(metadata), len(inMetadata) + 2 )
 		self.assertEqual( metadata["comment"], IECore.StringData( "my favorite image!" ) )
-		self.assertEqual( metadata["range"], IECore.V2iData( IECore.V2i( 5, 10 ) ) )
+		self.assertEqual( metadata["range"], IECore.V2iData( imath.V2i( 5, 10 ) ) )
 		del metadata["comment"]
 		del metadata["range"]
 		self.assertEqual( metadata, inMetadata )
@@ -84,18 +85,19 @@ class ImageMetadataTest( GafferImageTest.ImageTestCase ) :
 		del metadata["comment"]
 		self.assertEqual( metadata, inMetadata )
 
-		# check disabling the node entirely metadata
+		# check disabling the node entirely
 
 		m["enabled"].setValue( False )
 		self.assertEqual( m["out"]["metadata"].hash(), i["out"]["metadata"].hash() )
 		self.assertEqual( m["out"]["metadata"].getValue(), inMetadata )
-		self.assertEqual( m["out"].image(), i["out"].image() )
+		self.assertImageHashesEqual( m["out"], i["out"] )
+		self.assertImagesEqual( m["out"], i["out"] )
 
 	def testSubstitution( self ) :
 
 		s = Gaffer.ScriptNode()
 		s["m"] = GafferImage.ImageMetadata()
-		s["m"]["metadata"].addMember( "comment", IECore.StringData( "${foo}" ) )
+		s["m"]["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "${foo}" ) ) )
 
 		self.assertEqual( s["m"]["out"]["metadata"].getValue()["comment"], IECore.StringData( "" ) )
 		h = s["m"]["out"]["metadata"].hash()
@@ -111,8 +113,8 @@ class ImageMetadataTest( GafferImageTest.ImageTestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["m"] = GafferImage.ImageMetadata()
-		s["m"]["metadata"].addMember( "comment", IECore.StringData( "my favorite image!" ) )
-		s["m"]["metadata"].addOptionalMember( "range", IECore.V2iData( IECore.V2i( 5, 10 ) ), enabled = True )
+		s["m"]["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "my favorite image!" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  ) )
+		s["m"]["metadata"].addChild( Gaffer.NameValuePlug( "range", IECore.V2iData( imath.V2i( 5, 10 ) ), True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		names = s["m"]["metadata"].keys()
 
 		s2 = Gaffer.ScriptNode()
@@ -124,14 +126,14 @@ class ImageMetadataTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( s2["m"]["metadata"][names[0]]["value"].getValue(), "my favorite image!" )
 		self.assertEqual( s2["m"]["metadata"][names[1]]["name"].getValue(), "range" )
 		self.assertEqual( s2["m"]["metadata"][names[1]]["enabled"].getValue(), True )
-		self.assertEqual( s2["m"]["metadata"][names[1]]["value"].getValue(), IECore.V2i( 5, 10 ) )
+		self.assertEqual( s2["m"]["metadata"][names[1]]["value"].getValue(), imath.V2i( 5, 10 ) )
 
 	def testBoxPromotion( self ) :
 
 		s = Gaffer.ScriptNode()
 		s["m"] = GafferImage.ImageMetadata()
-		s["m"]["metadata"].addMember( "comment", IECore.StringData( "my favorite image!" ) )
-		s["m"]["metadata"].addOptionalMember( "range", IECore.V2iData( IECore.V2i( 5, 10 ) ), enabled = True )
+		s["m"]["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "my favorite image!" ), "member1", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["m"]["metadata"].addChild( Gaffer.NameValuePlug( "range", IECore.V2iData( imath.V2i( 5, 10 ) ), True, "member1", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		memberDataAndName = s["m"]["metadata"].memberDataAndName( s["m"]["metadata"]["member1"] )
 		memberDataAndName2 = s["m"]["metadata"].memberDataAndName( s["m"]["metadata"]["member2"] )
@@ -170,8 +172,8 @@ class ImageMetadataTest( GafferImageTest.ImageTestCase ) :
 
 		m = GafferImage.ImageMetadata()
 		m["in"].setInput( i["out"] )
-		m["metadata"].addMember( "comment", IECore.StringData( "my favorite image!" ) )
-		m["metadata"].addOptionalMember( "range", IECore.V2iData( IECore.V2i( 5, 10 ) ), enabled = True )
+		m["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "my favorite image!" ) ) )
+		m["metadata"].addChild( Gaffer.NameValuePlug( "range", IECore.V2iData( imath.V2i( 5, 10 ) ), True ) )
 
 		self.assertEqual( i["out"]["format"].hash(), m["out"]["format"].hash() )
 		self.assertEqual( i["out"]["dataWindow"].hash(), m["out"]["dataWindow"].hash() )
@@ -182,12 +184,19 @@ class ImageMetadataTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( i["out"]["channelNames"].getValue(), m["out"]["channelNames"].getValue() )
 
 		context = Gaffer.Context()
-		context["image:tileOrigin"] = IECore.V2i( 0 )
+		context["image:tileOrigin"] = imath.V2i( 0 )
 		with context :
 			for c in [ "G", "B", "A" ] :
 				context["image:channelName"] = c
 				self.assertEqual( i["out"]["channelData"].hash(), m["out"]["channelData"].hash() )
 				self.assertEqual( i["out"]["channelData"].getValue(), m["out"]["channelData"].getValue() )
+
+	def testEnabledOnlyAffectsMetadata( self ) :
+
+		m = GafferImage.ImageMetadata()
+		cs = GafferTest.CapturingSlot( m.plugDirtiedSignal() )
+		m["enabled"].setValue( False )
+		self.assertEqual( { x[0] for x in cs }, { m["enabled"], m["out"]["metadata"], m["out"] } )
 
 if __name__ == "__main__":
 	unittest.main()

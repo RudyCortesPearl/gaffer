@@ -36,6 +36,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
@@ -49,9 +50,9 @@ class GadgetTest( GafferUITest.TestCase ) :
 	def testTransform( self ) :
 
 		g = GafferUI.TextGadget( "hello" )
-		self.assertEqual( g.getTransform(), IECore.M44f() )
+		self.assertEqual( g.getTransform(), imath.M44f() )
 
-		t = IECore.M44f.createScaled( IECore.V3f( 2 ) )
+		t = imath.M44f().scale( imath.V3f( 2 ) )
 		g.setTransform( t )
 		self.assertEqual( g.getTransform(), t )
 
@@ -60,7 +61,7 @@ class GadgetTest( GafferUITest.TestCase ) :
 
 		c2 = GafferUI.LinearContainer()
 		c2.addChild( c1 )
-		t2 = IECore.M44f.createTranslated( IECore.V3f( 1, 2, 3 ) )
+		t2 = imath.M44f().translate( imath.V3f( 1, 2, 3 ) )
 		c2.setTransform( t2 )
 
 		self.assertEqual( g.fullTransform(), t * t2 )
@@ -82,9 +83,15 @@ class GadgetTest( GafferUITest.TestCase ) :
 
 				GafferUI.Gadget.__init__( self )
 
+				self.layersRendered = set()
+
 			def bound( self ) :
 
-				return IECore.Box3f( IECore.V3f( -20, 10, 2 ), IECore.V3f( 10, 15, 5 ) )
+				return imath.Box3f( imath.V3f( -20, 10, 2 ), imath.V3f( 10, 15, 5 ) )
+
+			def doRenderLayer( self, layer, style ) :
+
+				self.layersRendered.add( layer )
 
 		mg = MyGadget()
 
@@ -97,6 +104,14 @@ class GadgetTest( GafferUITest.TestCase ) :
 		c.addChild( mg )
 
 		self.assertEqual( c.bound().size(), mg.bound().size() )
+
+		with GafferUI.Window() as w :
+			GafferUI.GadgetWidget( c )
+
+		w.setVisible( True )
+		self.waitForIdle( 1000 )
+
+		self.assertEqual( mg.layersRendered, set( GafferUI.Gadget.Layer.values.values() ) )
 
 	def testStyle( self ) :
 
@@ -142,7 +157,7 @@ class GadgetTest( GafferUITest.TestCase ) :
 		self.assertEqual( len( cs ), 2 )
 		self.assertTrue( cs[1][0].isSame( g ) )
 
-		s2.setColor( GafferUI.StandardStyle.Color.BackgroundColor, IECore.Color3f( 1 ) )
+		s2.setColor( GafferUI.StandardStyle.Color.BackgroundColor, imath.Color3f( 1 ) )
 		self.assertEqual( len( cs ), 3 )
 		self.assertTrue( cs[2][0].isSame( g ) )
 
@@ -233,7 +248,7 @@ class GadgetTest( GafferUITest.TestCase ) :
 		self.assertEqual( t.bound(), b )
 		# but we don't want it taken into account when computing
 		# the parent bound.
-		self.assertEqual( g.bound(), IECore.Box3f() )
+		self.assertEqual( g.bound(), imath.Box3f() )
 
 	def testVisibilityChangedSignal( self ) :
 

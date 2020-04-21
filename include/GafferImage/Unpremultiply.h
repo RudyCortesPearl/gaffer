@@ -38,22 +38,22 @@
 #ifndef GAFFERIMAGE_UNPREMULTIPLY_H
 #define GAFFERIMAGE_UNPREMULTIPLY_H
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/ChannelDataProcessor.h"
+
+#include "Gaffer/StringPlug.h"
 
 namespace GafferImage
 {
 
-class Unpremultiply : public ChannelDataProcessor
+class GAFFERIMAGE_API Unpremultiply : public ChannelDataProcessor
 {
 
 	public :
 
 		Unpremultiply( const std::string &name=defaultName<Unpremultiply>() );
-		virtual ~Unpremultiply();
+		~Unpremultiply() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Unpremultiply, UnpremultiplyTypeId, ChannelDataProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Unpremultiply, UnpremultiplyTypeId, ChannelDataProcessor );
 
 		//! @name Plug Accessors
 		/// Returns a pointer to the node's plugs.
@@ -63,12 +63,12 @@ class Unpremultiply : public ChannelDataProcessor
 		const Gaffer::StringPlug *alphaChannelPlug() const;
 		//@}
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channelIndex, IECore::FloatVectorDataPtr outData ) const;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channelIndex, IECore::FloatVectorDataPtr outData ) const override;
 
 	private :
 

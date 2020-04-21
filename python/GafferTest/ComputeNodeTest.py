@@ -35,6 +35,7 @@
 #
 ##########################################################################
 
+import inspect
 import unittest
 import threading
 import time
@@ -337,7 +338,7 @@ class ComputeNodeTest( GafferTest.TestCase ) :
 	def testPassThroughSharesHashes( self ) :
 
 		n = self.PassThrough()
-		n["in"].setValue( IECore.MeshPrimitive.createPlane( IECore.Box2f( IECore.V2f( -1 ), IECore.V2f( 1 ) ) ) )
+		n["in"].setValue( IECore.IntVectorData( [ 1, 2, 3 ] ) )
 
 		self.assertEqual( n["in"].hash(), n["out"].hash() )
 		self.assertEqual( n["in"].getValue(), n["out"].getValue() )
@@ -345,10 +346,8 @@ class ComputeNodeTest( GafferTest.TestCase ) :
 	def testPassThroughSharesCacheEntries( self ) :
 
 		n = self.PassThrough()
-		n["in"].setValue( IECore.MeshPrimitive.createPlane( IECore.Box2f( IECore.V2f( -1 ), IECore.V2f( 1 ) ) ) )
+		n["in"].setValue( IECore.IntVectorData( [ 1, 2, 3 ] ) )
 
-		# this fails because TypedObjectPlug::setValue() currently does a copy. i think we can
-		# optimise things by allowing a copy-free setValue() function for use during computations.
 		self.failUnless( n["in"].getValue( _copy=False ).isSame( n["out"].getValue( _copy=False ) ) )
 
 	def testInternalConnections( self ) :
@@ -483,6 +482,174 @@ class ComputeNodeTest( GafferTest.TestCase ) :
 	def testThreading( self ) :
 
 		GafferTest.testComputeNodeThreading()
+
+	def testCancellationWithoutCooperation( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		# The Expression nodes contain no explicit cancellation
+		# checks. We rely on the Process stack to cancel prior to even
+		# calling `compute()`. We use two expressions with a sleep
+		# in each to give the main thread time to call cancel before
+		# the second compute starts.
+
+		s["n"] = GafferTest.AddNode()
+		s["e1"] = Gaffer.Expression()
+		s["e1"].setExpression( "import time; time.sleep( 1 ); parent['n']['op1'] = 10" )
+		s["e2"] = Gaffer.Expression()
+		s["e2"].setExpression( "import time; time.sleep( 1 ); parent['n']['op2'] = 20" )
+
+		cs = GafferTest.CapturingSlot( s["n"].errorSignal() )
+
+		def f( context ) :
+
+			with context :
+				with self.assertRaises( IECore.Cancelled ) :
+					s["n"]["sum"].getValue()
+
+		canceller = IECore.Canceller()
+		thread = threading.Thread(
+			target = f,
+			args = [  Gaffer.Context( s.context(), canceller ) ]
+		)
+		thread.start()
+
+		canceller.cancel()
+		thread.join()
+
+		# No errors should have been signalled, because cancellation
+		# is not an error.
+		self.assertEqual( len( cs ), 0 )
+
+	def testCancellationWithCooperation( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferTest.AddNode()
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( inspect.cleandoc(
+			"""
+			parent['n']['op1'] = 10
+			while True :
+				IECore.Canceller.check( context.canceller() )
+			"""
+		) )
+
+		cs = GafferTest.CapturingSlot( s["n"].errorSignal() )
+
+		def f( context ) :
+
+			with context :
+				with self.assertRaises( IECore.Cancelled ) :
+					s["n"]["sum"].getValue()
+
+		canceller = IECore.Canceller()
+		thread = threading.Thread(
+			target = f,
+			args = [  Gaffer.Context( s.context(), canceller ) ]
+		)
+		thread.start()
+
+		# Give the background thread time to get into the infinite
+		# loop in the Expression, and then cancel it.
+		time.sleep( 1 )
+		canceller.cancel()
+		thread.join()
+
+		# No errors should have been signalled, because cancellation
+		# is not an error.
+		self.assertEqual( len( cs ), 0 )
+
+	class ThrowingNode( Gaffer.ComputeNode ) :
+
+		def __init__( self, name="ThrowingNode" ) :
+
+			Gaffer.ComputeNode.__init__( self, name )
+
+			self["in"] = Gaffer.IntPlug()
+			self["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
+
+		def affects( self, input ) :
+
+			outputs = Gaffer.ComputeNode.affects( self, input )
+			if input == self["in"] :
+				outputs.append( self["out"] )
+
+			return outputs
+
+		def hash( self, plug, context, h ) :
+
+			if plug == self["out"] :
+				self["in"].hash( h )
+
+		def compute( self, plug, context ) :
+
+			if plug == self["out"] :
+				raise RuntimeError( "Eeek!" )
+			else :
+				Gaffer.ComputeNode.compute( plug, context )
+
+		def hashCachePolicy( self, plug ) :
+
+			return Gaffer.ValuePlug.CachePolicy.Standard
+
+		def computeCachePolicy( self, plug ) :
+
+			return Gaffer.ValuePlug.CachePolicy.Standard
+
+	IECore.registerRunTimeTyped( ThrowingNode )
+
+	def testProcessException( self ) :
+
+		thrower = self.ThrowingNode( "thrower" )
+		add = GafferTest.AddNode()
+
+		add["op1"].setInput( thrower["out"] )
+		add["op2"].setValue( 1 )
+
+		# We expect `thrower` to throw, and we want the name of the plug to be added
+		# as a prefix to the error message.
+
+		with Gaffer.Context() as context :
+			context["test"] = 1
+			with self.assertRaisesRegexp( Gaffer.ProcessException, r'thrower.out : [\s\S]*Eeek!' ) as raised :
+				add["sum"].getValue()
+
+		# And we want to be able to retrieve details of the problem
+		# from the exception.
+
+		self.assertEqual( raised.exception.plug(), thrower["out"] )
+		self.assertEqual( raised.exception.context(), context )
+		self.assertEqual( raised.exception.processType(), "computeNode:compute" )
+
+	def testProcessExceptionNotShared( self ) :
+
+		thrower1 = self.ThrowingNode( "thrower1" )
+		thrower2 = self.ThrowingNode( "thrower2" )
+
+		with self.assertRaisesRegexp( Gaffer.ProcessException, r'thrower1.out : [\s\S]*Eeek!' ) as raised :
+			thrower1["out"].getValue()
+
+		self.assertEqual( raised.exception.plug(), thrower1["out"] )
+
+		with self.assertRaisesRegexp( Gaffer.ProcessException, r'thrower2.out : [\s\S]*Eeek!' ) as raised :
+			thrower2["out"].getValue()
+
+		self.assertEqual( raised.exception.plug(), thrower2["out"] )
+
+	def testProcessExceptionRespectsNameChanges( self ) :
+
+		thrower = self.ThrowingNode( "thrower1" )
+		with self.assertRaisesRegexp( Gaffer.ProcessException, r'thrower1.out : [\s\S]*Eeek!' ) as raised :
+			thrower["out"].getValue()
+
+		self.assertEqual( raised.exception.plug(), thrower["out"] )
+
+		thrower.setName( "thrower2" )
+		with self.assertRaisesRegexp( Gaffer.ProcessException, r'thrower2.out : [\s\S]*Eeek!' ) as raised :
+			thrower["out"].getValue()
+
+		self.assertEqual( raised.exception.plug(), thrower["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

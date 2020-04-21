@@ -43,19 +43,32 @@ layouts = GafferUI.Layouts.acquire( application )
 
 layouts.registerEditor( "Viewer" )
 layouts.registerEditor( "NodeEditor" )
-layouts.registerEditor( "NodeGraph" )
-layouts.registerEditor( "SceneHierarchy" )
+layouts.registerEditor( "GraphEditor" )
+layouts.registerEditor( "HierarchyView" )
 layouts.registerEditor( "SceneInspector" )
-layouts.registerEditor( "ScriptEditor" )
-layouts.registerEditor( "Browser" )
+layouts.registerEditor( "PythonEditor" )
 layouts.registerEditor( "Timeline" )
 layouts.registerEditor( "UIEditor" )
+layouts.registerEditor( "AnimationEditor" )
+layouts.registerEditor( "PrimitiveInspector")
+layouts.registerEditor( "UVInspector")
 
-# register some predefined layouts
+# Register some predefined layouts
+#
+# > Note : The easiest way to edit these layouts is to :
+# >
+# >  - Edit the layout in Gaffer itself
+# >  - Save the layout so that it is serialised to `${HOME}/gaffer/startup/gui/layouts.py`
+# >  - Copy the layout back into this file
+#
+# > Caution : You _must_ omit the `persistent = True` argument when copying layouts into
+# > this file, to prevent the standard layouts from being serialised into the user's own
+# > preferences.
 
-layouts.add( "Default", "GafferUI.CompoundEditor( scriptNode, children = ( GafferUI.SplitContainer.Orientation.Vertical, 0.97, ( ( GafferUI.SplitContainer.Orientation.Horizontal, 0.70, ( ( GafferUI.SplitContainer.Orientation.Vertical, 0.48, ( {'tabs': (GafferUI.Viewer( scriptNode ),), 'tabsVisible': True, 'currentTab': 0}, {'tabs': (GafferUI.NodeGraph( scriptNode ),), 'tabsVisible': True, 'currentTab': 0} ) ), ( GafferUI.SplitContainer.Orientation.Vertical, 0.54, ( {'tabs': (GafferUI.NodeEditor( scriptNode ), GafferSceneUI.SceneInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0}, {'tabs': (GafferSceneUI.SceneHierarchy( scriptNode ), GafferUI.ScriptEditor( scriptNode )), 'tabsVisible': True, 'currentTab': 0} ) ) ) ), {'tabs': (GafferUI.Timeline( scriptNode ),), 'tabsVisible': False, 'currentTab': 0} ) ) )" )
+layouts.add( 'Standard', "GafferUI.CompoundEditor( scriptNode, _state={ 'children' : ( GafferUI.SplitContainer.Orientation.Vertical, 0.953488, ( ( GafferUI.SplitContainer.Orientation.Horizontal, 0.699857, ( ( GafferUI.SplitContainer.Orientation.Vertical, 0.479580, ( {'tabs': (GafferUI.Viewer( scriptNode ), GafferSceneUI.UVInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, False]}, {'tabs': (GafferUI.GraphEditor( scriptNode ), GafferUI.AnimationEditor( scriptNode ), GafferSceneUI.PrimitiveInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [None, False, False]} ) ), ( GafferUI.SplitContainer.Orientation.Vertical, 0.539090, ( {'tabs': (GafferUI.NodeEditor( scriptNode ), GafferSceneUI.SceneInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, False]}, {'tabs': (GafferSceneUI.HierarchyView( scriptNode ), GafferUI.PythonEditor( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, None]} ) ) ) ), {'tabs': (GafferUI.Timeline( scriptNode ),), 'tabsVisible': False, 'currentTab': 0, 'pinned': [None]} ) ), 'detachedPanels' : (), 'windowState' : { 'fullScreen' : False, 'screen' : -1, 'bound' : imath.Box2f( imath.V2f( 0.0473958328, 0.108751059 ), imath.V2f( 0.781770825, 0.906542063 ) ), 'maximized' : True }, 'editorState' : { 'c-0-1-1-0-0': {'driver': 'c-0-0-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-1-0-0-1': {'driver': 'c-0-0-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-0-1-0-2': {'driver': 'c-0-0-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-0-0-0-1': {'driver': 'c-0-0-0-0-0', 'driverMode': 'NodeSet'}} } )" )
+layouts.add( 'Standard (multi-monitor)', "GafferUI.CompoundEditor( scriptNode, _state={ 'children' : ( GafferUI.SplitContainer.Orientation.Vertical, 0.953488, ( ( GafferUI.SplitContainer.Orientation.Horizontal, 0.699857, ( {'tabs': (GafferUI.GraphEditor( scriptNode ), GafferUI.AnimationEditor( scriptNode ), GafferSceneUI.PrimitiveInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [None, False, False]}, ( GafferUI.SplitContainer.Orientation.Vertical, 0.539090, ( {'tabs': (GafferUI.NodeEditor( scriptNode ), GafferSceneUI.SceneInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, False]}, {'tabs': (GafferSceneUI.HierarchyView( scriptNode ), GafferUI.PythonEditor( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, None]} ) ) ) ), {'tabs': (GafferUI.Timeline( scriptNode ),), 'tabsVisible': False, 'currentTab': 0, 'pinned': [None]} ) ), 'detachedPanels' : ( { 'children' : {'tabs': (GafferUI.Viewer( scriptNode ), GafferSceneUI.UVInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, False]}, 'windowState' : { 'fullScreen' : False, 'screen' : 1, 'bound' : imath.Box2f( imath.V2f( 0.0472222231, 0.108888887 ), imath.V2f( 0.781944454, 0.906666696 ) ), 'maximized' : True } }, ), 'windowState' : { 'fullScreen' : False, 'screen' : -1, 'bound' : imath.Box2f( imath.V2f( 0.0473958328, 0.108751059 ), imath.V2f( 0.781770825, 0.906542063 ) ), 'maximized' : True }, 'editorState' : {'c-0-0-0-2': {'driver': 'p-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-1-0-0-1': {'driver': 'p-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-1-1-0-0': {'driver': 'p-0-0-0', 'driverMode': 'NodeSet'}, 'p-0-0-1': {'driver': 'p-0-0-0', 'driverMode': 'NodeSet'}} } )" )
+layouts.add( "Empty", "GafferUI.CompoundEditor( scriptNode, windowState = {'fullScreen': False, 'screen': -1, 'bound': imath.Box2f(imath.V2f(0.0479166657, 0.108269393), imath.V2f(0.782812476, 0.906223357)), 'maximized': True} )" )
+layouts.add( 'Scene', "GafferUI.CompoundEditor( scriptNode, _state={ 'children' : ( GafferUI.SplitContainer.Orientation.Horizontal, 0.772206, ( ( GafferUI.SplitContainer.Orientation.Horizontal, 0.256052, ( {'tabs': (GafferSceneUI.HierarchyView( scriptNode ),), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False]}, ( GafferUI.SplitContainer.Orientation.Vertical, 0.500554, ( ( GafferUI.SplitContainer.Orientation.Vertical, 0.906250, ( {'tabs': (GafferUI.Viewer( scriptNode ), GafferSceneUI.UVInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False, False]}, {'tabs': (GafferUI.Timeline( scriptNode ),), 'tabsVisible': False, 'currentTab': 0, 'pinned': [None]} ) ), {'tabs': (GafferUI.GraphEditor( scriptNode ), GafferUI.AnimationEditor( scriptNode ), GafferSceneUI.PrimitiveInspector( scriptNode )), 'tabsVisible': True, 'currentTab': 0, 'pinned': [None, False, False]} ) ) ) ), ( GafferUI.SplitContainer.Orientation.Vertical, 0.500554, ( {'tabs': (GafferUI.NodeEditor( scriptNode ),), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False]}, {'tabs': (GafferSceneUI.SceneInspector( scriptNode ),), 'tabsVisible': True, 'currentTab': 0, 'pinned': [False]} ) ) ) ), 'detachedPanels' : (), 'windowState' : { 'fullScreen' : False, 'screen' : -1, 'bound' : imath.Box2f( imath.V2f( 0.046875, 0.109600678 ), imath.V2f( 0.78125, 0.907391667 ) ), 'maximized' : True }, 'editorState' : {'c-0-1-1-0-2': {'driver': 'c-0-1-0-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-0-0-0': {'driver': 'c-0-1-0-0-0-0', 'driverMode': 'NodeSet'}, 'c-1-1-0-0': {'driver': 'c-0-1-0-0-0-0', 'driverMode': 'NodeSet'}, 'c-0-1-0-0-0-1': {'driver': 'c-0-1-0-0-0-0', 'driverMode': 'NodeSet'}} } )" )
 
-layouts.add( "Scene", "GafferUI.CompoundEditor( scriptNode, children = ( GafferUI.SplitContainer.Orientation.Horizontal, 0.772664, ( ( GafferUI.SplitContainer.Orientation.Horizontal, 0.255898, ( (GafferSceneUI.SceneHierarchy( scriptNode ),), ( GafferUI.SplitContainer.Orientation.Vertical, 0.500000, ( ( GafferUI.SplitContainer.Orientation.Vertical, 1.000000, ( (GafferUI.Viewer( scriptNode ),), (GafferUI.Timeline( scriptNode ),) ) ), (GafferUI.NodeGraph( scriptNode ),) ) ) ) ), ( GafferUI.SplitContainer.Orientation.Vertical, 0.500000, ( (GafferUI.NodeEditor( scriptNode ),), (GafferSceneUI.SceneInspector( scriptNode ),) ) ) ) ) )" )
-layouts.add( "Empty", "GafferUI.CompoundEditor( scriptNode )" )
+layouts.setDefault( "Standard" )
 
-del layouts # avoid polluting the namespace for other config files

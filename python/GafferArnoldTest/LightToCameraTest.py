@@ -34,7 +34,10 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
+import IECoreScene
 
 import GafferScene
 import GafferSceneTest
@@ -72,34 +75,29 @@ class LightToCameraTest( GafferSceneTest.SceneTestCase ) :
 		lc["filter"].setInput( f["out"] )
 
 		# Test spot to persp cam
-		self.assertEqual(
-			lc["out"].object( "/group/spot1" ).parameters(),
-			IECore.CompoundData( {
-				'projection:fov':IECore.FloatData( 65 ),
-				'clippingPlanes':IECore.V2fData( IECore.V2f( 0.01, 100000 ) ),
-				'projection':IECore.StringData( 'perspective' ),
-				'resolutionOverride':IECore.V2iData( IECore.V2i( 512, 512 ) ),
-				'screenWindow':IECore.Box2fData( IECore.Box2f( IECore.V2f( -1, -1 ), IECore.V2f( 1, 1 ) ) )
-			} )
-		)
+		spotCam = lc["out"].object( "/group/spot1" )
+		# Equality test fails on Mac: 64.99999237060547 != 65
+		calculatedFieldOfView = spotCam.calculateFieldOfView()
+		self.assertAlmostEqual( calculatedFieldOfView[0], 65, 4 )
+		self.assertAlmostEqual( calculatedFieldOfView[1], 65, 4 )
+		self.assertEqual( spotCam.getClippingPlanes(), imath.V2f( 0.01, 100000 ) )
+		self.assertEqual( spotCam.getProjection(), 'perspective' )
+		self.assertEqual( spotCam.getFilmFit(), IECoreScene.Camera.FilmFit.Fit )
+		self.assertEqual( spotCam.hasResolution(), False )
 
 		# Test distant to ortho cam
-		self.assertEqual(
-			lc["out"].object( "/group/distant1" ).parameters(),
-			IECore.CompoundData( {
-				'clippingPlanes':IECore.V2fData( IECore.V2f( -100000, 100000 ) ),
-				'projection':IECore.StringData( 'orthographic' ),
-				'resolutionOverride':IECore.V2iData( IECore.V2i( 512, 512 ) ),
-				'screenWindow':IECore.Box2fData( IECore.Box2f( IECore.V2f( -1, -1 ), IECore.V2f( 1, 1 ) ) )
-			} )
-		)
+		distantCam = lc["out"].object( "/group/distant1" )
+		self.assertEqual( distantCam.getAperture(), imath.V2f( 2, 2 ) )
+		self.assertEqual( distantCam.getClippingPlanes(), imath.V2f( -100000, 100000 ) )
+		self.assertEqual( distantCam.getProjection(), 'orthographic' )
+		self.assertEqual( distantCam.getFilmFit(), IECoreScene.Camera.FilmFit.Fit )
+		self.assertEqual( distantCam.hasResolution(), False )
 
 		# Test light with no corresponding camera ( gets default cam )
 		self.assertEqual(
 			lc["out"].object( "/group/env1" ).parameters(),
 			IECore.CompoundData({
 				'projection':IECore.StringData( 'perspective' ),
-				'resolutionOverride':IECore.V2iData( IECore.V2i( 512, 512 ) )
 			} )
 		)
 

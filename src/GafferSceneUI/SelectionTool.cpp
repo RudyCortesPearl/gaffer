@@ -34,16 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferSceneUI/SelectionTool.h"
 
-#include "GafferUI/Style.h"
-#include "GafferUI/Pointer.h"
+#include "GafferSceneUI/ContextAlgo.h"
+#include "GafferSceneUI/SceneView.h"
 
 #include "GafferScene/ScenePlug.h"
 
-#include "GafferSceneUI/ContextAlgo.h"
-#include "GafferSceneUI/SelectionTool.h"
-#include "GafferSceneUI/SceneView.h"
+#include "GafferUI/Pointer.h"
+#include "GafferUI/Style.h"
+
+#include "boost/bind.hpp"
 
 using namespace Imath;
 using namespace IECore;
@@ -66,7 +67,7 @@ class SelectionTool::DragOverlay : public GafferUI::Gadget
 		{
 		}
 
-		virtual Imath::Box3f bound() const
+		Imath::Box3f bound() const override
 		{
 			// we draw in raster space so don't have a sensible bound
 			return Box3f();
@@ -104,8 +105,13 @@ class SelectionTool::DragOverlay : public GafferUI::Gadget
 
 	protected :
 
-		virtual void doRender( const Style *style ) const
+		void doRenderLayer( Layer layer, const Style *style ) const override
 		{
+			if( layer != Layer::Main )
+			{
+				return Gadget::doRenderLayer( layer, style );
+			}
+
 			if( IECoreGL::Selector::currentSelector() )
 			{
 				return;
@@ -132,7 +138,7 @@ class SelectionTool::DragOverlay : public GafferUI::Gadget
 // SelectionTool implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( SelectionTool );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SelectionTool );
 
 SelectionTool::ToolDescription<SelectionTool, SceneView> SelectionTool::g_toolDescription;
 static IECore::InternedString g_dragOverlayName( "__selectionToolDragOverlay" );
@@ -143,6 +149,7 @@ SelectionTool::SelectionTool( SceneView *view, const std::string &name )
 	SceneGadget *sg = sceneGadget();
 
 	sg->buttonPressSignal().connect( boost::bind( &SelectionTool::buttonPress, this, ::_2 ) );
+	sg->buttonReleaseSignal().connect( boost::bind( &SelectionTool::buttonRelease, this, ::_2 ) );
 	sg->dragBeginSignal().connect( boost::bind( &SelectionTool::dragBegin, this, ::_1, ::_2 ) );
 	sg->dragEnterSignal().connect( boost::bind( &SelectionTool::dragEnter, this, ::_1, ::_2 ) );
 	sg->dragMoveSignal().connect( boost::bind( &SelectionTool::dragMove, this, ::_2 ) );
@@ -174,6 +181,9 @@ SelectionTool::DragOverlay *SelectionTool::dragOverlay()
 
 bool SelectionTool::buttonPress( const GafferUI::ButtonEvent &event )
 {
+	m_acceptedButtonPress = false;
+	m_initiatedDrag = false;
+
 	if( event.buttons != ButtonEvent::Left )
 	{
 		return false;
@@ -188,54 +198,71 @@ bool SelectionTool::buttonPress( const GafferUI::ButtonEvent &event )
 	ScenePlug::ScenePath objectUnderMouse;
 	sg->objectAt( event.line, objectUnderMouse );
 
-	PathMatcher &selection = const_cast<GafferScene::PathMatcherData *>( sg->getSelection() )->writable();
+	PathMatcher selection = sg->getSelection();
 
-	const bool shiftHeld = event.modifiers && ButtonEvent::Shift;
-	bool selectionChanged = false;
+	const bool shiftHeld = event.modifiers & ButtonEvent::Shift;
+	const bool controlHeld = event.modifiers & ButtonEvent::Control;
 	if( !objectUnderMouse.size() )
 	{
-		// background click - clear the selection unless
-		// shift is held in which case we might be starting
-		// a drag to add more.
-		if( !shiftHeld )
+		// background click - clear the selection unless a modifier is held, in
+		// which case we might be starting a drag to add more or remove some.
+		if( !shiftHeld && !controlHeld )
 		{
-			selection.clear();
-			selectionChanged = true;
+			ContextAlgo::setSelectedPaths( view()->getContext(), IECore::PathMatcher() );
 		}
 	}
 	else
 	{
-		const bool objectSelectedAlready = selection.match( objectUnderMouse ) & Filter::ExactMatch;
+		const bool objectSelectedAlready = selection.match( objectUnderMouse ) & PathMatcher::ExactMatch;
 
 		if( objectSelectedAlready )
 		{
-			if( shiftHeld )
+			if( controlHeld )
 			{
 				selection.removePath( objectUnderMouse );
-				selectionChanged = true;
+				ContextAlgo::setSelectedPaths( view()->getContext(), selection );
 			}
 		}
 		else
 		{
-			if( !shiftHeld )
+			if( !controlHeld && !shiftHeld )
 			{
-				selection.clear();
+				ContextAlgo::setSelectedPaths( view()->getContext(), IECore::PathMatcher() );
 			}
-			selection.addPath( objectUnderMouse );
-			selectionChanged = true;
+			ContextAlgo::setLastSelectedPath( view()->getContext(), objectUnderMouse );
 		}
 	}
 
-	if( selectionChanged )
-	{
-		ContextAlgo::setSelectedPaths( view()->getContext(), sceneGadget()->getSelection()->readable() );
-	}
-
+	m_acceptedButtonPress = true;
 	return true;
+}
+
+bool SelectionTool::buttonRelease( const GafferUI::ButtonEvent &event )
+{
+	m_acceptedButtonPress = false;
+	m_initiatedDrag = false;
+	return false;
 }
 
 IECore::RunTimeTypedPtr SelectionTool::dragBegin( GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
 {
+	// Derived classes may wish to override the handling of buttonPress. To
+	// consume the event, they must return true from it. This also tells the
+	// drag system that they may wish to start a drag later, and so it will
+	// then call 'dragBegin'. If they have no interest in actually performing
+	// a drag (as maybe they just wanted to do something on click) this is a
+	// real pain as now they also have to implement dragBegin to prevent the
+	// code below from doing its thing. To avoid this boilerplate overhead,
+	// we only start our own drag if we know we were the one who returned
+	// true from buttonPress. We also track whether we initiated a drag so
+	// the other drag methods can early-out accordingly.
+	m_initiatedDrag = false;
+	if( !m_acceptedButtonPress )
+	{
+		return nullptr;
+	}
+	m_acceptedButtonPress = false;
+
 	SceneGadget *sg = sceneGadget();
 	ScenePlug::ScenePath objectUnderMouse;
 
@@ -245,36 +272,48 @@ IECore::RunTimeTypedPtr SelectionTool::dragBegin( GafferUI::Gadget *gadget, cons
 		dragOverlay()->setStartPosition( event.line.p1 );
 		dragOverlay()->setEndPosition( event.line.p1 );
 		dragOverlay()->setVisible( true );
+		m_initiatedDrag = true;
 		return gadget;
 	}
 	else
 	{
-		const PathMatcher &selection = sg->getSelection()->readable();
-		if( selection.match( objectUnderMouse ) & Filter::ExactMatch )
+		const PathMatcher &selection = sg->getSelection();
+		if( selection.match( objectUnderMouse ) & PathMatcher::ExactMatch )
 		{
 			// drag the selection somewhere
 			IECore::StringVectorDataPtr dragData = new IECore::StringVectorData();
 			selection.paths( dragData->writable() );
 			Pointer::setCurrent( "objects" );
+			m_initiatedDrag = true;
 			return dragData;
 		}
 	}
-	return NULL;
+	return nullptr;
 }
 
 bool SelectionTool::dragEnter( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
 {
-	return event.sourceGadget == gadget && event.data == gadget;
+	return m_initiatedDrag && event.sourceGadget == gadget && event.data == gadget;
 }
 
 bool SelectionTool::dragMove( const GafferUI::DragDropEvent &event )
 {
+	if( !m_initiatedDrag )
+	{
+		return false;
+	}
+
 	dragOverlay()->setEndPosition( event.line.p1 );
 	return true;
 }
 
 bool SelectionTool::dragEnd( const GafferUI::DragDropEvent &event )
 {
+	if( !m_initiatedDrag )
+	{
+		return false;
+	}
+
 	Pointer::setCurrent( "" );
 	if( !dragOverlay()->getVisible() )
 	{
@@ -284,11 +323,21 @@ bool SelectionTool::dragEnd( const GafferUI::DragDropEvent &event )
 	dragOverlay()->setVisible( false );
 
 	SceneGadget *sg = sceneGadget();
-	PathMatcher &selection = const_cast<GafferScene::PathMatcherData *>( sg->getSelection() )->writable();
+	PathMatcher selection = sg->getSelection();
+	PathMatcher inDragRegion;
 
-	if( sg->objectsAt( dragOverlay()->getStartPosition(), dragOverlay()->getEndPosition(), selection ) )
+	if( sg->objectsAt( dragOverlay()->getStartPosition(), dragOverlay()->getEndPosition(), inDragRegion ) )
 	{
-		ContextAlgo::setSelectedPaths( view()->getContext(), sceneGadget()->getSelection()->readable() );
+		if( event.modifiers & DragDropEvent::Control )
+		{
+			selection.removePaths( inDragRegion );
+		}
+		else
+		{
+			selection.addPaths( inDragRegion );
+		}
+
+		ContextAlgo::setSelectedPaths( view()->getContext(), selection );
 	}
 
 	return true;

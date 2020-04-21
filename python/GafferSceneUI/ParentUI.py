@@ -49,7 +49,7 @@ Gaffer.Metadata.registerNode(
 
 	"description",
 	"""
-	Parents one scene hierarchy into another.
+	Parents additional child hierarchies into the main scene hierarchy.
 	""",
 
 	plugs = {
@@ -58,19 +58,29 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			The location which the child is parented under.
+			The location which the children are parented under. This is
+			ignored when a filter is connected, in which case the children
+			are parented under all the locations matched by the filter.
 			""",
+
+			"userDefault", "/",
+			# Base class hides this if its not in use, but it's still
+			# pretty useful for the Parent node, so we make it visible
+			# unconditionally again.
+			"layout:visibilityActivator", "",
 
 		],
 
-		"child" : [
+		"children" : [
 
 			"description",
 			"""
-			The child hierarchy to be parented.
+			The child hierarchies to be parented.
 			""",
 
-			"plugValueWidget:type", ""
+			"plugValueWidget:type", "",
+			"nodule:type", "GafferUI::CompoundNodule",
+			"noduleLayout:spacing", 0.5,
 
 		],
 

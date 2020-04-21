@@ -35,15 +35,15 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Dot.h"
+
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
 #include "Gaffer/StringPlug.h"
-#include "Gaffer/Metadata.h"
 
 using namespace IECore;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( Dot );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Dot );
 
 static InternedString g_inPlugName( "in" );
 static InternedString g_outPlugName( "out" );
@@ -67,7 +67,7 @@ void Dot::setup( const Plug *plug )
 {
 	const Plug *originalPlug = plug;
 
-	if( const Plug *inputPlug = plug->getInput<Plug>() )
+	if( const Plug *inputPlug = plug->getInput() )
 	{
 		// We'd prefer to set up based on an input plug if possible - see comments
 		// in DotNodeGadgetTest.testCustomNoduleTangentsPreferInputIfAvailable().
@@ -80,11 +80,11 @@ void Dot::setup( const Plug *plug )
 	MetadataAlgo::copyColors( originalPlug , in.get() , /* overwrite = */ false );
 	MetadataAlgo::copyColors( originalPlug , out.get() , /* overwrite = */ false );
 
-	in->setFlags( Plug::Dynamic | Plug::Serialisable, true );
-	out->setFlags( Plug::Dynamic | Plug::Serialisable, true );
+	in->setFlags( Plug::Serialisable, true );
+	out->setFlags( Plug::Serialisable, true );
 
 	// Set up Metadata so our plugs appear in the right place. We must do this now rather
-	// than later because the NodeGraph will add a Nodule for the plug as soon as the plug
+	// than later because the GraphEditor will add a Nodule for the plug as soon as the plug
 	// is added as a child.
 
 	ConstStringDataPtr sectionData;
@@ -158,18 +158,18 @@ void Dot::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 
 Plug *Dot::correspondingInput( const Plug *output )
 {
-	if( output == outPlug<Plug>() )
+	if( output == outPlug() )
 	{
-		return inPlug<Plug>();
+		return inPlug();
 	}
 	return DependencyNode::correspondingInput( output );
 }
 
 const Plug *Dot::correspondingInput( const Plug *output ) const
 {
-	if( output == outPlug<Plug>() )
+	if( output == outPlug() )
 	{
-		return inPlug<Plug>();
+		return inPlug();
 	}
 	return DependencyNode::correspondingInput( output );
 }

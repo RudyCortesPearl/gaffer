@@ -35,11 +35,10 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import sys
 import threading
 import traceback
+import imath
 
 import IECore
 
@@ -160,7 +159,7 @@ class OpDialogue( GafferUI.Dialogue ) :
 
 		with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 4 ) as self.__progressUI :
 
-			GafferUI.Spacer( IECore.V2i( 1 ), parenting = { "expand" : True } )
+			GafferUI.Spacer( imath.V2i( 1 ), parenting = { "expand" : True } )
 
 			self.__progressIconFrame = GafferUI.Frame(
 				borderStyle = GafferUI.Frame.BorderStyle.None,
@@ -176,7 +175,7 @@ class OpDialogue( GafferUI.Dialogue ) :
 				}
 			)
 
-			GafferUI.Spacer( IECore.V2i( 250, 1 ), parenting = { "expand"  : True } )
+			GafferUI.Spacer( imath.V2i( 250, 1 ), parenting = { "expand"  : True } )
 
 			with GafferUI.Collapsible( "Details", collapsed = True ) as self.__messageCollapsible :
 
@@ -322,7 +321,7 @@ class OpDialogue( GafferUI.Dialogue ) :
 			with self.__messageWidget.messageHandler() :
 				result = self.__node.getParameterised()[0]()
 
-		except Exception, e :
+		except Exception as e :
 
 			result = sys.exc_info()
 

@@ -37,6 +37,7 @@
 
 import unittest
 import weakref
+import imath
 
 import IECore
 
@@ -119,15 +120,31 @@ class WindowTest( GafferUITest.TestCase ) :
 		self.failUnless( parentWindow2.parent() is None )
 		self.failUnless( childWindow.parent() is parentWindow1 )
 
+		parentWindow1.setVisible( True )
+		childWindow.setVisible( True )
+		self.waitForIdle( 1000 )
+
 		parentWindow2.addChildWindow( childWindow )
 		self.failUnless( parentWindow1.parent() is None )
 		self.failUnless( parentWindow2.parent() is None )
 		self.failUnless( childWindow.parent() is parentWindow2 )
 
+		parentWindow2.setVisible( True )
+		self.waitForIdle( 1000 )
+
 		parentWindow2.removeChild( childWindow )
 		self.failUnless( parentWindow1.parent() is None )
 		self.failUnless( parentWindow2.parent() is None )
 		self.failUnless( childWindow.parent() is None )
+
+		self.waitForIdle( 1000 )
+
+		parentWindow1.addChildWindow( childWindow )
+		self.failUnless( childWindow.parent() is parentWindow1 )
+
+		self.waitForIdle( 1000 )
+
+		parentWindow1.removeChild( childWindow )
 
 		del childWindow
 
@@ -259,8 +276,8 @@ class WindowTest( GafferUITest.TestCase ) :
 	def testPosition( self ) :
 
 		w = GafferUI.Window()
-		w.setPosition( IECore.V2i( 10, 20 ) )
-		self.assertEqual( w.getPosition(), IECore.V2i( 10, 20 ) )
+		w.setPosition( imath.V2i( 10, 20 ) )
+		self.assertEqual( w.getPosition(), imath.V2i( 10, 20 ) )
 
 	def testChildWindowsMethod( self ) :
 

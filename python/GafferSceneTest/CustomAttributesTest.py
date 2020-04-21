@@ -39,6 +39,7 @@ import unittest
 import threading
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -48,7 +49,7 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -77,7 +78,7 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 		# when we specify some, they should be applied to everything because
 		# we haven't specified a filter yet. but not to the root because it
 		# isn't allowed attributes.
-		a["attributes"].addMember( "ri:shadingRate", IECore.FloatData( 0.25 ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "ri:shadingRate", IECore.FloatData( 0.25 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		self.assertEqual( a["out"].attributes( "/" ), IECore.CompoundObject() )
 		self.assertEqual( a["out"].attributes( "/ball1" ), IECore.CompoundObject( { "ri:shadingRate" : IECore.FloatData( 0.25 ) } ) )
 		self.assertEqual( a["out"].attributes( "/ball2" ), IECore.CompoundObject( { "ri:shadingRate" : IECore.FloatData( 0.25 ) } ) )
@@ -93,7 +94,7 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 
 	def testOverrideAttributes( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -110,8 +111,8 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 		a = GafferScene.CustomAttributes()
 		a["in"].setInput( input["out"] )
 
-		a["attributes"].addMember( "ri:shadingRate", IECore.FloatData( 0.25 ) )
-		a["attributes"].addMember( "user:something", IECore.IntData( 1 ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "ri:shadingRate", IECore.FloatData( 0.25 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "user:something", IECore.IntData( 1 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		self.assertEqual(
 			a["out"].attributes( "/ball1" ),
 			IECore.CompoundObject( {
@@ -131,8 +132,8 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 			} )
 		)
 
-		a2["attributes"].addMember( "ri:shadingRate", IECore.FloatData( .5 ) )
-		a2["attributes"].addMember( "user:somethingElse", IECore.IntData( 10 ) )
+		a2["attributes"].addChild( Gaffer.NameValuePlug( "ri:shadingRate", IECore.FloatData( .5 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		a2["attributes"].addChild( Gaffer.NameValuePlug( "user:somethingElse", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		self.assertEqual(
 			a2["out"].attributes( "/ball1" ),
@@ -143,46 +144,9 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 			} )
 		)
 
-	def testRendering( self ) :
-
-		sphere = IECore.SpherePrimitive()
-		input = GafferSceneTest.CompoundObjectSource()
-		input["in"].setValue(
-			IECore.CompoundObject( {
-				"bound" : IECore.Box3fData( sphere.bound() ),
-				"children" : {
-					"ball1" : {
-						"object" : sphere,
-						"bound" : IECore.Box3fData( sphere.bound() ),
-					},
-				},
-			} )
-		)
-
-		a = GafferScene.CustomAttributes()
-		a["in"].setInput( input["out"] )
-
-		a["attributes"].addMember( "ri:shadingRate", IECore.FloatData( 0.25 ) )
-		a["attributes"].addMember( "user:something", IECore.IntData( 1 ) )
-
-		r = IECore.CapturingRenderer()
-		with IECore.WorldBlock( r ) :
-			r.procedural( GafferScene.SceneProcedural( a["out"], Gaffer.Context(), "/" ) )
-
-		g = r.world()
-		attributes = g.children()[0].children()[0].children()[0].children()[0].state()[0]
-		self.assertEqual(
-			attributes.attributes,
-			IECore.CompoundData( {
-				"name" : IECore.StringData( "/ball1" ),
-				"ri:shadingRate" : IECore.FloatData( 0.25 ),
-				"user:something" : IECore.IntData( 1 ),
-			} )
-		)
-
 	def testHashPassThrough( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -208,9 +172,9 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 
 		# when we have some attributes, everything except the attributes plug should
 		# be a pass-through.
-		a["attributes"].addMember( "ri:shadingRate", IECore.FloatData( 2.0 ) )
-		self.assertSceneHashesEqual( input["out"], a["out"], childPlugNames = ( "globals", "childNames", "transform", "bound", "object" ) )
-		self.assertSceneHashesNotEqual( input["out"], a["out"], childPlugNames = ( "attributes", ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "ri:shadingRate", IECore.FloatData( 2.0 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		self.assertSceneHashesEqual( input["out"], a["out"], checks = self.allSceneChecks - { "attributes" } )
+		self.assertSceneHashesNotEqual( input["out"], a["out"], checks = { "attributes" } )
 
 		# when we add a filter, non-matching objects should become pass-throughs
 		f = GafferScene.PathFilter()
@@ -231,7 +195,7 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["a"] = GafferScene.CustomAttributes()
-		s["a"]["attributes"].addMember( "ri:shadingRate", IECore.FloatData( 1.0 ) )
+		s["a"]["attributes"].addChild( Gaffer.NameValuePlug( "ri:shadingRate", IECore.FloatData( 1.0 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
 
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s.serialise() )
@@ -270,7 +234,7 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 		s["p"] = GafferScene.Plane()
 		s["f"] = GafferScene.PathFilter()
 		s["a"] = GafferScene.CustomAttributes()
-		s["a"]["attributes"].addMember( "user:test", IECore.IntData( 10 ) )
+		s["a"]["attributes"].addChild( Gaffer.NameValuePlug( "user:test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		self.assertTrue( "user:test" in s["a"]["out"].attributes( "/plane" ) )
 
@@ -287,7 +251,7 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 		s["p"] = GafferScene.Plane()
 		s["f"] = GafferScene.PathFilter()
 		s["a"] = GafferScene.CustomAttributes()
-		s["a"]["attributes"].addMember( "user:test", IECore.IntData( 10 ) )
+		s["a"]["attributes"].addChild( Gaffer.NameValuePlug( "user:test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		self.assertTrue( "user:test" in s["a"]["out"].attributes( "/plane" ) )
 
@@ -316,16 +280,67 @@ class CustomAttributesTest( GafferSceneTest.SceneTestCase ) :
 		s = Gaffer.ScriptNode()
 
 		s["a"] = GafferScene.CustomAttributes()
-		p = s["a"]["attributes"].addMember( "user:test", 10 )
+		p = Gaffer.NameValuePlug( "user:test", 10, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["a"]["attributes"].addChild( p )
 		self.assertEqual( set( s["a"].affects( p["value"] ) ), set( [ s["a"]["out"]["attributes"] ] ) )
+		self.assertEqual( set( s["a"].affects( s["a"]["extraAttributes"] ) ), set( [ s["a"]["out"]["attributes"] ] ) )
 
 		s["a"]["global"].setValue( True )
 		self.assertEqual( set( s["a"].affects( p["value"] ) ), set( [ s["a"]["out"]["globals"] ] ) )
+		self.assertEqual( set( s["a"].affects( s["a"]["extraAttributes"] ) ), set( [ s["a"]["out"]["globals"] ] ) )
 
 		s["e"] = Gaffer.Expression()
 		s["e"].setExpression( """parent["a"]["global"] = context.getFrame() > 10""" )
 
 		self.assertEqual( set( s["a"].affects( p["value"] ) ), set( [ s["a"]["out"]["attributes"], s["a"]["out"]["globals"] ] ) )
+
+	def testExtraAttributes( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["sphere"] = GafferScene.Sphere()
+		s["a"] = GafferScene.CustomAttributes()
+		s["f"] = GafferScene.PathFilter()
+		s["f"]["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+		s["a"]["filter"].setInput( s["f"]["out"] )
+		s["a"]["extraAttributes"].setValue(IECore.CompoundData({
+			"a1" : IECore.StringData( "from extra" ),
+			"a2" : IECore.IntData( 2 ),
+		}))
+		s["a"]["attributes"].addChild(
+			Gaffer.NameValuePlug( "a1", IECore.StringData( "from attributes" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		)
+		s["a"]["attributes"].addChild(
+			Gaffer.NameValuePlug( "a3", IECore.IntData( 5 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		)
+		self.assertEqual(
+			s["a"]["out"].attributes( "/sphere" ),
+			IECore.CompoundObject( {
+				"a1" : IECore.StringData( "from extra" ),
+				"a2" : IECore.IntData( 2 ),
+				"a3" : IECore.IntData( 5 ),
+			} )
+		)
+
+	def testExtraAttributesOnlyEvaluatedForFilteredLocations( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["grid"] = GafferScene.Grid()
+
+		script["filter"] = GafferScene.PathFilter()
+		script["filter"]["paths"].setValue( IECore.StringVectorData( [ "/grid" ] ) )
+
+		script["customAttributes"] = GafferScene.CustomAttributes()
+		script["customAttributes"]["in"].setInput( script["grid"]["out"] )
+		script["customAttributes"]["filter"].setInput( script["filter"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( """parent["customAttributes"]["extraAttributes"] = IECore.CompoundData( { "a" : IECore.StringData( str( context.get( "scene:path" ) ) ) } )""" )
+
+		with Gaffer.ContextMonitor( script["expression"] ) as monitor :
+			GafferSceneTest.traverseScene( script["customAttributes"]["out"] )
+
+		self.assertEqual( monitor.combinedStatistics().numUniqueValues( "scene:path" ), 1 )
 
 if __name__ == "__main__":
 	unittest.main()

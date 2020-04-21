@@ -35,14 +35,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/container/flat_set.hpp"
+#include "GafferCortex/CompoundParameterHandler.h"
+
+#include "Gaffer/ValuePlug.h"
 
 #include "IECore/MessageHandler.h"
 #include "IECore/SimpleTypedData.h"
 
-#include "Gaffer/CompoundPlug.h"
-
-#include "GafferCortex/CompoundParameterHandler.h"
+#include "boost/container/flat_set.hpp"
 
 using namespace IECore;
 using namespace GafferCortex;
@@ -70,7 +70,7 @@ const IECore::Parameter *CompoundParameterHandler::parameter() const
 
 void CompoundParameterHandler::restore( Gaffer::GraphComponent *plugParent )
 {
-	Gaffer::CompoundPlugPtr compoundPlug = plugParent->getChild<Gaffer::CompoundPlug>( plugName() );
+	Gaffer::Plug *compoundPlug = plugParent->getChild<Gaffer::Plug>( plugName() );
 	if( !compoundPlug )
 	{
 		return;
@@ -84,7 +84,7 @@ void CompoundParameterHandler::restore( Gaffer::GraphComponent *plugParent )
 		ParameterHandler *h = handler( it->get(), true );
 		if( h )
 		{
-			h->restore( compoundPlug.get() );
+			h->restore( compoundPlug );
 		}
 	}
 
@@ -92,16 +92,16 @@ void CompoundParameterHandler::restore( Gaffer::GraphComponent *plugParent )
 
 Gaffer::Plug *CompoundParameterHandler::setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction, unsigned flags )
 {
-	// decide what name our compound plug should have
+	// decide what name our plug should have
 
 	std::string name = plugName();
 
-	// create the compound plug if necessary
+	// create the plug if necessary
 
-	m_plug = plugParent->getChild<Gaffer::CompoundPlug>( name );
+	m_plug = plugParent->getChild<Gaffer::Plug>( name );
 	if( !m_plug || m_plug->direction()!=direction )
 	{
-		m_plug = new Gaffer::CompoundPlug( name, direction );
+		m_plug = new Gaffer::Plug( name, direction );
 		plugParent->setChild( name, m_plug );
 	}
 
@@ -215,7 +215,7 @@ const ParameterHandler *CompoundParameterHandler::childParameterHandler( IECore:
 
 IECore::RunTimeTyped *CompoundParameterHandler::childParameterProvider( IECore::Parameter *childParameter )
 {
-	return 0;
+	return nullptr;
 }
 
 ParameterHandler *CompoundParameterHandler::handler( Parameter *child, bool createIfMissing )
@@ -226,7 +226,7 @@ ParameterHandler *CompoundParameterHandler::handler( Parameter *child, bool crea
 		return it->second.get();
 	}
 
-	ParameterHandlerPtr h = 0;
+	ParameterHandlerPtr h = nullptr;
 	if( createIfMissing )
 	{
 		IECore::ConstBoolDataPtr noHostMapping = child->userData()->member<BoolData>( "noHostMapping" );

@@ -47,7 +47,7 @@ enum TypeId
 	NodeGadgetTypeId = 110252,
 	GraphGadgetTypeId = 110253,
 	ContainerGadgetTypeId = 110254,
-	RenderableGadgetTypeId = 110255,
+	AuxiliaryConnectionsGadgetTypeId = 110255,
 	TextGadgetTypeId = 110256,
 	NameGadgetTypeId = 110257,
 	IndividualContainerTypeId = 110258,
@@ -58,14 +58,14 @@ enum TypeId
 	LinearContainerTypeId = 110263,
 	ConnectionGadgetTypeId = 110264,
 	StandardNodeGadgetTypeId = 110265,
-	SplinePlugGadgetTypeId = 110266,
+	AuxiliaryNodeGadgetTypeId = 110266,
 	StandardNoduleTypeId = 110267,
 	CompoundNoduleTypeId = 110268,
 	ImageGadgetTypeId = 110269,
 	ViewportGadgetTypeId = 110270,
 	ViewTypeId = 110271,
-	View3DTypeId = 110272, // Obsolete - available for reuse
-	ObjectViewTypeId = 110273, // Obsolete - available for reuse
+	ConnectionCreatorTypeId = 110272,
+	CompoundNumericNoduleTypeId = 110273,
 	PlugGadgetTypeId = 110274,
 	GraphLayoutTypeId = 110275,
 	StandardGraphLayoutTypeId = 110276,
@@ -80,6 +80,8 @@ enum TypeId
 	TranslateHandleTypeId = 110285,
 	ScaleHandleTypeId = 110286,
 	RotateHandleTypeId = 110287,
+	AnimationGadgetTypeId = 110288,
+	AnnotationsGadgetTypeId = 110289,
 
 	LastTypeId = 110450
 };

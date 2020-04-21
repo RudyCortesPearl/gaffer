@@ -37,45 +37,69 @@
 #ifndef GAFFERUI_STANDARDCONNECTIONGADGET_H
 #define GAFFERUI_STANDARDCONNECTIONGADGET_H
 
-#include "Gaffer/StringAlgo.h"
-
 #include "GafferUI/ConnectionGadget.h"
+
+#include "Gaffer/Plug.h"
+
+#include "IECore/StringAlgo.h"
 
 namespace GafferUI
 {
 
+class NodeGadget;
+
 /// The standard implementation of the abstract ConnectionGadget base
 /// class. Connections endpoints may be dragged + dropped, and the tooltip
 /// displays the name of the source and destination plugs.
-class StandardConnectionGadget : public ConnectionGadget
+class GAFFERUI_API StandardConnectionGadget : public ConnectionGadget
 {
 
 	public :
 
 		StandardConnectionGadget( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule );
-		virtual ~StandardConnectionGadget();
+		~StandardConnectionGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::StandardConnectionGadget, StandardConnectionGadgetTypeId, ConnectionGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::StandardConnectionGadget, StandardConnectionGadgetTypeId, ConnectionGadget );
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
-		virtual void setNodules( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule );
+		void setNodules( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule ) override;
 
-		virtual void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent );
+		bool canCreateConnection( const Gaffer::Plug *endpoint ) const override;
+		void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent ) override;
+		void createConnection( Gaffer::Plug *endpoint ) override;
 
-		virtual Imath::V3f closestPoint( const Imath::V3f &p ) const;
+		Imath::V3f closestPoint( const Imath::V3f &p ) const override;
 
-		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
+		std::string getToolTip( const IECore::LineSegment3f &line ) const override;
 
 	protected :
 
-		void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
+		bool hasLayer( Layer layer ) const override;
 
 	private :
 
 		static ConnectionGadgetTypeDescription<StandardConnectionGadget> g_connectionGadgetTypeDescription;
 
-		void setPositionsFromNodules();
+		// Returns the NodeGadget for the source end of the
+		// connection, even if `srcNodule()` is null. Will
+		// return null if the node is hidden though.
+		const NodeGadget *srcNodeGadget() const;
+		// Decides whether this connection should be highlighted,
+		// taking into account hovering, dragging, dot insertion
+		// and the highlighted state of the nodes at either end.
+		bool highlighted() const;
+		// `m_srcPos` and `m_srcTangent` are stored as if the
+		// connection is not minimised. This method returns them
+		// adjusted according to `getMinimised().
+		void minimisedPositionAndTangent( bool highlighted, Imath::V3f &position, Imath::V3f &tangent ) const;
+		// Updates m_srcPos, m_srcTangent etc. We basically always
+		// call this before accessing that state, so I'm not sure
+		// why we store it at all - we could just return it instead.
+		/// \todo Consider making the updates lazy based on events, or
+		/// just drop the state.
+		void updateConnectionGeometry();
 		float distanceToNodeGadget( const IECore::LineSegment3f &line, const Nodule *nodule ) const;
 		Gaffer::Plug::Direction endAt( const IECore::LineSegment3f &line ) const;
 
@@ -90,18 +114,18 @@ class StandardConnectionGadget : public ConnectionGadget
 		bool keyPressed( const KeyEvent &event );
 		bool keyReleased( const KeyEvent &event );
 
-		bool nodeSelected( const Nodule *nodule ) const;
-
-		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
+		void plugMetadataChanged( IECore::TypeId nodeTypeId, const IECore::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
 
 		bool updateUserColor();
 
 		void updateDotPreviewLocation( const ButtonEvent &event );
 
+		// Connection geometry - computed by `updateConnectionGeometry()`.
 		Imath::V3f m_srcPos;
 		Imath::V3f m_srcTangent;
 		Imath::V3f m_dstPos;
 		Imath::V3f m_dstTangent;
+		bool m_auxiliary;
 
 		Gaffer::Plug::Direction m_dragEnd;
 
@@ -114,6 +138,10 @@ class StandardConnectionGadget : public ConnectionGadget
 
 		bool m_dotPreview;
 		Imath::V3f m_dotPreviewLocation;
+
+		bool m_addingConnection;
+		Imath::V3f m_dstPosOrig;
+		Imath::V3f m_dstTangentOrig;
 
 		boost::signals::scoped_connection m_keyPressConnection;
 		boost::signals::scoped_connection m_keyReleaseConnection;

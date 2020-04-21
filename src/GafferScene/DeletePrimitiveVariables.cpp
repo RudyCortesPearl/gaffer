@@ -39,7 +39,7 @@
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( DeletePrimitiveVariables );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeletePrimitiveVariables );
 
 DeletePrimitiveVariables::DeletePrimitiveVariables( const std::string &name )
 	:	PrimitiveVariableProcessor( name )
@@ -50,8 +50,8 @@ DeletePrimitiveVariables::~DeletePrimitiveVariables()
 {
 }
 
-void DeletePrimitiveVariables::processPrimitiveVariable( const ScenePath &path, const Gaffer::Context *context, IECore::ConstPrimitivePtr inputGeometry, IECore::PrimitiveVariable &variable ) const
+void DeletePrimitiveVariables::processPrimitiveVariable( const ScenePath &path, const Gaffer::Context *context, IECoreScene::ConstPrimitivePtr inputGeometry, IECoreScene::PrimitiveVariable &variable ) const
 {
-	variable.interpolation = IECore::PrimitiveVariable::Invalid;
-	variable.data = 0;
+	variable.interpolation = IECoreScene::PrimitiveVariable::Invalid;
+	variable.data = nullptr;
 }

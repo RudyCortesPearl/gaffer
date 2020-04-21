@@ -35,26 +35,30 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/SubGraph.h"
-#include "Gaffer/Dot.h"
+#include "GafferScene/FilteredSceneProcessor.h"
 
 #include "Gaffer/Context.h"
-
-#include "GafferScene/FilteredSceneProcessor.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( FilteredSceneProcessor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FilteredSceneProcessor );
 
 size_t FilteredSceneProcessor::g_firstPlugIndex = 0;
 
-FilteredSceneProcessor::FilteredSceneProcessor( const std::string &name, Filter::Result filterDefault )
+FilteredSceneProcessor::FilteredSceneProcessor( const std::string &name, IECore::PathMatcher::Result filterDefault )
 	:	SceneProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new FilterPlug( "filter", Plug::In, filterDefault, Filter::NoMatch, Filter::EveryMatch, Plug::Default ) );
+	addChild( new FilterPlug( "filter", Plug::In, filterDefault, IECore::PathMatcher::NoMatch, IECore::PathMatcher::EveryMatch, Plug::Default ) );
+}
+
+FilteredSceneProcessor::FilteredSceneProcessor( const std::string &name, size_t minInputs, size_t maxInputs )
+	:	SceneProcessor( name, minInputs, maxInputs )
+{
+	storeIndexOfNextChild( g_firstPlugIndex );
+	addChild( new FilterPlug( "filter", Plug::In, PathMatcher::NoMatch, PathMatcher::NoMatch, PathMatcher::EveryMatch, Plug::Default ) );
 }
 
 FilteredSceneProcessor::~FilteredSceneProcessor()
@@ -78,19 +82,11 @@ void FilteredSceneProcessor::affects( const Gaffer::Plug *input, AffectedPlugsCo
 	const ScenePlug *scenePlug = input->parent<ScenePlug>();
 	if( scenePlug && scenePlug == inPlug() )
 	{
-		const Filter *filter = runTimeCast<const Filter>( filterPlug()->source<Plug>()->node() );
-		if( filter && filter->sceneAffectsMatch( scenePlug, static_cast<const ValuePlug *>( input ) ) )
+		if( filterPlug()->sceneAffectsMatch( scenePlug, static_cast<const ValuePlug *>( input ) ) )
 		{
 			outputs.push_back( filterPlug() );
 		}
 	}
-}
-
-Gaffer::ContextPtr FilteredSceneProcessor::filterContext( const Gaffer::Context *context ) const
-{
-	Context *result = new Context( *context, Context::Borrowed );
-	Filter::setInputScene( result, inPlug() );
-	return result;
 }
 
 void FilteredSceneProcessor::filterHash( const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -99,8 +95,8 @@ void FilteredSceneProcessor::filterHash( const Gaffer::Context *context, IECore:
 	filterPlug()->hash( h );
 }
 
-Filter::Result FilteredSceneProcessor::filterValue( const Gaffer::Context *context ) const
+IECore::PathMatcher::Result FilteredSceneProcessor::filterValue( const Gaffer::Context *context ) const
 {
 	FilterPlug::SceneScope sceneScope( context, inPlug() );
-	return (Filter::Result)filterPlug()->getValue();
+	return (IECore::PathMatcher::Result)filterPlug()->getValue();
 }

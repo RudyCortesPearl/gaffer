@@ -35,15 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Exception.h"
-
 #include "GafferUI/TranslateHandle.h"
+
+#include "IECore/Exception.h"
 
 using namespace Imath;
 using namespace IECore;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( TranslateHandle );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TranslateHandle );
 
 TranslateHandle::TranslateHandle( Style::Axes axes )
 	:	Handle( defaultName<TranslateHandle>() ), m_axes( Style::X )
@@ -62,13 +62,6 @@ void TranslateHandle::setAxes( Style::Axes axes )
 		return;
 	}
 
-	if( axes > Style::Z )
-	{
-		/// \todo Support XYZ as motion in the camera plane,
-		/// and XY, XZ and YZ as motion in those planes.
-		throw IECore::Exception( "Unsupported axes" );
-	}
-
 	m_axes = axes;
  	requestRender();
 }
@@ -78,9 +71,72 @@ Style::Axes TranslateHandle::getAxes() const
 	return m_axes;
 }
 
-float TranslateHandle::translation( const DragDropEvent &event ) const
+Imath::V3i TranslateHandle::axisMask() const
 {
-	return m_drag.position( event ) - m_drag.startPosition();
+	switch( m_axes )
+	{
+		case Style::X :
+			return V3i( 1, 0, 0 );
+		case Style::Y :
+			return V3i( 0, 1, 0 );
+		case Style::Z :
+			return V3i( 0, 0, 1 );
+		case Style::XY :
+			return V3i( 1, 1, 0 );
+		case Style::XZ :
+			return V3i( 1, 0, 1 );
+		case Style::YZ :
+			return V3i( 0, 1, 1 );
+		case Style::XYZ :
+			return V3i( 1, 1, 1 );
+		default :
+			return V3i( 0 );
+	}
+}
+
+Imath::V3f TranslateHandle::translation( const DragDropEvent &event )
+{
+	const float snapIncrement = event.modifiers & ButtonEvent::Shift ? 0.1f : 1.0f;
+	const float snapOffset = snapIncrement * 0.5f;
+
+	if( m_axes == Style::X || m_axes == Style::Y || m_axes == Style::Z )
+	{
+		float offset = m_linearDrag.updatedPosition( event ) - m_linearDrag.startPosition();
+
+		// snap
+		if( event.modifiers & ButtonEvent::Control )
+		{
+			// Offset such that it behaves like round not floor.
+			offset = offset - fmodf( offset - snapOffset, snapIncrement ) + snapOffset;
+		}
+
+		switch( m_axes )
+		{
+			case Style::X :
+				return V3f( offset, 0, 0 );
+			case Style::Y :
+				return V3f( 0, offset, 0 );
+			case Style::Z :
+				return V3f( 0, 0, offset );
+			default:
+				break;
+		}
+	}
+	else
+	{
+		V2f offset = m_planarDrag.updatedPosition( event ) - m_planarDrag.startPosition();
+
+		// snap
+		if( event.modifiers & ButtonEvent::Control )
+		{
+			offset[0] = offset[0] - fmodf( offset[0] - snapOffset, snapIncrement ) + snapOffset;
+			offset[1] = offset[1] - fmodf( offset[1] - snapOffset, snapIncrement ) + snapOffset;
+		}
+
+		return m_planarDrag.axis0() * offset[0] + m_planarDrag.axis1() * offset[1];
+	}
+
+	return V3f( 0 );
 }
 
 void TranslateHandle::renderHandle( const Style *style, Style::State state ) const
@@ -90,7 +146,28 @@ void TranslateHandle::renderHandle( const Style *style, Style::State state ) con
 
 void TranslateHandle::dragBegin( const DragDropEvent &event )
 {
-	V3f handle( 0.0f );
-	handle[m_axes] = 1.0f;
-	m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), handle ), event );
+	switch( m_axes )
+	{
+		case Style::X :
+			m_linearDrag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 1, 0, 0 ) ), event );
+			break;
+		case Style::Y :
+			m_linearDrag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 0, 1, 0 ) ), event );
+			break;
+		case Style::Z :
+			m_linearDrag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 0, 0, 1 ) ), event );
+			break;
+		case Style::XY :
+			m_planarDrag = PlanarDrag( this, V3f( 0 ), V3f( 1, 0, 0 ), V3f( 0, 1, 0 ), event );
+			break;
+		case Style::XZ :
+			m_planarDrag = PlanarDrag( this, V3f( 0 ), V3f( 1, 0, 0 ), V3f( 0, 0, 1 ), event );
+			break;
+		case Style::YZ :
+			m_planarDrag = PlanarDrag( this, V3f( 0 ), V3f( 0, 1, 0 ), V3f( 0, 0, 1 ), event );
+			break;
+		case Style::XYZ :
+			m_planarDrag = PlanarDrag( this, event );
+			break;
+	}
 }

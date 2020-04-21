@@ -34,36 +34,32 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/tbb_thread.h"
-#include "tbb/tbb_config.h"
-
-#if TBB_IMPLEMENT_CPP0X
-#include "tbb/compat/thread"
-#else
-#include <thread>
-#endif
-
-#include "boost/bind.hpp"
-#include "boost/lexical_cast.hpp"
-#include "boost/filesystem/path.hpp"
-#include "boost/filesystem/operations.hpp"
-#include "boost/unordered_map.hpp"
-
-#include "Gaffer/Context.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/ArrayPlug.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/DownstreamIterator.h"
-
 #include "GafferImage/Catalogue.h"
-#include "GafferImage/ImageReader.h"
+
 #include "GafferImage/Constant.h"
-#include "GafferImage/ImageMetadata.h"
 #include "GafferImage/CopyChannels.h"
 #include "GafferImage/Display.h"
+#include "GafferImage/ImageAlgo.h"
+#include "GafferImage/ImageMetadata.h"
+#include "GafferImage/ImageReader.h"
 #include "GafferImage/ImageWriter.h"
 #include "GafferImage/Text.h"
-#include "GafferImage/ImageAlgo.h"
+
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/DownstreamIterator.h"
+#include "Gaffer/ParallelAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StringPlug.h"
+
+#include "boost/algorithm/string.hpp"
+#include "boost/bind.hpp"
+#include "boost/filesystem/operations.hpp"
+#include "boost/filesystem/path.hpp"
+#include "boost/lexical_cast.hpp"
+#include "boost/unordered_map.hpp"
+
+#include <thread>
 
 using namespace std;
 using namespace IECore;
@@ -132,20 +128,23 @@ class Catalogue::InternalImage : public ImageNode
 
 			// Switches between the loaded image and the
 			// live Displays.
-			addChild( new ImageSwitch() );
+			addChild( new Switch() );
+			imageSwitch()->setup( outPlug() );
 			imageSwitch()->inPlugs()->getChild<ImagePlug>( 0 )->setInput( imageReader()->outPlug() );
 			imageSwitch()->inPlugs()->getChild<ImagePlug>( 1 )->setInput( text()->outPlug() );
 
 			// Adds on a description to the output
 			addChild( new ImageMetadata() );
 			imageMetadata()->inPlug()->setInput( imageSwitch()->outPlug() );
-			CompoundDataPlug::MemberPlug *meta = imageMetadata()->metadataPlug()->addMember( "ImageDescription", new StringData() );
-			meta->valuePlug<StringPlug>()->setInput( descriptionPlug() );
+			NameValuePlugPtr meta = new NameValuePlug( "ImageDescription", new StringData(), true, "member1" );
+			imageMetadata()->metadataPlug()->addChild( meta );
+			meta->valuePlug()->setInput( descriptionPlug() );
+			meta->enabledPlug()->setInput( descriptionPlug() ); // Enable only for non-empty strings
 
 			outPlug()->setInput( imageMetadata()->outPlug() );
 		}
 
-		virtual ~InternalImage()
+		~InternalImage() override
 		{
 			if( m_saver )
 			{
@@ -191,7 +190,7 @@ class Catalogue::InternalImage : public ImageNode
 				copyChannels()->inPlugs()->getChild<Plug>( numDisplays++ )->setInput( displayCopy->outPlug() );
 			}
 
-			m_saver = NULL;
+			m_saver = nullptr;
 			if( other->m_saver )
 			{
 				m_saver = other->m_saver;
@@ -199,7 +198,7 @@ class Catalogue::InternalImage : public ImageNode
 			}
 			else if( numDisplays )
 			{
-				m_saver = new AsynchronousSaver( this );
+				m_saver = AsynchronousSaver::create( this );
 			}
 
 			m_clientPID = -2; // Make sure insertDriver() will reject new drivers
@@ -213,7 +212,7 @@ class Catalogue::InternalImage : public ImageNode
 			imageWriter->taskPlug()->execute();
 		}
 
-		bool insertDriver( IECore::DisplayDriverPtr driver, const IECore::CompoundData *parameters )
+		bool insertDriver( IECoreImage::DisplayDriverPtr driver, const IECore::CompoundData *parameters )
 		{
 			// If we represent a disk-based image, we can't accept
 			// a render.
@@ -251,7 +250,7 @@ class Catalogue::InternalImage : public ImageNode
 			addChild( display );
 			ArrayPlug *a = copyChannels()->inPlugs();
 			size_t nextIndex = a->children().size() - 1;
-			if( nextIndex == 1 && !a->getChild<ImagePlug>( 0 )->getInput<Plug>() )
+			if( nextIndex == 1 && !a->getChild<ImagePlug>( 0 )->getInput() )
 			{
 				// CopyChannels starts with two input plugs, and we must use
 				// the first one to make sure the format etc is passed through.
@@ -283,12 +282,12 @@ class Catalogue::InternalImage : public ImageNode
 			// Save the image to disk. We do this in the background because
 			// saving large images with many AOVs takes several seconds.
 
-			m_saver = new AsynchronousSaver( this );
+			m_saver = AsynchronousSaver::create( this );
 		}
 
 	protected :
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+		void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override
 		{
 			assert( m_saver );
 			AsynchronousSaver::ChannelDataHashes::const_iterator it = m_saver->channelDataHashes.find(
@@ -307,7 +306,7 @@ class Catalogue::InternalImage : public ImageNode
 			}
 		}
 
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override
 		{
 			return imageReader()->outPlug()->channelDataPlug()->getValue();
 		}
@@ -316,7 +315,7 @@ class Catalogue::InternalImage : public ImageNode
 
 		void updateImageFlags( unsigned flags, bool enable )
 		{
-			Plug *p = fileNamePlug()->getInput<Plug>();
+			Plug *p = fileNamePlug()->getInput();
 			if( !p )
 			{
 				return;
@@ -370,14 +369,14 @@ class Catalogue::InternalImage : public ImageNode
 			return getChild<Text>( g_firstChildIndex + 4 );
 		}
 
-		ImageSwitch *imageSwitch()
+		Switch *imageSwitch()
 		{
-			return getChild<ImageSwitch>( g_firstChildIndex + 5 );
+			return getChild<Switch>( g_firstChildIndex + 5 );
 		}
 
-		const ImageSwitch *imageSwitch() const
+		const Switch *imageSwitch() const
 		{
-			return getChild<ImageSwitch>( g_firstChildIndex + 5 );
+			return getChild<Switch>( g_firstChildIndex + 5 );
 		}
 
 		ImageMetadata *imageMetadata()
@@ -390,17 +389,18 @@ class Catalogue::InternalImage : public ImageNode
 			return getChild<ImageMetadata>( g_firstChildIndex + 6 );
 		}
 
-		struct AsynchronousSaver : public IECore::RefCounted
+		struct AsynchronousSaver
 		{
 
-			IE_CORE_DECLAREMEMBERPTR( AsynchronousSaver )
+			typedef std::shared_ptr<AsynchronousSaver> Ptr;
+			typedef std::weak_ptr<AsynchronousSaver> WeakPtr;
 
-			AsynchronousSaver( InternalImage *client )
+			static Ptr create( InternalImage *client )
 			{
 				// We use a copy of the image to do the saving, because the original
 				// might be modified on the main thread while we save in the background.
 
-				m_imageCopy = new InternalImage;
+				InternalImagePtr imageCopy = new InternalImage;
 
 				size_t i = 0;
 				for( DisplayIterator it( client ); !it.done(); ++it )
@@ -408,38 +408,45 @@ class Catalogue::InternalImage : public ImageNode
 					Display *display = it->get();
 					DisplayPtr displayCopy = new Display;
 					displayCopy->setDriver( display->getDriver(), /* copy = */ true );
-					m_imageCopy->addChild( displayCopy );
-					m_imageCopy->copyChannels()->inPlugs()->getChild<Plug>( i++ )->setInput( displayCopy->outPlug() );
+					imageCopy->addChild( displayCopy );
+					imageCopy->copyChannels()->inPlugs()->getChild<Plug>( i++ )->setInput( displayCopy->outPlug() );
 				}
-				m_imageCopy->imageSwitch()->indexPlug()->setValue( 1 );
+				imageCopy->imageSwitch()->indexPlug()->setValue( 1 );
 
-				// Set up an ImageWriter to do the actual saving.
-				// We do all graph construction here in the main thread
-				// so that the background thread only does execution.
-
-				const string fileName = client->parent<Catalogue>()->generateFileName( m_imageCopy->outPlug() );
+				// If there's nowhere to save, then a saver is useless, so return null.
+				const string fileName = client->parent<Catalogue>()->generateFileName( imageCopy->outPlug() );
 				if( fileName.empty() )
 				{
-					return;
+					return nullptr;
 				}
 
-				m_writer = new ImageWriter;
-				m_writer->inPlug()->setInput( m_imageCopy->outPlug() );
-				m_writer->fileNamePlug()->setValue( fileName );
+				// Otherwise, make a saver and schedule its background execution.
+				Ptr saver = Ptr( new AsynchronousSaver( imageCopy, fileName ) );
+				saver->registerClient( client );
 
-				registerClient( client );
-
-				// And fire off a thread to do the actual work.
-				std::thread thread( boost::bind( &AsynchronousSaver::save, this ) );
-				m_thread.swap( thread );
+				// Note that the background thread doesn't own a reference to the saver -
+				// see ~AsychronousSaver for details.
+				std::thread thread( boost::bind( &AsynchronousSaver::save, saver.get(), WeakPtr( saver ) ) );
+				saver->m_thread.swap( thread );
+				return saver;
 			}
 
 			virtual ~AsynchronousSaver()
 			{
-				if( m_thread.joinable() )
-				{
-					m_thread.join();
-				}
+				// Wait for our background thread to complete. This achieves
+				// two things :
+				//
+				// - Makes sure our member data is not deleted until the background
+				//   thread has finished using it.
+				// - Ensures that the background thread finishes before program shutdown
+				//   reaches the stage of calling static destructors, at which point
+				//   it would crash as the libraries it relies on are torn down around it.
+				//
+				// Note that for this to work, the background thread must _not_ own a
+				// reference to `this`, as that would prevent destruction on the main
+				// thread and never give us an opportunity to wait for the background
+				// thread.
+				m_thread.join();
 			}
 
 			void registerClient( InternalImage *client )
@@ -469,44 +476,56 @@ class Catalogue::InternalImage : public ImageNode
 
 			private :
 
-				struct HashGatherer
+				AsynchronousSaver( InternalImagePtr imageCopy, const std::string &fileName )
+					:	m_imageCopy( imageCopy )
 				{
+					// Set up an ImageWriter to do the actual saving.
+					// We do all graph construction here in the main thread
+					// so that the background thread only does execution.
+					m_writer = new ImageWriter;
+					m_writer->inPlug()->setInput( m_imageCopy->outPlug() );
+					m_writer->fileNamePlug()->setValue( fileName );
+				}
 
-					HashGatherer( ChannelDataHashes &hashes )
-						:	m_hashes( hashes )
-					{
-					}
-
-					typedef IECore::MurmurHash Result;
-
-					IECore::MurmurHash operator()( const ImagePlug *imagePlug, const std::string &channelName, const Imath::V2i &tileOrigin )
-					{
-						return imagePlug->channelDataPlug()->hash();
-					}
-
-					void operator()( const ImagePlug *imagePlug, const string &channelName, const Imath::V2i &tileOrigin, const IECore::MurmurHash hash )
-					{
-						m_hashes[TileIndex(channelName, tileOrigin)] = hash;
-					}
-
-					private :
-
-						ChannelDataHashes &m_hashes;
-
-				};
-
-				void save()
+				void save( WeakPtr forWrapUp )
 				{
-					HashGatherer hashGatherer( channelDataHashes );
-					parallelGatherTiles(
+					ImageAlgo::parallelGatherTiles(
 						m_imageCopy->copyChannels()->outPlug(),
 						m_imageCopy->copyChannels()->outPlug()->channelNamesPlug()->getValue()->readable(),
-						hashGatherer,
-						hashGatherer
+						// Tile
+						[] ( const ImagePlug *imagePlug, const string &channelName, const Imath::V2i &tileOrigin )
+						{
+							return imagePlug->channelDataPlug()->hash();
+						},
+						// Gather
+						[ this ] ( const ImagePlug *imagePlug, const string &channelName, const Imath::V2i &tileOrigin, const IECore::MurmurHash &tileHash )
+						{
+							channelDataHashes[TileIndex(channelName, tileOrigin)] = tileHash;
+						}
 					);
 
-					m_writer->taskPlug()->execute();
-					Display::executeOnUIThread( boost::bind( &AsynchronousSaver::wrapUp, Ptr( this ) ) );
+					try
+					{
+						m_writer->taskPlug()->execute();
+					}
+					catch( const std::exception &e )
+					{
+						IECore::msg( IECore::Msg::Error, "Saving Catalogue image", e.what() );
+					}
+
+					// Schedule execution of wrapUp() on the UI thread,
+					// to make our results visible to the user. Note that
+					// we absolutely _must not_ create a Ptr here on the
+					// background thread - ownership must be managed on
+					// the UI thread only (see ~AsynchronousSaver).
+					ParallelAlgo::callOnUIThread(
+						[forWrapUp] {
+							if( Ptr that = forWrapUp.lock() )
+							{
+								that->wrapUp();
+							}
+						}
+					);
 				}
 
 				void wrapUp()
@@ -519,7 +538,7 @@ class Catalogue::InternalImage : public ImageNode
 					}
 
 					// Destroy the image to release the memory used by the copied display drivers.
-					m_imageCopy = NULL;
+					m_imageCopy = nullptr;
 				}
 
 				void wrapUpClient( InternalImage *client )
@@ -532,7 +551,7 @@ class Catalogue::InternalImage : public ImageNode
 					// so that we can reuse the cache entries created by the original
 					// Display nodes, rather than force an immediate load of the image
 					// from disk, which would be slow.
-					client->outPlug()->channelDataPlug()->setInput( NULL );
+					client->outPlug()->channelDataPlug()->setInput( nullptr );
 
 					client->removeDisplays();
 					client->updateImageFlags( Plug::Serialisable, true );
@@ -560,7 +579,7 @@ size_t Catalogue::InternalImage::g_firstChildIndex = 0;
 // Image
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Catalogue::Image );
+GAFFER_PLUG_DEFINE_TYPE( Catalogue::Image );
 
 Catalogue::Image::Image( const std::string &name, Direction direction, unsigned flags )
 	:	Plug( name, direction, flags )
@@ -596,16 +615,26 @@ void Catalogue::Image::copyFrom( const Image *other )
 
 Catalogue::Image::Ptr Catalogue::Image::load( const std::string &fileName )
 {
-	Ptr image = new Image( boost::filesystem::path( fileName ).stem().string(), Plug::In, Plug::Default | Plug::Dynamic );
-	image->fileNamePlug()->setValue( fileName );
-
-	ImageReaderPtr reader = new ImageReader;
-	reader->fileNamePlug()->setValue( fileName );
-	ConstCompoundDataPtr meta = reader->outPlug()->metadataPlug()->getValue();
-	if( const StringData *description = meta->member<const StringData>( "ImageDescription" ) )
+	// GraphComponent names are much more restrictive than filenames, so
+	// we must replace all non-alphanumeric characters with `_`, and make
+	// sure it doesn't start with a number.
+	/// \todo Relax these restrictions and/or provide automatic name
+	/// sanitisation in GraphComponent.
+	std::string name = boost::filesystem::path( fileName ).stem().string();
+	std::replace_if(
+		name.begin(), name.end(),
+		[] ( char c ) {
+			return !std::isalnum( c, std::locale::classic() );
+		},
+		'_'
+	);
+	if( std::isdigit( name[0], std::locale::classic() ) )
 	{
-		image->descriptionPlug()->setValue( description->readable() );
+		name = "_" + name;
 	}
+
+	Ptr image = new Image( name, Plug::In, Plug::Default | Plug::Dynamic );
+	image->fileNamePlug()->setValue( fileName );
 
 	return image;
 }
@@ -643,7 +672,7 @@ bool undoingOrRedoing( const Node *node )
 
 } // namespace
 
-IE_CORE_DEFINERUNTIMETYPED( Catalogue );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Catalogue );
 
 size_t Catalogue::g_firstPlugIndex = 0;
 
@@ -656,17 +685,21 @@ Catalogue::Catalogue( const std::string &name )
 	addChild( new IntPlug( "imageIndex" ) );
 	addChild( new StringPlug( "name" ) );
 	addChild( new StringPlug( "directory" ) );
+	addChild( new IntPlug( "__imageIndex", Plug::Out ) );
+	addChild( new AtomicCompoundDataPlug( "__mapping", Plug::In, new CompoundData() ) );
 
 	// Switch used to choose which image to output
-	addChild( new ImageSwitch( "__switch" ) );
-	imageSwitch()->indexPlug()->setInput( imageIndexPlug() );
+	addChild( new Switch( "__switch" ) );
+	imageSwitch()->setup( outPlug() );
+	imageSwitch()->indexPlug()->setInput( internalImageIndexPlug() );
 
 	// Switch and constant used to implement disabled output
 	ConstantPtr disabled = new Constant( "__disabled" );
 	addChild( disabled );
 	disabled->enabledPlug()->setValue( false );
 
-	ImageSwitchPtr enabler = new ImageSwitch( "__enabler" );
+	SwitchPtr enabler = new Switch( "__enabler" );
+	enabler->setup( outPlug() );
 	addChild( enabler );
 	enabler->inPlugs()->getChild<ImagePlug>( 0 )->setInput( disabled->outPlug() );
 	enabler->inPlugs()->getChild<ImagePlug>( 1 )->setInput( imageSwitch()->outPlug() );
@@ -726,14 +759,34 @@ const Gaffer::StringPlug *Catalogue::directoryPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 3 );
 }
 
-ImageSwitch *Catalogue::imageSwitch()
+Gaffer::IntPlug *Catalogue::internalImageIndexPlug()
 {
-	return getChild<ImageSwitch>( g_firstPlugIndex + 4 );
+	return getChild<IntPlug>( g_firstPlugIndex + 4 );
 }
 
-const ImageSwitch *Catalogue::imageSwitch() const
+const Gaffer::IntPlug *Catalogue::internalImageIndexPlug() const
 {
-	return getChild<ImageSwitch>( g_firstPlugIndex + 4 );
+	return getChild<IntPlug>( g_firstPlugIndex + 4 );
+}
+
+Gaffer::AtomicCompoundDataPlug *Catalogue::mappingPlug()
+{
+	return getChild<AtomicCompoundDataPlug>( g_firstPlugIndex + 5 );
+}
+
+const Gaffer::AtomicCompoundDataPlug *Catalogue::mappingPlug() const
+{
+	return getChild<AtomicCompoundDataPlug>( g_firstPlugIndex + 5 );
+}
+
+Switch *Catalogue::imageSwitch()
+{
+	return getChild<Switch>( g_firstPlugIndex + 6 );
+}
+
+const Switch *Catalogue::imageSwitch() const
+{
+	return getChild<Switch>( g_firstPlugIndex + 6 );
 }
 
 Catalogue::InternalImage *Catalogue::imageNode( Image *image )
@@ -744,7 +797,7 @@ Catalogue::InternalImage *Catalogue::imageNode( Image *image )
 
 const Catalogue::InternalImage *Catalogue::imageNode( const Image *image )
 {
-	const InternalImage *result = NULL;
+	const InternalImage *result = nullptr;
 	for( DownstreamIterator it( image->fileNamePlug() ); !it.done(); ++it )
 	{
 		if( const InternalImage *internalImage = dynamic_cast<const InternalImage *>( it->node() ) )
@@ -762,6 +815,16 @@ const Catalogue::InternalImage *Catalogue::imageNode( const Image *image )
 			{
 				result = internalImage;
 			}
+		}
+
+		if( !it->isInstanceOf( StringPlug::staticTypeId() ) )
+		{
+			// We only want to follow the chain leading to the name plug of the InternalImage,
+			// we don't want to follow off into some other output network that could be costly
+			// to spider ( If we follow the output image of the InternalImage off into a large
+			// comp network, this could get extraordinarily costly, due to DownstreamIterator
+			// not pruning when revisiting nodes ).
+			it.prune();
 		}
 	}
 
@@ -785,13 +848,24 @@ std::string Catalogue::generateFileName( const ImagePlug *image ) const
 	{
 		directory = script->context()->substitute( directory );
 	}
+	else if( IECore::StringAlgo::hasSubstitutions( directory ) )
+	{
+		// Its possible for a Catalogue to have been removed from its script
+		// and still receive an image. If it will attempt to save that image
+		// to a file which needed the script context to resolve properly, the
+		// saving will eventually error, so we return an empty string instead.
+		// Its likely this only occurs while the node is in the process of
+		// being deleted (perhaps inside python's garbage collector).
+		return "";
+	}
+
 	if( directory.empty() )
 	{
 		return "";
 	}
 
 	boost::filesystem::path result( directory );
-	result /= image->imageHash().toString();
+	result /= ImageAlgo::imageHash( image ).toString();
 	result.replace_extension( "exr" );
 
 	return result.string();
@@ -818,6 +892,10 @@ void Catalogue::imageAdded( GraphComponent *graphComponent )
 
 	ImagePlug *nextSwitchInput = static_cast<ImagePlug *>( imageSwitch()->inPlugs()->children().back().get() );
 	nextSwitchInput->setInput( internalImage->outPlug() );
+
+	image->nameChangedSignal().connect( boost::bind( &Catalogue::computeNameToIndexMapping, this ) );
+
+	computeNameToIndexMapping();
 }
 
 void Catalogue::imageRemoved( GraphComponent *graphComponent )
@@ -839,7 +917,7 @@ void Catalogue::imageRemoved( GraphComponent *graphComponent )
 	for( size_t i = 0, offset = 0; i < plug->children().size(); ++i )
 	{
 		Plug *element = plug->getChild<Plug>( i );
-		if( !element->getInput<Plug>() )
+		if( !element->getInput() )
 		{
 			offset++;
 		}
@@ -847,23 +925,25 @@ void Catalogue::imageRemoved( GraphComponent *graphComponent )
 		{
 			if( i + offset < plug->children().size() - 1 )
 			{
-				element->setInput( plug->getChild<Plug>( i + offset )->source<Plug>() );
+				element->setInput( plug->getChild<Plug>( i + offset )->getInput() );
 			}
 			else
 			{
-				element->setInput( NULL );
+				element->setInput( nullptr );
 			}
 		}
 	}
+
+	computeNameToIndexMapping();
 }
 
-IECore::DisplayDriverServer *Catalogue::displayDriverServer()
+IECoreImage::DisplayDriverServer *Catalogue::displayDriverServer()
 {
-	static IECore::DisplayDriverServerPtr g_server = new IECore::DisplayDriverServer();
+	static IECoreImage::DisplayDriverServerPtr g_server = new IECoreImage::DisplayDriverServer();
 	return g_server.get();
 }
 
-void Catalogue::driverCreated( IECore::DisplayDriver *driver, const IECore::CompoundData *parameters )
+void Catalogue::driverCreated( IECoreImage::DisplayDriver *driver, const IECore::CompoundData *parameters )
 {
 	// Check the image is destined for catalogues in general
 	if( const StringData *portNumberData = parameters->member<StringData>( "displayPort" ) )
@@ -896,7 +976,7 @@ void Catalogue::driverCreated( IECore::DisplayDriver *driver, const IECore::Comp
 	// AOVs into a single image. We iterate backwards
 	// because the last image is most likely to be the
 	// one we want.
-	Plug *images = imagesPlug()->source<Plug>();
+	Plug *images = imagesPlug()->source();
 	for( int i = images->children().size() - 1; i >= 0; --i )
 	{
 		InternalImage *candidateImage = imageNode( images->getChild<Image>( i ) );
@@ -925,3 +1005,69 @@ void Catalogue::imageReceived( Gaffer::Plug *plug )
 	internalImage->driverClosed();
 }
 
+void Catalogue::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+{
+	ImageNode::affects( input, outputs );
+
+	if( input == imageIndexPlug() )
+	{
+		outputs.push_back( internalImageIndexPlug() );
+	}
+}
+
+void Catalogue::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hash( output, context, h );
+	if( output == internalImageIndexPlug() )
+	{
+		imageIndexPlug()->hash( h );
+		h.append( context->get<std::string>( "catalogue:imageName", "" ) );
+	}
+}
+
+void Catalogue::compute( ValuePlug *output, const Context *context ) const
+{
+	if( output != internalImageIndexPlug() )
+	{
+		ImageNode::compute( output, context );
+		return;
+	}
+
+	int index;
+	std::string imageName = context->get<std::string>( "catalogue:imageName", "" );
+	if( imageName.empty() )
+	{
+		index = imageIndexPlug()->getValue();
+	}
+	else
+	{
+		ConstCompoundDataPtr mappingData = mappingPlug()->getValue();
+		const IECore::IntData *indexData = mappingData->member<IntData>( imageName );
+		if( !indexData )
+		{
+			throw IECore::Exception( "Unknown image name." );
+		}
+		else
+		{
+			index = indexData->readable();
+		}
+	}
+
+	static_cast<IntPlug *>( output )->setValue( index );
+
+}
+
+void Catalogue::computeNameToIndexMapping()
+{
+	CompoundDataPtr mapData = new CompoundData();
+	std::map<InternedString, DataPtr> &map = mapData->writable();
+
+	int count = 0;
+	for( const auto &image : imagesPlug()->children() )
+	{
+		map[image->getName()] = new IntData( count );
+		++count;
+	}
+
+	mappingPlug()->setValue( mapData );
+}

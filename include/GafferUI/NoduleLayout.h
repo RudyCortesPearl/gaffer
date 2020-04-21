@@ -38,11 +38,14 @@
 #ifndef GAFFERUI_NODULELAYOUT_H
 #define GAFFERUI_NODULELAYOUT_H
 
+#include "GafferUI/Gadget.h"
+#include "GafferUI/GraphGadget.h"
+
+#include "IECore/StringAlgo.h"
+
 #include "boost/variant.hpp"
 
-#include "Gaffer/StringAlgo.h"
-
-#include "GafferUI/Gadget.h"
+#include <functional>
 
 namespace Gaffer
 {
@@ -72,15 +75,15 @@ IE_CORE_FORWARDDECLARE( Nodule )
 /// - noduleLayout:section:<sectionName>:direction, string, "increasing" or "decreasing"
 /// - noduleLayout:customGadget:<name>:gadgetType, string
 /// - noduleLayout:customGadget:<name>:*, as for child plug metadata above
-class NoduleLayout : public Gadget
+class GAFFERUI_API NoduleLayout : public Gadget
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::NoduleLayout, NoduleLayoutTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::NoduleLayout, NoduleLayoutTypeId, Gadget );
 
 		NoduleLayout( Gaffer::GraphComponentPtr parent, IECore::InternedString section = IECore::InternedString() );
-		virtual ~NoduleLayout();
+		~NoduleLayout() override;
 
 		/// \todo These do not need to be virtual, since this is
 		/// not intended to be used as a base class.
@@ -90,10 +93,15 @@ class NoduleLayout : public Gadget
 		Gadget *customGadget( const std::string &name );
 		const Gadget *customGadget( const std::string &name ) const;
 
-		typedef boost::function<GadgetPtr ( Gaffer::GraphComponentPtr )> CustomGadgetCreator;
+		typedef std::function<GadgetPtr ( Gaffer::GraphComponentPtr )> CustomGadgetCreator;
 		/// Registers a custom gadget type that can be added to the layout using
 		/// "noduleLayout:customGadget:*"" metadata entries.
 		static void registerCustomGadget( const std::string &gadgetType, CustomGadgetCreator creator );
+
+
+	protected :
+
+		bool hasLayer( Layer layer ) const override;
 
 	private :
 
@@ -119,7 +127,7 @@ class NoduleLayout : public Gadget
 		void childAdded( Gaffer::GraphComponent *child );
 		void childRemoved( Gaffer::GraphComponent *child );
 
-		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
+		void plugMetadataChanged( IECore::TypeId nodeTypeId, const IECore::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
 		void nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Gaffer::Node *node );
 
 		std::vector<GadgetKey> layoutOrder();

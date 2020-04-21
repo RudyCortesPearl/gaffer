@@ -42,22 +42,22 @@
 namespace GafferScene
 {
 
-class ClippingPlane : public ObjectSource
+class GAFFERSCENE_API ClippingPlane : public ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ClippingPlane, ClippingPlaneTypeId, ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ClippingPlane, ClippingPlaneTypeId, ObjectSource );
 
 		ClippingPlane( const std::string &name=defaultName<ClippingPlane>() );
-		virtual ~ClippingPlane();
+		~ClippingPlane() override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
-		virtual IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const;
+		IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const override;
 
 };
 

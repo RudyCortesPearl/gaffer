@@ -38,6 +38,7 @@
 import weakref
 import inspect
 import warnings
+import imath
 
 import IECore
 
@@ -98,7 +99,7 @@ from Qt import QtWidgets
 # have identical signatures in as many places as possible, with the possibility of perhaps having
 # a common base class in the future. Right now the signatures are the same for the event signals and
 # for the tool tips.
-class Widget( object ) :
+class Widget( Gaffer.Trackable ) :
 
 	## All GafferUI.Widget instances must hold a corresponding QtWidgets.QWidget instance
 	# which provides the top level implementation for the widget, and to which other
@@ -113,6 +114,8 @@ class Widget( object ) :
 	# the parenting argument may be passed as a dictionay of optional keywords for the
 	# automatic `parent.addChild()` call.
 	def __init__( self, topLevelWidget, toolTip="", parenting = None ) :
+
+		Gaffer.Trackable.__init__( self )
 
 		assert( isinstance( topLevelWidget, ( QtWidgets.QWidget, Widget ) ) )
 
@@ -170,8 +173,6 @@ class Widget( object ) :
 
  		self.__visible = not isinstance( self, GafferUI.Window )
 
-		self.setToolTip( toolTip )
-
 		# perform automatic parenting if necessary. we don't want to do this
 		# for menus, because they don't have the same parenting semantics. if other
 		# types end up with similar requirements then we should probably just have
@@ -193,6 +194,10 @@ class Widget( object ) :
 				self.__ensureEventFilter()
 				break
 			c = c.__bases__[0]
+
+		self.setToolTip( toolTip )
+
+		self.__applyQWidgetStyleClasses()
 
 	## Sets whether or not this Widget is visible. Widgets are
 	# visible by default, except for Windows which need to be made
@@ -366,7 +371,7 @@ class Widget( object ) :
 	## \deprecated Use bound().size() instead.
 	def size( self ) :
 
-		return IECore.V2i( self.__qtWidget.width(), self.__qtWidget.height() )
+		return imath.V2i( self.__qtWidget.width(), self.__qtWidget.height() )
 
 	## Returns the bounding box of the Widget as a Box2i. If relativeTo
 	# is None then the bound is provided in screen coordinates, if a
@@ -394,11 +399,11 @@ class Widget( object ) :
 					pos = q.mapToParent( pos )
 				q = parentWidget
 
-		pos = IECore.V2i( pos.x(), pos.y() )
+		pos = imath.V2i( pos.x(), pos.y() )
 		if relativeTo is not None :
-			pos -= relativeTo.bound().min
+			pos -= relativeTo.bound().min()
 
-		return IECore.Box2i( pos, pos + IECore.V2i( self.__qtWidget.width(), self.__qtWidget.height() ) )
+		return imath.Box2i( pos, pos + imath.V2i( self.__qtWidget.width(), self.__qtWidget.height() ) )
 
 	def keyPressSignal( self ) :
 
@@ -583,6 +588,12 @@ class Widget( object ) :
 
 		self._qtWidget().setToolTip( toolTip )
 
+		if toolTip :
+			# Qt does have a default event handler for tooltips,
+			# but we install our own so we can support markdown
+			# formatting automatically.
+			self.__ensureEventFilter()
+
 	## Returns the current position of the mouse. If relativeTo
 	# is not specified, then the position will be in screen coordinates,
 	# otherwise it will be in the local coordinate system of the
@@ -591,11 +602,16 @@ class Widget( object ) :
 	def mousePosition( relativeTo=None ) :
 
 		p = QtGui.QCursor.pos()
-		p = IECore.V2i( p.x(), p.y() )
+		p = imath.V2i( p.x(), p.y() )
 		if relativeTo is not None :
-			p = p - relativeTo.bound().min
+			p = p - relativeTo.bound().min()
 
 		return p
+
+	@staticmethod
+	def currentModifiers() :
+
+		return Widget._modifiers( QtWidgets.QApplication.queryKeyboardModifiers() )
 
 	## Returns the widget at the specified screen position.
 	# If widgetType is specified, then it is used to find
@@ -836,6 +852,38 @@ class Widget( object ) :
 
 		self.__qtWidget.setStyleSheet( _styleSheet )
 
+	@classmethod
+	def __styleClassName( cls ) :
+
+		nameParts = []
+
+		if cls.__module__ != "__main__" :
+			nameParts.extend( cls.__module__.split( '.' ) )
+
+		# Avoid things like GafferUI.Button.Button -> GafferUI.Button
+		if not nameParts or cls.__name__ != nameParts[ -1 ] :
+			nameParts.append( cls.__name__ )
+
+		return ".".join( nameParts )
+
+	def __applyQWidgetStyleClasses( self ) :
+
+		# Expose our class as a custom property to allow stylesheets to target
+		# widgets by GafferUI class names (Qt's class is bound to the class
+		# selector, and class property).
+		# We include the module name to ensure we don't have collisions with
+		# custom widgets.
+
+		self._qtWidget().setProperty( "gafferClass", self.__styleClassName() )
+
+		allClasses = []
+
+		for cls in inspect.getmro( self.__class__ ) :
+			if hasattr( cls, '_Widget__styleClassName' ) :
+				allClasses.append( cls.__styleClassName() )
+
+		self._qtWidget().setProperty( "gafferClasses", allClasses )
+
 class _EventFilter( QtCore.QObject ) :
 
 	def __init__( self ) :
@@ -943,6 +991,7 @@ class _EventFilter( QtCore.QObject ) :
 		widget = Widget._owner( qObject )
 		toolTip = widget.getToolTip()
 		if toolTip :
+			toolTip = GafferUI.DocumentationAlgo.markdownToHTML( toolTip )
 			QtWidgets.QToolTip.showText( qEvent.globalPos(), toolTip, qObject )
 			return True
 		else :
@@ -973,6 +1022,13 @@ class _EventFilter( QtCore.QObject ) :
 		return False
 
 	def __keyRelease( self, qObject, qEvent ) :
+
+		# When a key is held, the following events are observed:
+		#   MacOS: p p p p r
+		#   Linux: p r p r p r p r
+		# We conform linux to match Mac as it feels more intuitive.
+		if qEvent.isAutoRepeat() :
+			return True
 
 		if self.__updateDragModifiers( qObject, qEvent ) :
 			return True
@@ -1108,6 +1164,9 @@ class _EventFilter( QtCore.QObject ) :
 
 	def __contextMenu( self, qObject, qEvent ) :
 
+		if qEvent.modifiers() :
+			return False
+
 		widget = Widget._owner( qObject )
 		if widget._contextMenuSignal is not None :
 			return widget._contextMenuSignal( widget )
@@ -1199,7 +1258,7 @@ class _EventFilter( QtCore.QObject ) :
 
 	def __doDragEnterAndLeave( self, qObject, qEvent ) :
 
-		cursorPos = IECore.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
+		cursorPos = imath.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
 		candidateWidget = Widget.widgetAt( cursorPos )
 
 		if candidateWidget is self.__dragDropEvent.destinationWidget :
@@ -1209,7 +1268,7 @@ class _EventFilter( QtCore.QObject ) :
 		if candidateWidget is not None :
 			while candidateWidget is not None :
 				if candidateWidget._dragEnterSignal is not None :
-					self.__dragDropEvent.line = self.__positionToLine( cursorPos - candidateWidget.bound().min )
+					self.__dragDropEvent.line = self.__positionToLine( cursorPos - candidateWidget.bound().min() )
 					if candidateWidget._dragEnterSignal( candidateWidget, self.__dragDropEvent ) :
 						newDestinationWidget = candidateWidget
 						break
@@ -1226,7 +1285,7 @@ class _EventFilter( QtCore.QObject ) :
 			previousDestinationWidget = self.__dragDropEvent.destinationWidget
 			self.__dragDropEvent.destinationWidget = newDestinationWidget
 			if previousDestinationWidget is not None and previousDestinationWidget._dragLeaveSignal is not None :
-				self.__dragDropEvent.line = self.__positionToLine( cursorPos - previousDestinationWidget.bound().min )
+				self.__dragDropEvent.line = self.__positionToLine( cursorPos - previousDestinationWidget.bound().min() )
 				previousDestinationWidget._dragLeaveSignal( previousDestinationWidget, self.__dragDropEvent )
 
 	def __updateDrag( self, qObject, qEvent ) :
@@ -1244,8 +1303,8 @@ class _EventFilter( QtCore.QObject ) :
 
 		if dst._dragMoveSignal :
 
-			cursorPos = IECore.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
-			self.__dragDropEvent.line = self.__positionToLine( cursorPos - dst.bound().min )
+			cursorPos = imath.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
+			self.__dragDropEvent.line = self.__positionToLine( cursorPos - dst.bound().min() )
 
 			dst._dragMoveSignal( dst, self.__dragDropEvent )
 
@@ -1283,12 +1342,12 @@ class _EventFilter( QtCore.QObject ) :
 
 		# Emit dropSignal() on the destination.
 
-		cursorPos = IECore.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
+		cursorPos = imath.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
 
 		dst = dragDropEvent.destinationWidget
 		if dst is not None and dst._dropSignal :
 
-			dragDropEvent.line = self.__positionToLine( cursorPos - dst.bound().min )
+			dragDropEvent.line = self.__positionToLine( cursorPos - dst.bound().min() )
 			dragDropEvent.dropResult = dst._dropSignal( dst, dragDropEvent )
 
 		# Emit dragEndSignal() on source.
@@ -1296,7 +1355,7 @@ class _EventFilter( QtCore.QObject ) :
 		src = dragDropEvent.sourceWidget
 		if src._dragEndSignal :
 
-			dragDropEvent.line = self.__positionToLine( cursorPos - src.bound().min )
+			dragDropEvent.line = self.__positionToLine( cursorPos - src.bound().min() )
 
 			src._dragEndSignal(
 				src,
@@ -1307,14 +1366,14 @@ class _EventFilter( QtCore.QObject ) :
 
 	def __positionToLine( self, pos ) :
 
-		if isinstance( pos, IECore.V2i ) :
+		if isinstance( pos, imath.V2i ) :
 			x, y = pos.x, pos.y
 		else :
 			x, y = pos.x(), pos.y()
 
 		return IECore.LineSegment3f(
-			IECore.V3f( x, y, 1 ),
-			IECore.V3f( x, y, 0 )
+			imath.V3f( x, y, 1 ),
+			imath.V3f( x, y, 0 )
 		)
 
 # this single instance is used by all widgets

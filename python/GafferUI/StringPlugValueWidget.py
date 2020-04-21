@@ -35,14 +35,13 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import Gaffer
 import GafferUI
 
 ## Supported Metadata :
 #
 # - "stringPlugValueWidget:continuousUpdate"
+# - "stringPlugValueWidget:placeholderText" : The text displayed when the string value is left empty
 class StringPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
@@ -53,9 +52,9 @@ class StringPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		self._addPopupMenu( self.__textWidget )
 
-		self.__keyPressConnection = self.__textWidget.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
-		self.__editingFinishedConnection = self.__textWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__textChanged ) )
-		self.__textChangedConnection = self.__textWidget.textChangedSignal().connect( Gaffer.WeakMethod( self.__textChanged ) )
+		self.__textWidget.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
+		self.__textWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__textChanged ), scoped = False )
+		self.__textChangedConnection = self.__textWidget.textChangedSignal().connect( Gaffer.WeakMethod( self.__textChanged ), scoped = False )
 
 		self._updateFromPlug()
 
@@ -92,6 +91,8 @@ class StringPlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.__textChangedConnection.block(
 				not Gaffer.Metadata.value( self.getPlug(), "stringPlugValueWidget:continuousUpdate" )
 			)
+
+			self.__textWidget._qtWidget().setPlaceholderText( Gaffer.Metadata.value( self.getPlug(), "stringPlugValueWidget:placeholderText" ) )
 
 		self.__textWidget.setEditable( self._editable() )
 

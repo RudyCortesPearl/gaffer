@@ -36,6 +36,7 @@
 
 import unittest
 import inspect
+import imath
 
 import IECore
 
@@ -78,7 +79,7 @@ class FormatPlugTest( GafferImageTest.ImageTestCase ) :
 	def testValue( self ) :
 
 		p = GafferImage.FormatPlug()
-		v = GafferImage.Format( IECore.Box2i( IECore.V2i( 11, 12 ), IECore.V2i( 100, 200 ) ), 2 )
+		v = GafferImage.Format( imath.Box2i( imath.V2i( 11, 12 ), imath.V2i( 100, 200 ) ), 2 )
 
 		p.setValue( v )
 		self.assertEqual( p.getValue(), v )
@@ -131,7 +132,7 @@ class FormatPlugTest( GafferImageTest.ImageTestCase ) :
 		self.assertFalse( "defaultFormat" in s )
 
 		s["c"] = GafferImage.Constant()
-		self.assertTrue( "defaultFormat" in s )
+		self.assertFalse( "defaultFormat" in s )
 
 		defaultFormatPlug = GafferImage.FormatPlug.acquireDefaultFormatPlug( s )
 		self.assertTrue( defaultFormatPlug.isSame( s["defaultFormat"] ) )
@@ -167,15 +168,6 @@ class FormatPlugTest( GafferImageTest.ImageTestCase ) :
 		with s2.context() :
 			self.assertEqual( s2["c"]["out"]["format"].getValue(), f )
 
-	def testDefaultFormatFromScriptWithBox( self ) :
-
-		s = Gaffer.ScriptNode()
-		self.assertFalse( "defaultFormat" in s )
-
-		s["b"] = Gaffer.Box()
-		s["b"]["c"] = GafferImage.Constant()
-		self.assertTrue( "defaultFormat" in s )
-
 	def testExpressions( self ) :
 
 		s = Gaffer.ScriptNode()
@@ -189,17 +181,17 @@ class FormatPlugTest( GafferImageTest.ImageTestCase ) :
 			"""
 			f = parent["n1"]["user"]["f"]
 			b = f.getDisplayWindow()
-			b.min -= IECore.V2i( 10 )
-			b.max += IECore.V2i( 20 )
+			b.setMin( b.min() - imath.V2i( 10 ) )
+			b.setMax( b.max() + imath.V2i( 20 ) )
 			f.setPixelAspect( 0.5 )
 			f.setDisplayWindow( b )
 			parent["n2"]["user"]["f"] = f
 			"""
 		) )
 
-		s["n1"]["user"]["f"].setValue( GafferImage.Format( IECore.Box2i( IECore.V2i( 20, 30 ), IECore.V2i( 100, 110 ) ), 1 ) )
+		s["n1"]["user"]["f"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 20, 30 ), imath.V2i( 100, 110 ) ), 1 ) )
 
-		self.assertEqual( s["n2"]["user"]["f"].getValue(), GafferImage.Format( IECore.Box2i( IECore.V2i( 10, 20 ), IECore.V2i( 120, 130 ) ), 0.5 ) )
+		self.assertEqual( s["n2"]["user"]["f"].getValue(), GafferImage.Format( imath.Box2i( imath.V2i( 10, 20 ), imath.V2i( 120, 130 ) ), 0.5 ) )
 
 	def testDefaultExpression( self ) :
 
@@ -225,6 +217,33 @@ class FormatPlugTest( GafferImageTest.ImageTestCase ) :
 			allHashes.add( str( c.hash() ) )
 
 		self.assertEqual( len( allHashes ), 1 )
+
+	def testSerialiseWithPartialExpressionConnection( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["r"] = GafferImage.ImageReader()
+		s["r"]["fileName"].setValue( "thisFileDoesNotExist" )
+
+		s["n"] = Gaffer.Node()
+		s["n"]["user"]["f"] = GafferImage.FormatPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["n"]["user"]["f"]["displayWindow"].setValue( imath.Box2i( imath.V2i( 10, 11 ), imath.V2i( 20, 21 ) ) )
+
+		# This expression will throw because the ImageReader is referencing
+		# an invalid file.
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( """parent["n"]["user"]["f"]["pixelAspect"] = parent["r"]["out"]["format"].getPixelAspectRatio()""" )
+
+		# Despite that, we should still be able to serialise the script
+		# without triggering expression evaluation. This is particularly
+		# useful when dispatching a script where the ImageReader is
+		# set up to read an image which won't exist until one of the tasks
+		# has been executed.
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertEqual( s2["n"]["user"]["f"]["displayWindow"].getValue(), s["n"]["user"]["f"]["displayWindow"].getValue() )
+
 
 if __name__ == "__main__":
 	unittest.main()

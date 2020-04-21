@@ -35,9 +35,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/ColorSpace.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace std;
 using namespace IECore;
@@ -48,7 +48,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( ColorSpace );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ColorSpace );
 
 size_t ColorSpace::g_firstPlugIndex = 0;
 

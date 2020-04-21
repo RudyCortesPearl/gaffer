@@ -37,27 +37,28 @@
 #ifndef GAFFERSCENETEST_TESTLIGHT_H
 #define GAFFERSCENETEST_TESTLIGHT_H
 
-#include "GafferScene/Light.h"
-
+#include "GafferSceneTest/Export.h"
 #include "GafferSceneTest/TypeIds.h"
+
+#include "GafferScene/Light.h"
 
 namespace GafferSceneTest
 {
 
-class TestLight : public GafferScene::Light
+class GAFFERSCENETEST_API TestLight : public GafferScene::Light
 {
 
 	public :
 
 		TestLight( const std::string &name=defaultName<TestLight>() );
-		virtual ~TestLight();
+		~TestLight() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneTest::TestLight, TestLightTypeId, GafferScene::Light );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneTest::TestLight, TestLightTypeId, GafferScene::Light );
 
 	protected :
 
-		virtual void hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ObjectVectorPtr computeLight( const Gaffer::Context *context ) const;
+		void hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECoreScene::ConstShaderNetworkPtr computeLight( const Gaffer::Context *context ) const override;
 
 };
 

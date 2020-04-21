@@ -38,24 +38,25 @@
 #ifndef GAFFERSCENE_IMAGENODE_H
 #define GAFFERSCENE_IMAGENODE_H
 
-#include "Gaffer/ComputeNode.h"
-
+#include "GafferImage/Export.h"
 #include "GafferImage/ImagePlug.h"
+
+#include "Gaffer/ComputeNode.h"
 
 namespace GafferImage
 {
 
 /// The ImageNode class is the base class for all Nodes which are capable of generating
 /// or manipulating images.
-class ImageNode : public Gaffer::ComputeNode
+class GAFFERIMAGE_API ImageNode : public Gaffer::ComputeNode
 {
 
 	public :
 
 		ImageNode( const std::string &name=defaultName<ImageNode>() );
-		virtual ~ImageNode();
+		~ImageNode() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageNode, ImageNodeTypeId, Gaffer::ComputeNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::ImageNode, ImageNodeTypeId, Gaffer::ComputeNode );
 
 		/// All ImageNodes have at least one output ImagePlug for passing on their result. More
 		/// may be added by derived classes if necessary.
@@ -64,10 +65,10 @@ class ImageNode : public Gaffer::ComputeNode
 
 		/// The enabled plug provides a mechanism for turning the effect of a node on and off.
 		/// When disabled the node will just pass through the plug's default values.
-		virtual Gaffer::BoolPlug *enabledPlug();
-		virtual const Gaffer::BoolPlug *enabledPlug() const;
+		Gaffer::BoolPlug *enabledPlug() override;
+		const Gaffer::BoolPlug *enabledPlug() const override;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
@@ -91,7 +92,7 @@ class ImageNode : public Gaffer::ComputeNode
 		virtual bool enabled() const;
 
 		/// Implemented to call the hash*() methods below whenever output is part of an ImagePlug.
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		/// Hash methods for the individual children of outPlug(). A derived class must either :
 		///
 		///    * Implement the method to call the base class implementation and then append to the hash.
@@ -110,22 +111,23 @@ class ImageNode : public Gaffer::ComputeNode
 		virtual void hashFormat( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashChannelNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 
 		/// Implemented to call the compute*() methods below whenever output is part of an ImagePlug.
 		/// Derived classes should reimplement the specific compute*() methods rather than compute() itself.
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 		/// Compute methods for the individual children of outPlug() - these must be implemented by derived classes, or
 		/// an input connection must be made to the plug, so that the method is not called.
 		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
 		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
 		virtual IECore::ConstCompoundDataPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		virtual bool computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		virtual IECore::ConstIntVectorDataPtr computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
 		virtual IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const;
 		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
-
-		/// Implemented to initialize the default format settings if they don't exist already.
-		void parentChanging( Gaffer::GraphComponent *newParent );
 
 	private :
 

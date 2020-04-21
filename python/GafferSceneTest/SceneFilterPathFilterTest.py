@@ -35,6 +35,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
@@ -69,34 +70,30 @@ class SceneFilterPathFilterTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( len( cs ), 1 )
 		self.assertEqual( path.children(), [] )
 
+	@GafferTest.TestRunner.PerformanceTestMethod()
 	def testManyPaths( self ) :
 
 		plane = GafferScene.Plane()
-		plane["divisions"].setValue( IECore.V2i( 500 ) )
+		plane["divisions"].setValue( imath.V2i( 500 ) )
 
 		sphere = GafferScene.Sphere()
 
 		instancer = GafferScene.Instancer()
 		instancer["in"].setInput( plane["out"] )
 		instancer["parent"].setValue( "/plane" )
-		instancer["instance"].setInput( sphere["out"] )
+		instancer["prototypes"].setInput( sphere["out"] )
 
 		scenePathFilter = GafferScene.PathFilter()
-		scenePathFilter["paths"].setValue( IECore.StringVectorData( [ "/plane/instances/*" ] ) )
+		scenePathFilter["paths"].setValue( IECore.StringVectorData( [ "/plane/instances/sphere/*" ] ) )
 
 		path = GafferScene.ScenePath(
 			instancer["out"],
 			Gaffer.Context(),
-			"/plane/instances",
+			"/plane/instances/sphere",
 			GafferScene.SceneFilterPathFilter( scenePathFilter )
 		)
 
-		t = IECore.Timer()
 		self.assertEqual( len( path.children() ), 251001 )
-
-		# This test can be useful when benchmarking SceneFilterPathFilter
-		# performance. Uncomment to get timing information.
-		# print t.stop()
 
 if __name__ == "__main__":
 	unittest.main()

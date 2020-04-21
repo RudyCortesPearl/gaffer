@@ -70,5 +70,73 @@ class SubGraphTest( GafferTest.TestCase ) :
 			"If you're retrieving this, the subclassing has worked."
 		)
 
+	def testCorrespondingInputWithBoxIO( self ) :
+
+		b = Gaffer.Box()
+
+		b["a"] = GafferTest.AddNode()
+		b["i"] = Gaffer.BoxIn()
+		b["i"].setup( b["a"]["op1"] )
+		b["a"]["op1"].setInput( b["i"].plug() )
+		self.assertEqual( b["a"]["op1"].source(), b["i"].promotedPlug() )
+
+		b["s"] = Gaffer.Switch()
+		b["s"].setup( b["i"].plug() )
+		b["s"]["in"][0].setInput( b["i"].plug() )
+		b["s"]["in"][1].setInput( b["a"]["sum"] )
+
+		Gaffer.PlugAlgo.promote( b["s"]["enabled"] )
+
+		b["o"] = Gaffer.BoxOut()
+		b["o"].setup( b["s"]["out"] )
+		b["o"].plug().setInput( b["s"]["out"] )
+
+		self.assertEqual( b.correspondingInput( b["o"].promotedPlug() ), b["i"].promotedPlug() )
+
+	def testCorrespondingInputWithUnconnectedBoxOut( self ) :
+
+		b = Gaffer.Box()
+		b["o"] = Gaffer.BoxOut()
+		b["o"].setup( Gaffer.IntPlug( "p" ) )
+
+		self.assertIsNone( b.correspondingInput( b["out"] ) )
+
+	def testCorrespondingInputWithUnconnectedInternalInput( self ) :
+
+		b = Gaffer.Box()
+		b["n"] = GafferTest.AddNode()
+
+		b["o"] = Gaffer.BoxOut()
+		b["o"].setup( b["n"]["sum"] )
+		b["o"]["in"].setInput( b["n"]["sum"] )
+
+		Gaffer.PlugAlgo.promote( b["n"]["enabled"] )
+
+		self.assertIsNone( b.correspondingInput( b["out"] ) )
+
+	def testCorrespondingInputWithBoxOutAndDots( self ) :
+
+		b = Gaffer.Box()
+		b["n"] = GafferTest.AddNode()
+
+		b["i"] = Gaffer.BoxIn()
+		b["i"].setup( b["n"]["sum"] )
+		b["n"]["op1"].setInput( b["i"]["out"] )
+
+		b["d1"] = Gaffer.Dot()
+		b["d1"].setup( b["n"]["sum"] )
+		b["d1"]["in"].setInput( b["i"]["out"] )
+
+		b["d2"] = Gaffer.Dot()
+		b["d2"].setup( b["n"]["sum"] )
+		b["d2"]["in"].setInput( b["d1"]["out"] )
+
+		b["o"] = Gaffer.BoxOut()
+		b["o"].setup( b["n"]["sum"] )
+		b["o"]["in"].setInput( b["n"]["sum"] )
+		b["o"]["passThrough"].setInput( b["d2"]["out"] )
+
+		self.assertEqual( b.correspondingInput( b["o"].promotedPlug() ), b["i"].promotedPlug() )
+
 if __name__ == "__main__":
 	unittest.main()

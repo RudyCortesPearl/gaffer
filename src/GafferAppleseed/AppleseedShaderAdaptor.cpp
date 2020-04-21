@@ -34,22 +34,24 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/concurrent_hash_map.h"
+#include "GafferAppleseed/AppleseedShaderAdaptor.h"
 
-#include "OSL/oslquery.h"
-
-#include "IECore/Shader.h"
+#include "GafferScene/RendererAlgo.h"
+#include "GafferScene/SceneProcessor.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferScene/SceneProcessor.h"
-#include "GafferScene/RendererAlgo.h"
+#include "IECoreScene/Shader.h"
+#include "IECoreScene/ShaderNetwork.h"
 
-#include "GafferAppleseed/AppleseedShaderAdaptor.h"
+#include "OSL/oslquery.h"
+
+#include "tbb/concurrent_hash_map.h"
 
 using namespace std;
 using namespace OSL;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace GafferScene;
 using namespace GafferAppleseed;
 
@@ -62,9 +64,9 @@ namespace
 
 IECore::InternedString g_oslShaderAttributeName( "osl:shader" );
 IECore::InternedString g_oslSurfaceAttributeName( "osl:surface" );
-IECore::InternedString g_handleParameterName( "__handle" );
-IECore::InternedString g_bsdfParameterName( "BSDF" );
-IECore::InternedString g_rendererContextName( "scene:renderer" );
+IECore::InternedString g_closureParameterName( "in_input" );
+IECore::InternedString g_colorParameterName( "in_color" );
+IECore::InternedString g_scalarParameterName( "in_scalar" );
 
 typedef tbb::concurrent_hash_map<std::string, OSLQuery::Parameter *> ParameterMap;
 
@@ -105,7 +107,7 @@ OSLQuery::Parameter *firstOutputParameter( const std::string &shaderName )
 // AppleseedShaderAdaptor
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( AppleseedShaderAdaptor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( AppleseedShaderAdaptor );
 
 AppleseedShaderAdaptor::AppleseedShaderAdaptor( const std::string &name )
 	:	SceneProcessor( name )
@@ -140,118 +142,87 @@ IECore::ConstCompoundObjectPtr AppleseedShaderAdaptor::computeAttributes( const 
 {
 	ConstCompoundObjectPtr inputAttributes = inPlug()->attributesPlug()->getValue();
 
-	const ObjectVector *shaderNetwork = inputAttributes->member<const ObjectVector>( g_oslShaderAttributeName );
-	if( !shaderNetwork || shaderNetwork->members().empty() )
+	/// \todo Drop support for "osl:shader" assignments. They were never desirable, and the ShaderAssignment node
+	/// no longer makes them.
+	const ShaderNetwork *shaderNetwork = inputAttributes->member<const ShaderNetwork>( g_oslShaderAttributeName );
+	if( !shaderNetwork )
+	{
+		shaderNetwork = inputAttributes->member<const ShaderNetwork>( g_oslSurfaceAttributeName );
+	}
+	if( !shaderNetwork )
 	{
 		return inputAttributes;
 	}
 
-	const Shader *rootShader = runTimeCast<const Shader>( shaderNetwork->members().back().get() );
-	if( !rootShader )
+	const Shader *outputShader = shaderNetwork->outputShader();
+	if( !outputShader )
 	{
 		return inputAttributes;
 	}
 
-	OSLQuery::Parameter *firstOutput = firstOutputParameter( rootShader->getName() );
+	OSLQuery::Parameter *firstOutput = firstOutputParameter( outputShader->getName() );
 
-	// Build an adapter network if we can.
+	// Build an adaptor network
 
-	bool prependInputNetwork = true;
-	vector<ShaderPtr> adapters;
+	ShaderNetworkPtr adaptedNetwork;
 	if( firstOutput && firstOutput->isclosure )
 	{
-		ShaderPtr material = new Shader( "material/as_material_builder", "osl:surface" );
-		material->parameters()[g_bsdfParameterName] = new StringData( "link:adapterInputHandle." + firstOutput->name.string() );
-		adapters.push_back( material );
+		adaptedNetwork = shaderNetwork->copy();
+		ShaderPtr material = new Shader( "as_closure2surface", "osl:surface" );
+		InternedString materialHandle = adaptedNetwork->addShader( "material", std::move( material ) );
+		adaptedNetwork->addConnection(
+			{ { adaptedNetwork->getOutput().shader, firstOutput->name.string() }, { materialHandle, g_closureParameterName } }
+		);
+		adaptedNetwork->setOutput( materialHandle );
+
 	}
 	else if( firstOutput && firstOutput->type == TypeDesc::TypeColor )
 	{
-		ShaderPtr emission = new Shader( "surface/as_emission_surface", "osl:shader" );
-		emission->parameters()["Color"] = new StringData( "link:adapterInputHandle." + firstOutput->name.string() );
-		emission->parameters()[g_handleParameterName] = new StringData( "adapterEmissionHandle" );
+		adaptedNetwork = shaderNetwork->copy();
+		ShaderPtr tex2Surface = new Shader( "as_texture2surface", "osl:surface" );
+		InternedString tex2SurfaceHandle = adaptedNetwork->addShader( "tex2Surface", std::move( tex2Surface ) );
+		adaptedNetwork->addConnection(
+			{ { adaptedNetwork->getOutput().shader, firstOutput->name.string() }, { tex2SurfaceHandle, g_colorParameterName } }
+		);
 
-		ShaderPtr material = new Shader( "material/as_material_builder", "osl:surface" );
-		material->parameters()[g_bsdfParameterName] = new StringData( "link:adapterEmissionHandle.BSDF" );
-
-		adapters.push_back( emission );
-		adapters.push_back( material );
+		adaptedNetwork->setOutput( tex2SurfaceHandle );
 	}
 	else if( firstOutput && ( firstOutput->type == TypeDesc::TypeFloat || firstOutput->type == TypeDesc::TypeInt ) )
 	{
-		ShaderPtr colorBuild = new Shader( "color/as_color_build", "osl:shader" );
-		StringDataPtr colorLink = new StringData( "link:adapterInputHandle." + firstOutput->name.string() );
-		colorBuild->parameters()["R"] = colorLink;
-		colorBuild->parameters()["G"] = colorLink;
-		colorBuild->parameters()["B"] = colorLink;
-		colorBuild->parameters()[g_handleParameterName] = new StringData( "adapterColorBuildHandle" );
-
-		ShaderPtr emission = new Shader( "surface/as_emission_surface", "osl:shader" );
-		emission->parameters()["Color"] = new StringData( "link:adapterColorBuildHandle.ColorOut" );
-		emission->parameters()[g_handleParameterName] = new StringData( "adapterEmissionHandle" );
-
-		ShaderPtr material = new Shader( "material/as_material_builder", "osl:surface" );
-		material->parameters()[g_bsdfParameterName] = new StringData( "link:adapterEmissionHandle.BSDF" );
-
-		adapters.push_back( colorBuild );
-		adapters.push_back( emission );
-		adapters.push_back( material );
+		adaptedNetwork = shaderNetwork->copy();
+		ShaderPtr tex2Surface = new Shader( "as_texture2surface", "osl:surface" );
+		InternedString tex2SurfaceHandle = adaptedNetwork->addShader( "tex2Surface", std::move( tex2Surface ) );
+		adaptedNetwork->addConnection(
+			{ { adaptedNetwork->getOutput().shader, firstOutput->name.string() }, { tex2SurfaceHandle, g_scalarParameterName } }
+		);
+		adaptedNetwork->setOutput( tex2SurfaceHandle );
 	}
 	else if( firstOutput && firstOutput->type == TypeDesc::TypeVector )
 	{
-		ShaderPtr vectorSplit = new Shader( "vector/as_vector_split", "osl:shader" );
-		vectorSplit->parameters()["Vector"] = new StringData( "link:adapterInputHandle." + firstOutput->name.string() );
-		vectorSplit->parameters()[g_handleParameterName] = new StringData( "adapterVectorSplit" );
+		adaptedNetwork = shaderNetwork->copy();
+		ShaderPtr colorBuild = new Shader( "Conversion/VectorToColor", "osl:shader" );
+		InternedString colorBuildHandle = adaptedNetwork->addShader( "vector2Color", std::move( colorBuild ) );
+		adaptedNetwork->addConnection(
+			{ { adaptedNetwork->getOutput().shader, firstOutput->name.string() }, { colorBuildHandle, "vec" } }
+		);
 
-		ShaderPtr colorBuild = new Shader( "color/as_color_build", "osl:shader" );
-		colorBuild->parameters()["R"] = new StringData( "link:adapterVectorSplit.X" );
-		colorBuild->parameters()["G"] = new StringData( "link:adapterVectorSplit.Y" );
-		colorBuild->parameters()["B"] = new StringData( "link:adapterVectorSplit.Z" );
-		colorBuild->parameters()[g_handleParameterName] = new StringData( "adapterColorBuildHandle" );
-
-		ShaderPtr emission = new Shader( "surface/as_emission_surface", "osl:shader" );
-		emission->parameters()["Color"] = new StringData( "link:adapterColorBuildHandle.ColorOut" );
-		emission->parameters()[g_handleParameterName] = new StringData( "adapterEmissionHandle" );
-
-		ShaderPtr material = new Shader( "material/as_material_builder", "osl:surface" );
-		material->parameters()[g_bsdfParameterName] = new StringData( "link:adapterEmissionHandle.BSDF" );
-
-		adapters.push_back( vectorSplit );
-		adapters.push_back( colorBuild );
-		adapters.push_back( emission );
-		adapters.push_back( material );
+		ShaderPtr tex2Surface = new Shader( "as_texture2surface", "osl:surface" );
+		InternedString tex2SurfaceHandle = adaptedNetwork->addShader( "tex2Surface", std::move( tex2Surface ) );
+		adaptedNetwork->addConnection(
+			{ { colorBuildHandle, "c" }, { tex2SurfaceHandle, g_colorParameterName } }
+		);
+		adaptedNetwork->setOutput( tex2SurfaceHandle );
 	}
 	else
 	{
 		// Shader has no output, or an output we can't map sensibly.
 		// Make an "error" shader.
-		ShaderPtr emission = new Shader( "surface/as_emission_surface", "osl:shader" );
-		emission->parameters()["Color"] = new Color3fData( Imath::Color3f( 1, 0, 0 ) );
-		emission->parameters()[g_handleParameterName] = new StringData( "adapterEmissionHandle" );
-
-		ShaderPtr material = new Shader( "material/as_material_builder", "osl:surface" );
-		material->parameters()[g_bsdfParameterName] = new StringData( "link:adapterEmissionHandle.BSDF" );
-
-		adapters.push_back( emission );
-		adapters.push_back( material );
-
-		prependInputNetwork = false; // We don't need the original shaders at all
+		adaptedNetwork = new ShaderNetwork;
+		ShaderPtr tex2Surface = new Shader( "as_texture2surface", "osl:surface" );
+		tex2Surface->parameters()[g_colorParameterName] = new Color3fData( Imath::Color3f( 1, 0, 0 ) );
+		InternedString tex2SurfaceHandle = adaptedNetwork->addShader( "tex2Surface", std::move( tex2Surface ) );
+		adaptedNetwork->setOutput( tex2SurfaceHandle );
 	}
-
-	// Make a new network with the adapter network
-	// appended onto the input network
-
-	ObjectVectorPtr adaptedNetwork = new ObjectVector();
-
-	if( prependInputNetwork )
-	{
-		adaptedNetwork->members() = shaderNetwork->members(); // Shallow copy for speed - do not modify in place!
-
-		ShaderPtr rootShaderCopy = rootShader->copy();
-		rootShaderCopy->parameters()[g_handleParameterName] = new StringData( "adapterInputHandle" );;
-		adaptedNetwork->members().back() = rootShaderCopy;
-	}
-
-	std::copy( adapters.begin(), adapters.end(), back_inserter( adaptedNetwork->members() ) );
 
 	// Place the new network into the "osl:surface" attribute
 	// and remove the "osl:shader" attribute.

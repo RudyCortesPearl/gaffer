@@ -36,13 +36,19 @@
 ##########################################################################
 
 __import__( "GafferImageUI" )
+__import__( "GafferScene" )
 
 from _GafferSceneUI import *
 
-from SceneHierarchy import SceneHierarchy
+from HierarchyView import HierarchyView
 from SceneInspector import SceneInspector
+from PrimitiveInspector import PrimitiveInspector
+from UVInspector import UVInspector
 from FilterPlugValueWidget import FilterPlugValueWidget
 from ScenePathPlugValueWidget import ScenePathPlugValueWidget
+from TweakPlugValueWidget import TweakPlugValueWidget
+import SceneHistoryUI
+import EditScopeUI
 
 import SceneNodeUI
 import SceneReaderUI
@@ -53,8 +59,6 @@ import SubTreeUI
 import OutputsUI
 import OptionsUI
 import OpenGLAttributesUI
-import SceneContextVariablesUI
-import DeleteSceneContextVariablesUI
 import SceneWriterUI
 import StandardOptionsUI
 import StandardAttributesUI
@@ -72,8 +76,6 @@ import CustomAttributesUI
 import CustomOptionsUI
 import SceneViewUI
 import ShaderViewUI
-import SceneSwitchUI
-import ShaderSwitchUI
 import ShaderAssignmentUI
 import ParentConstraintUI
 import ParentUI
@@ -86,7 +88,6 @@ import DeleteOptionsUI
 import CopyOptionsUI
 import DeleteSetsUI
 import ExternalProceduralUI
-import ExecutableRenderUI
 import IsolateUI
 import SelectionToolUI
 import CropWindowToolUI
@@ -94,12 +95,10 @@ import CameraUI
 import SetUI
 import ClippingPlaneUI
 import FilterUI
-import FilterSwitchUI
 import PointsTypeUI
 import ParametersUI
 import TextUI
 import AimConstraintUI
-import AlembicSourceUI
 import CoordinateSystemUI
 import DeleteAttributesUI
 import SeedsUI
@@ -116,23 +115,22 @@ import ObjectToSceneUI
 import FreezeTransformUI
 import SceneElementProcessorUI
 import PointConstraintUI
-import SceneTimeWarpUI
 import BranchCreatorUI
 import ConstraintUI
 import PlaneUI
 import CubeUI
 import AttributeVisualiserUI
-import SceneLoopUI
 import FilterProcessorUI
 import MeshToPointsUI
 import RenderUI
 import ShaderBallUI
-import LightTweaksUI
+import ShaderTweaksUI
+import CameraTweaksUI
 import LightToCameraUI
 import FilterResultsUI
+import TransformToolUI
 import TranslateToolUI
 import ScaleToolUI
-import EvaluateLightLinksUI
 import RotateToolUI
 import MeshTangentsUI
 import ResamplePrimitiveVariablesUI
@@ -140,11 +138,31 @@ import DeleteFacesUI
 import DeleteCurvesUI
 import DeletePointsUI
 import CollectScenesUI
+import EncapsulateUI
+import GlobalShaderUI
+import CameraToolUI
+import ReverseWindingUI
+import MeshDistortionUI
+import DeleteObjectUI
+import CopyAttributesUI
+import CollectPrimitiveVariablesUI
+import PrimitiveVariableExistsUI
+import CollectTransformsUI
+import UDIMQueryUI
+import WireframeUI
+import SetVisualiserUI
+import LightFilterUI
+import OrientationUI
+import DeformerUI
+import CopyPrimitiveVariablesUI
+import MergeScenesUI
+import ShuffleAttributesUI
+import ShufflePrimitiveVariablesUI
+import LocaliseAttributesUI
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.
 
-from AlembicPathPreview import AlembicPathPreview
 from SceneReaderPathPreview import SceneReaderPathPreview
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferSceneUI" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferSceneUI" )

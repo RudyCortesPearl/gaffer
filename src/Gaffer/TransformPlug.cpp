@@ -35,14 +35,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/AngleConversion.h"
-
 #include "Gaffer/TransformPlug.h"
+
+#include "IECore/AngleConversion.h"
 
 using namespace Imath;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( TransformPlug );
+GAFFER_PLUG_DEFINE_TYPE( TransformPlug );
 
 size_t TransformPlug::g_firstPlugIndex = 0;
 

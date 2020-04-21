@@ -39,8 +39,6 @@
 
 #include "GafferScene/GlobalsProcessor.h"
 
-#include "GafferSceneBindings/DeleteGlobalsBinding.h" // to enable friend declaration for bindDeleteGlobals().
-
 namespace Gaffer
 {
 
@@ -48,18 +46,25 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 
 } // namespace Gaffer
 
+namespace GafferSceneModule
+{
+
+void bindGlobals(); // to enable friend declaration for bindDeleteGlobals().
+
+} // namespace GafferSceneModule
+
 namespace GafferScene
 {
 
-class DeleteGlobals : public GlobalsProcessor
+class GAFFERSCENE_API DeleteGlobals : public GlobalsProcessor
 {
 
 	public :
 
 		DeleteGlobals( const std::string &name=defaultName<DeleteGlobals>() );
-		virtual ~DeleteGlobals();
+		~DeleteGlobals() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::DeleteGlobals, DeleteGlobalsTypeId, GlobalsProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeleteGlobals, DeleteGlobalsTypeId, GlobalsProcessor );
 
 		Gaffer::StringPlug *namesPlug();
 		const Gaffer::StringPlug *namesPlug() const;
@@ -67,20 +72,20 @@ class DeleteGlobals : public GlobalsProcessor
 		Gaffer::BoolPlug *invertNamesPlug();
 		const Gaffer::BoolPlug *invertNamesPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
 		virtual std::string namePrefix() const;
 
-		virtual void hashProcessedGlobals( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeProcessedGlobals( const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputGlobals ) const;
+		void hashProcessedGlobals( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeProcessedGlobals( const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputGlobals ) const override;
 
 	private :
 
 		static size_t g_firstPlugIndex;
 
-		friend void GafferSceneBindings::bindDeleteGlobals();
+		friend void GafferSceneModule::bindGlobals();
 
 };
 

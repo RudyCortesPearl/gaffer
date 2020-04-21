@@ -52,7 +52,7 @@ namespace GafferScene
 
 /// A base class for nodes which will take a number of input scenes and
 /// process them in some way to generate an output scene.
-class SceneProcessor : public SceneNode
+class GAFFERSCENE_API SceneProcessor : public SceneNode
 {
 
 	public :
@@ -65,9 +65,9 @@ class SceneProcessor : public SceneNode
 		/// inPlugs() to access the array itself.
 		SceneProcessor( const std::string &name, size_t minInputs, size_t maxInputs = Imath::limits<size_t>::max() );
 
-		virtual ~SceneProcessor();
+		~SceneProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SceneProcessor, SceneProcessorTypeId, SceneNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::SceneProcessor, SceneProcessorTypeId, SceneNode );
 
 		/// Returns the primary scene input. For nodes with multiple inputs
 		/// this will be the first child of the inPlugs() array. For nodes
@@ -78,19 +78,19 @@ class SceneProcessor : public SceneNode
 		const ScenePlug *inPlug() const;
 
 		/// For nodes with multiple inputs, returns the ArrayPlug which
-		/// hosts them. For single input nodes, returns NULL;
+		/// hosts them. For single input nodes, returns nullptr;
 		Gaffer::ArrayPlug *inPlugs();
 		const Gaffer::ArrayPlug *inPlugs() const;
 
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override;
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override;
 
 	protected :
 
 		/// Reimplemented from SceneNode to pass through the inPlug() hashes when the node is disabled.
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		/// Reimplemented from SceneNode to pass through the inPlug() computations when the node is disabled.
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 	private :
 

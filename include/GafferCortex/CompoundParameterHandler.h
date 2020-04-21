@@ -38,21 +38,14 @@
 #ifndef GAFFERCORTEX_COMPOUNDPARAMETERHANDLER_H
 #define GAFFERCORTEX_COMPOUNDPARAMETERHANDLER_H
 
-#include "IECore/CompoundParameter.h"
-
 #include "GafferCortex/ParameterHandler.h"
 
-namespace Gaffer
-{
-
-IE_CORE_FORWARDDECLARE( CompoundPlug )
-
-} // namespace Gaffer
+#include "IECore/CompoundParameter.h"
 
 namespace GafferCortex
 {
 
-class CompoundParameterHandler : public ParameterHandler
+class GAFFERCORTEX_API CompoundParameterHandler : public ParameterHandler
 {
 
 	public :
@@ -60,16 +53,16 @@ class CompoundParameterHandler : public ParameterHandler
 		IE_CORE_DECLAREMEMBERPTR( CompoundParameterHandler );
 
 		CompoundParameterHandler( IECore::CompoundParameterPtr parameter );
-		virtual ~CompoundParameterHandler();
+		~CompoundParameterHandler() override;
 
-		virtual IECore::Parameter *parameter();
-		virtual const IECore::Parameter *parameter() const;
-		virtual void restore( Gaffer::GraphComponent *plugParent );
-		virtual Gaffer::Plug *setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction=Gaffer::Plug::In, unsigned flags = Gaffer::Plug::Default | Gaffer::Plug::Dynamic );
-		virtual Gaffer::Plug *plug();
-		virtual const Gaffer::Plug *plug() const;
-		virtual void setParameterValue();
-		virtual void setPlugValue();
+		IECore::Parameter *parameter() override;
+		const IECore::Parameter *parameter() const override;
+		void restore( Gaffer::GraphComponent *plugParent ) override;
+		Gaffer::Plug *setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction=Gaffer::Plug::In, unsigned flags = Gaffer::Plug::Default | Gaffer::Plug::Dynamic ) override;
+		Gaffer::Plug *plug() override;
+		const Gaffer::Plug *plug() const override;
+		void setParameterValue() override;
+		void setPlugValue() override;
 
 		ParameterHandler *childParameterHandler( IECore::Parameter *childParameter );
 		const ParameterHandler *childParameterHandler( IECore::Parameter *childParameter ) const;
@@ -85,7 +78,7 @@ class CompoundParameterHandler : public ParameterHandler
 		std::string plugName() const;
 
 		IECore::CompoundParameterPtr m_parameter;
-		Gaffer::CompoundPlugPtr m_plug;
+		Gaffer::PlugPtr m_plug;
 
 		ParameterHandler *handler( IECore::Parameter *child, bool createIfMissing = false );
 		typedef std::map<IECore::ParameterPtr, ParameterHandlerPtr> HandlerMap;

@@ -39,8 +39,10 @@ import unittest
 import random
 import threading
 import subprocess32 as subprocess
+import imath
 
 import IECore
+import IECoreImage
 
 import Gaffer
 import GafferTest
@@ -50,73 +52,99 @@ import GafferImageTest
 
 class DisplayTest( GafferImageTest.ImageTestCase ) :
 
-	@classmethod
-	def sendImage( cls, image, port, extraParameters = {} ) :
+	# Utility class for sending images to Display nodes.
+	# This abstracts away the different image orientations between
+	# Gaffer and Cortex. All Driver methods expect data with the
+	# usual Gaffer conventions.
+	class Driver( object ) :
 
-		semaphore = threading.Semaphore( 0 )
-		imageReceivedConnection = GafferImage.Display.imageReceivedSignal().connect( lambda plug : semaphore.release() )
+		def __init__( self, format, dataWindow, channelNames, port, extraParameters = {}  ) :
 
-		externalDisplayWindow = gafferDisplayWindow = image["format"].getValue().getDisplayWindow()
-		externalDisplayWindow.max -= IECore.V2i( 1 )
+			self.__format = format
 
-		gafferDataWindow = image["dataWindow"].getValue()
-		externalDataWindow = image["format"].getValue().toEXRSpace( gafferDataWindow )
+			parameters = {
+				"displayHost" : "localHost",
+				"displayPort" : str( port ),
+				"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+			}
+			parameters.update( extraParameters )
 
-		parameters = {
-			"displayHost" : "localHost",
-			"displayPort" : str( port ),
-			"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
-		}
-		parameters.update( extraParameters )
+			with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as h :
 
-		driver = IECore.ClientDisplayDriver(
-			externalDisplayWindow,
-			externalDataWindow,
-			list( image["channelNames"].getValue() ),
-			parameters,
-		)
+				self.__driver = IECoreImage.ClientDisplayDriver(
+					self.__format.toEXRSpace( self.__format.getDisplayWindow() ),
+					self.__format.toEXRSpace( dataWindow ),
+					list( channelNames ),
+					parameters,
+				)
 
-		tileSize = GafferImage.ImagePlug.tileSize()
-		minTileOrigin = GafferImage.ImagePlug.tileOrigin( gafferDataWindow.min )
-		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( gafferDataWindow.max - IECore.V2i( 1 ) )
-		for y in range( minTileOrigin.y, maxTileOrigin.y + 1, tileSize ) :
-			for x in range( minTileOrigin.x, maxTileOrigin.x + 1, tileSize ) :
-				tileOrigin = IECore.V2i( x, y )
-				channelData = []
-				for channelName in image["channelNames"].getValue() :
-					channelData.append( image.channelData( channelName, tileOrigin ) )
-				bucketData = IECore.FloatVectorData()
-				for by in range( tileSize - 1, -1, -1 ) :
-					for bx in range( 0, tileSize ) :
-						i = by * tileSize + bx
-						for c in channelData :
-							bucketData.append( c[i] )
+				# Expect UI thread call used to emit Display::driverCreatedSignal()
+				h.assertCalled()
+				h.assertDone()
 
-				bucketBound = IECore.Box2i( tileOrigin, tileOrigin + IECore.V2i( GafferImage.ImagePlug.tileSize() ) )
-				bucketBound = image["format"].getValue().toEXRSpace( bucketBound )
-				cls.__sendBucket( driver, bucketBound, bucketData )
+		# The channelData argument is a list of FloatVectorData
+		# per channel.
+		def sendBucket( self, bucketWindow, channelData ) :
 
-		driver.imageClose()
-		semaphore.acquire()
+			bucketSize = bucketWindow.size()
+			bucketData = IECore.FloatVectorData()
+			for by in range( bucketSize.y - 1, -1, -1 ) :
+				for bx in range( 0, bucketSize.x ) :
+					i = by * bucketSize.x + bx
+					for c in channelData :
+						bucketData.append( c[i] )
 
-	@classmethod
-	def __sendBucket( cls, driver, bound, data ) :
+			with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as h :
 
-		semaphore = threading.Semaphore( 0 )
-		dataReceivedConnection = GafferImage.Display.dataReceivedSignal().connect( lambda plug : semaphore.release() )
-		driver.imageData( bound, data )
-		semaphore.acquire()
+				self.__driver.imageData(
+					self.__format.toEXRSpace( bucketWindow ),
+					bucketData
+				)
 
-	def setUp( self ) :
+				# Expect UI thread call used to increment updateCount plug
+				h.assertCalled()
+				h.assertDone()
 
-		GafferTest.TestCase.setUp( self )
+		def close( self ) :
 
-		# Emulate the work the UI will do when it is loaded.
-		self.__executeOnUIThreadConnection = GafferImage.Display.executeOnUIThreadSignal().connect( lambda f : f() )
+			with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as h :
+				self.__driver.imageClose()
+				# Expect UI thread call used to emit Display::imageReceivedSignal()
+				h.assertCalled()
+				h.assertDone()
 
-	def tearDown( self ) :
+		@classmethod
+		def sendImage( cls, image, port, extraParameters = {}, close = True ) :
 
-		self.__executeOnUIThreadConnection.disconnect()
+			dataWindow = image["dataWindow"].getValue()
+			channelNames = image["channelNames"].getValue()
+
+			parameters = IECore.CompoundData()
+			parameters.update( { "header:" + k : v for k, v in image["metadata"].getValue().items() } )
+			parameters.update( extraParameters )
+
+			driver = DisplayTest.Driver(
+				image["format"].getValue(),
+				dataWindow,
+				channelNames,
+				port, parameters
+			)
+
+			tileSize = GafferImage.ImagePlug.tileSize()
+			minTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min() )
+			maxTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.max() - imath.V2i( 1 ) )
+			for y in range( minTileOrigin.y, maxTileOrigin.y + 1, tileSize ) :
+				for x in range( minTileOrigin.x, maxTileOrigin.x + 1, tileSize ) :
+					tileOrigin = imath.V2i( x, y )
+					channelData = []
+					for channelName in channelNames :
+						channelData.append( image.channelData( channelName, tileOrigin ) )
+					driver.sendBucket( imath.Box2i( tileOrigin, tileOrigin + imath.V2i( tileSize ) ), channelData )
+
+			if close :
+				driver.close()
+
+			return driver
 
 	def testDefaultFormat( self ) :
 
@@ -127,62 +155,52 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 			GafferImage.FormatPlug.setDefaultFormat( c, GafferImage.Format( 200, 150, 1. ) )
 			self.assertEqual( d["out"]["format"].getValue(), GafferImage.FormatPlug.getDefaultFormat( c ) )
 
+	def testDeep( self ) :
+
+		d = GafferImage.Display()
+		self.assertEqual( d["out"]["deep"].getValue(), False )
+
 	def testTileHashes( self ) :
 
-		semaphore = threading.Semaphore( 0 )
-		imageReceivedConnection = GafferImage.Display.imageReceivedSignal().connect( lambda plug : semaphore.release() )
-
 		node = GafferImage.Display()
-		node["port"].setValue( 2500 )
+		server = IECoreImage.DisplayDriverServer()
+		driverCreatedConnection = GafferImage.Display.driverCreatedSignal().connect( lambda driver, parameters : node.setDriver( driver ) )
 
-		gafferDisplayWindow = IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 303, 557 ) )
-		gafferFormat = GafferImage.Format( gafferDisplayWindow, 1.0 )
-
-		externalDisplayWindow = gafferFormat.toEXRSpace( gafferDisplayWindow )
-
-		externalDataWindow = externalDisplayWindow
-		gafferDataWindow = gafferDisplayWindow
-		driver = IECore.ClientDisplayDriver(
-			externalDisplayWindow,
-			externalDataWindow,
+		dataWindow = imath.Box2i( imath.V2i( -100, -200 ), imath.V2i( 303, 557 ) )
+		driver = self.Driver(
+			GafferImage.Format( dataWindow ),
+			dataWindow,
 			[ "Y" ],
-			{
-				"displayHost" : "localHost",
-				"displayPort" : "2500",
-				"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
-			}
+			port = server.portNumber(),
 		)
 
-		for i in range( 0, 1000 ) :
+		for i in range( 0, 100 ) :
 
 			h1 = self.__tileHashes( node, "Y" )
 			t1 = self.__tiles( node, "Y" )
 
-			externalBucketWindow = IECore.Box2i()
-			for j in range( 0, 2 ) :
-				externalBucketWindow.extendBy(
-					IECore.V2i(
-						int( random.uniform( externalDisplayWindow.min.x, externalDisplayWindow.max.x ) ),
-						int( random.uniform( externalDisplayWindow.min.y, externalDisplayWindow.max.y ) ),
+			bucketWindow = imath.Box2i()
+			while GafferImage.BufferAlgo.empty( bucketWindow ) :
+				bucketWindow.extendBy(
+					imath.V2i(
+						int( random.uniform( dataWindow.min().x, dataWindow.max().x ) ),
+						int( random.uniform( dataWindow.min().y, dataWindow.max().y ) ),
 					)
 				)
 
-			numPixels = ( externalBucketWindow.size().x + 1 ) * ( externalBucketWindow.size().y + 1 )
+			numPixels = ( bucketWindow.size().x + 1 ) * ( bucketWindow.size().y + 1 )
 			bucketData = IECore.FloatVectorData()
 			bucketData.resize( numPixels, i + 1 )
 
-			self.__sendBucket( driver, externalBucketWindow, bucketData )
+			driver.sendBucket( bucketWindow, [ bucketData ] )
 
 			h2 = self.__tileHashes( node, "Y" )
 			t2 = self.__tiles( node, "Y" )
 
-			gafferBucketWindow = gafferFormat.fromEXRSpace( externalBucketWindow )
+			self.__assertTilesChangedInRegion( t1, t2, bucketWindow )
+			self.__assertTilesChangedInRegion( h1, h2, bucketWindow )
 
-			self.__assertTilesChangedInRegion( t1, t2, gafferBucketWindow )
-			self.__assertTilesChangedInRegion( h1, h2, gafferBucketWindow )
-
-		driver.imageClose()
-		semaphore.acquire()
+		driver.close()
 
 	def testTransferChecker( self ) :
 
@@ -199,12 +217,12 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 		blackTile = IECore.FloatVectorData( [ 0 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
 
 		self.assertEqual(
-			node["out"].channelData( "R", -IECore.V2i( GafferImage.ImagePlug.tileSize() ) ),
+			node["out"].channelData( "R", -imath.V2i( GafferImage.ImagePlug.tileSize() ) ),
 			blackTile
 		)
 
 		self.assertEqual(
-			node["out"].channelData( "R", 10 * IECore.V2i( GafferImage.ImagePlug.tileSize() ) ),
+			node["out"].channelData( "R", 10 * imath.V2i( GafferImage.ImagePlug.tileSize() ) ),
 			blackTile
 		)
 
@@ -213,7 +231,6 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 		s = Gaffer.ScriptNode()
 
 		s["d"] = GafferImage.Display()
-		s["d"]["port"].setValue( 2500 )
 
 		s["p"] = GafferDispatch.PythonCommand()
 		s["p"]["command"].setValue( "pass" )
@@ -226,77 +243,86 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 	def testSetDriver( self ) :
 
-		semaphore = threading.Semaphore( 0 )
-		imageReceivedConnection = GafferImage.Display.imageReceivedSignal().connect( lambda plug : semaphore.release() )
-
 		driversCreated = GafferTest.CapturingSlot( GafferImage.Display.driverCreatedSignal() )
 
-		server = IECore.DisplayDriverServer()
-		cortexWindow = IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99 ) )
-		gafferWindow = IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 100 ) )
-		driver = IECore.ClientDisplayDriver(
-			cortexWindow,
-			cortexWindow,
+		server = IECoreImage.DisplayDriverServer()
+		dataWindow = imath.Box2i( imath.V2i( 0 ), imath.V2i( 100 ) )
+
+		driver = self.Driver(
+			GafferImage.Format( dataWindow ),
+			dataWindow,
 			[ "Y" ],
-			{
-				"displayHost" : "localHost",
-				"displayPort" : str( server.portNumber() ),
-				"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
-			}
+			port = server.portNumber()
 		)
+
+		self.assertTrue( len( driversCreated ), 1 )
 
 		display = GafferImage.Display()
 		self.assertTrue( display.getDriver() is None )
 
-		self.assertTrue( len( driversCreated ), 1 )
+		dirtiedPlugs = GafferTest.CapturingSlot( display.plugDirtiedSignal() )
+
 		display.setDriver( driversCreated[0][0] )
 		self.assertTrue( display.getDriver().isSame( driversCreated[0][0] ) )
 
-		self.__sendBucket( driver, cortexWindow, IECore.FloatVectorData( [ 0.5 ] * gafferWindow.size().x * gafferWindow.size().y ) )
+		# Ensure all the output plugs have been dirtied
+		expectedDirty = { "__driverCount", "out" }.union( { c.getName() for c in display["out"].children() } )
+		self.assertEqual( expectedDirty, set( e[0].getName() for e in dirtiedPlugs ) )
 
-		self.assertEqual( display["out"]["format"].getValue().getDisplayWindow(), gafferWindow )
-		self.assertEqual( display["out"]["dataWindow"].getValue(), gafferWindow )
+		del dirtiedPlugs[:]
+
+		driver.sendBucket( dataWindow, [ IECore.FloatVectorData( [ 0.5 ] * dataWindow.size().x * dataWindow.size().y ) ] )
+
+		self.assertEqual( display["out"]["format"].getValue().getDisplayWindow(), dataWindow )
+		self.assertEqual( display["out"]["dataWindow"].getValue(), dataWindow )
 		self.assertEqual( display["out"]["channelNames"].getValue(), IECore.StringVectorData( [ "Y" ] ) )
 		self.assertEqual(
-			display["out"].channelData( "Y", IECore.V2i( 0 ) ),
+			display["out"].channelData( "Y", imath.V2i( 0 ) ),
 			IECore.FloatVectorData( [ 0.5 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
 		)
+
+		# Ensure only channel data has been dirtied
+		expectedDirty = { "channelData", "__channelDataCount", "out" }
+		self.assertEqual( set( e[0].getName() for e in dirtiedPlugs ), expectedDirty )
 
 		display2 = GafferImage.Display()
 		display2.setDriver( display.getDriver(), copy = True )
 
 		self.assertImagesEqual( display["out"], display2["out"] )
 
-		self.__sendBucket( driver, cortexWindow, IECore.FloatVectorData( [ 1 ] * gafferWindow.size().x * gafferWindow.size().y ) )
+		driver.sendBucket( dataWindow, [ IECore.FloatVectorData( [ 1 ] * dataWindow.size().x * dataWindow.size().y ) ] )
 
 		self.assertEqual(
-			display["out"].channelData( "Y", IECore.V2i( 0 ) ),
+			display["out"].channelData( "Y", imath.V2i( 0 ) ),
 			IECore.FloatVectorData( [ 1 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
 		)
 
 		self.assertEqual(
-			display2["out"].channelData( "Y", IECore.V2i( 0 ) ),
+			display2["out"].channelData( "Y", imath.V2i( 0 ) ),
 			IECore.FloatVectorData( [ 0.5 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
 		)
 
-		driver.imageClose()
-		semaphore.acquire()
+		driver.close()
 
 	def __testTransferImage( self, fileName ) :
 
 		imageReader = GafferImage.ImageReader()
 		imageReader["fileName"].setValue( os.path.expandvars( fileName ) )
 
+		imagesReceived = GafferTest.CapturingSlot( GafferImage.Display.imageReceivedSignal() )
+
 		node = GafferImage.Display()
-		node["port"].setValue( 2500 )
+		server = IECoreImage.DisplayDriverServer()
+		driverCreatedConnection = GafferImage.Display.driverCreatedSignal().connect( lambda driver, parameters : node.setDriver( driver ) )
 
-		self.sendImage( imageReader["out"], port = 2500 )
+		self.assertEqual( len( imagesReceived ), 0 )
 
-		# Display doesn't handle image metadata, so we must erase it before comparing the images
-		inImage = imageReader["out"].image()
-		inImage.blindData().clear()
+		self.Driver.sendImage( imageReader["out"], port = server.portNumber() )
 
-		self.assertEqual( inImage, node["out"].image() )
+		self.assertImagesEqual( imageReader["out"], node["out"] )
+
+		self.assertEqual( len( imagesReceived ), 1 )
+		self.assertEqual( imagesReceived[0][0], node["out"] )
 
 		return node
 
@@ -304,13 +330,13 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 		dataWindow = node["out"]["dataWindow"].getValue()
 
-		minTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min )
-		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.max )
+		minTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min() )
+		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.max() )
 
 		tiles = {}
 		for y in range( minTileOrigin.y, maxTileOrigin.y, GafferImage.ImagePlug.tileSize() ) :
 			for x in range( minTileOrigin.x, maxTileOrigin.x, GafferImage.ImagePlug.tileSize() ) :
-				tiles[( x, y )] = node["out"].channelData( channelName, IECore.V2i( x, y ) )
+				tiles[( x, y )] = node["out"].channelData( channelName, imath.V2i( x, y ) )
 
 		return tiles
 
@@ -318,26 +344,23 @@ class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 		dataWindow = node["out"]["dataWindow"].getValue()
 
-		minTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min )
-		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.max )
+		minTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min() )
+		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.max() )
 
 		hashes = {}
 		for y in range( minTileOrigin.y, maxTileOrigin.y, GafferImage.ImagePlug.tileSize() ) :
 			for x in range( minTileOrigin.x, maxTileOrigin.x, GafferImage.ImagePlug.tileSize() ) :
-				hashes[( x, y )] = node["out"].channelDataHash( channelName, IECore.V2i( x, y ) )
+				hashes[( x, y )] = node["out"].channelDataHash( channelName, imath.V2i( x, y ) )
 
 		return hashes
 
 	def __assertTilesChangedInRegion( self, t1, t2, region ) :
 
-		# Box2i.intersect assumes inclusive bounds, so make region inclusive
-		inclusiveRegion = IECore.Box2i( region.min, region.max - IECore.V2i( 1 ) )
-
 		for tileOriginTuple in t1.keys() :
-			tileOrigin = IECore.V2i( *tileOriginTuple )
-			tileRegion = IECore.Box2i( tileOrigin, tileOrigin + IECore.V2i( GafferImage.ImagePlug.tileSize() - 1 ) )
+			tileOrigin = imath.V2i( *tileOriginTuple )
+			tileRegion = imath.Box2i( tileOrigin, tileOrigin + imath.V2i( GafferImage.ImagePlug.tileSize() ) )
 
-			if tileRegion.intersects( inclusiveRegion ) :
+			if GafferImage.BufferAlgo.intersects( tileRegion, region ) :
 				self.assertNotEqual( t1[tileOriginTuple], t2[tileOriginTuple] )
 			else :
 				self.assertEqual( t1[tileOriginTuple], t2[tileOriginTuple] )

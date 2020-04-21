@@ -37,10 +37,14 @@
 
 import functools
 
+import imath
+
 import IECore
 
 import Gaffer
 import GafferUI
+
+from Qt import QtWidgets
 
 class NodeEditor( GafferUI.NodeSetEditor ) :
 
@@ -63,6 +67,7 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 		self._doPendingUpdate()
 		return self.__nodeUI
 
+	## \deprecated
 	def setReadOnly( self, readOnly ) :
 
 		if readOnly == self.__readOnly :
@@ -73,6 +78,7 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			self.__nodeUI.setReadOnly( readOnly )
 			self.__nameWidget.setEditable( not readOnly )
 
+	## \deprecated
 	def getReadOnly( self ) :
 
 		return self.__readOnly
@@ -96,12 +102,23 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 
 		GafferUI.NodeSetEditor._updateFromSet( self )
 
+		focusWidget = GafferUI.Widget._owner( QtWidgets.QApplication.focusWidget() )
+		if self.__column.isAncestorOf( focusWidget ) :
+			# The focus is in our editor, but it belongs to a widget we're about
+			# to delete. Transfer the focus up so that we don't lose the focus
+			# when we delete the widget.
+			## \todo Is there an argument for moving this fix to the ListContainer
+			# itself?
+			self.__column._qtWidget().setFocus()
+
 		del self.__column[:]
 		self.__nodeUI = None
 		self.__nameWidget = None
 
 		node = self._lastAddedNode()
 		if not node :
+			with self.__column :
+				GafferUI.Spacer( imath.V2i( 0 ) )
 			return
 
 		with self.__column :
@@ -109,15 +126,12 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 
 				GafferUI.Label( "<h4>Node Name</h4>" )
 				self.__nameWidget = GafferUI.NameWidget( node )
-				## \todo Make NameWidget support the readOnly metadata internally itself.
-				# We can't do that easily right now, because it would need to be managing
-				# the exact same `setEditable()` call that we're using here to propagate
-				# our Widget readonlyness. Really our Widget readonlyness mechanism is a
-				# bit lacking, and it should really be inherited automatically so we don't
-				# have to propagate it like this.
-				self.__nameWidget.setEditable( not self.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( node ) )
 
-				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing=4 ) as infoSection :
+				with GafferUI.ListContainer(
+					GafferUI.ListContainer.Orientation.Horizontal,
+					spacing=4,
+					parenting = { "horizontalAlignment" : GafferUI.HorizontalAlignment.Right },
+				) as infoSection :
 
 					GafferUI.Label( "<h4>" + node.typeName().rpartition( ":" )[-1] + "</h4>" )
 
@@ -129,8 +143,8 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 							scoped = False
 						)
 
-				toolTip = "<h3>" + node.typeName().rpartition( ":" )[2] + "</h3>"
-				description = Gaffer.Metadata.nodeDescription( node )
+				toolTip = "# " + node.typeName().rpartition( ":" )[2]
+				description = Gaffer.Metadata.value( node, "description" )
 				if description :
 					toolTip += "\n\n" + description
 				infoSection.setToolTip( toolTip )
@@ -153,9 +167,10 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 
 	def __menuDefinition( self ) :
 
+		node = self.nodeUI().node()
 		result = IECore.MenuDefinition()
 
-		url = Gaffer.Metadata.value( self.nodeUI().node(), "documentation:url" )
+		url = Gaffer.Metadata.value( node, "documentation:url" )
 		result.append(
 			"/Documentation...",
 			{
@@ -164,6 +179,9 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			}
 		)
 
+		nodeCls = type( node )
+		GafferUI.Examples.appendExamplesSubmenuDefinition( result, "/Examples", forNode = nodeCls )
+
 		result.append( "/DocumentationDivider", { "divider" : True } )
 
 		result.append(
@@ -171,6 +189,15 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			{
 				"command" : Gaffer.WeakMethod( self.__revertToDefaults ),
 				"active" : not Gaffer.MetadataAlgo.readOnly( self.nodeUI().node() ),
+			}
+		)
+
+		readOnly = Gaffer.MetadataAlgo.getReadOnly( self.nodeUI().node() )
+		result.append(
+			"/Unlock" if readOnly else "/Lock",
+			{
+				"command" : functools.partial( Gaffer.WeakMethod( self.__applyReadOnly ), not readOnly ),
+				"active" : not Gaffer.MetadataAlgo.readOnly( self.nodeUI().node().parent() ),
 			}
 		)
 
@@ -211,4 +238,10 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			applyDefaults( node )
 			Gaffer.NodeAlgo.applyUserDefaults( node )
 
-GafferUI.EditorWidget.registerType( "NodeEditor", NodeEditor )
+	def __applyReadOnly( self, readOnly ) :
+
+		node = self.nodeUI().node()
+		with Gaffer.UndoScope( node.scriptNode() ) :
+			Gaffer.MetadataAlgo.setReadOnly( node, readOnly )
+
+GafferUI.Editor.registerType( "NodeEditor", NodeEditor )

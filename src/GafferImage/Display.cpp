@@ -35,23 +35,28 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferImage/Display.h"
+
+#include "GafferImage/FormatPlug.h"
+
+#include "Gaffer/Context.h"
+#include "Gaffer/DirtyPropagationScope.h"
+#include "Gaffer/ParallelAlgo.h"
+
+#include "IECoreImage/DisplayDriver.h"
+
+#include "IECore/BoxOps.h"
+#include "IECore/MessageHandler.h"
+
+#include "boost/algorithm/string/predicate.hpp"
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
 #include "boost/lexical_cast.hpp"
 #include "boost/multi_array.hpp"
-#include "boost/shared_ptr.hpp"
 
-#include "IECore/LRUCache.h"
-#include "IECore/DisplayDriverServer.h"
-#include "IECore/DisplayDriver.h"
-#include "IECore/MessageHandler.h"
-#include "IECore/BoxOps.h"
+#include "tbb/spin_mutex.h"
 
-#include "Gaffer/Context.h"
-#include "Gaffer/DirtyPropagationScope.h"
-
-#include "GafferImage/Display.h"
-#include "GafferImage/FormatPlug.h"
+#include <memory>
 
 using namespace std;
 using namespace Imath;
@@ -60,29 +65,15 @@ using namespace Gaffer;
 using namespace GafferImage;
 
 //////////////////////////////////////////////////////////////////////////
-// Implementation of a cache of DisplayDriverServers. We use the cache
-// as many nodes may want to use the same port number, and this allows us
-// to share the servers between the nodes.
-//////////////////////////////////////////////////////////////////////////
-
-typedef LRUCache<int, DisplayDriverServerPtr> DisplayDriverServerCache;
-
-static DisplayDriverServerPtr cacheGetter( int key, size_t &cost )
-{
-	cost = 1;
-	return new DisplayDriverServer( key );
-}
-
-static DisplayDriverServerCache g_serverCache( cacheGetter, 10 );
-
-//////////////////////////////////////////////////////////////////////////
 // Implementation of a DisplayDriver to support the node itself
 //////////////////////////////////////////////////////////////////////////
 
 namespace GafferImage
 {
 
-class GafferDisplayDriver : public IECore::DisplayDriver
+static const std::string g_headerPrefix = "header:";
+
+class GafferDisplayDriver : public IECoreImage::DisplayDriver
 {
 
 	public :
@@ -106,6 +97,15 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 			);
 
 			m_parameters = parameters ? parameters->copy() : CompoundDataPtr( new CompoundData );
+			CompoundDataPtr metadata = new CompoundData;
+			for( const auto &p : m_parameters->readable() )
+			{
+				if( boost::starts_with( p.first.string(), g_headerPrefix ) )
+				{
+					metadata->writable()[p.first.string().substr( g_headerPrefix.size() )] = p.second;
+				}
+			}
+			m_metadata = metadata;
 
 			if( const FloatData *pixelAspect = m_parameters->member<FloatData>( "pixelAspect" ) )
 			{
@@ -116,14 +116,14 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 
 			// This is a bit sketchy. By creating `Ptr( this )` we're adding a reference to ourselves from within
 			// our own constructor - if that reference is dropped before we return, we'll be double deleted. We rely
-			// on the fact that executeOnUIThreadl() will keep us alive long enough for this not to occur.
-			Display::executeOnUIThread( boost::bind( &GafferDisplayDriver::emitDriverCreated, Ptr( this ), m_parameters ) );
+			// on the fact that callOnUIThread() will keep us alive long enough for this not to occur.
+			ParallelAlgo::callOnUIThread( boost::bind( &GafferDisplayDriver::emitDriverCreated, Ptr( this ), m_parameters ) );
 		}
 
 		GafferDisplayDriver( GafferDisplayDriver &other )
 			:	DisplayDriver( other.displayWindow(), other.dataWindow(), other.channelNames(), other.parameters() ),
 				m_gafferFormat( other.m_gafferFormat ), m_gafferDataWindow( other.m_gafferDataWindow ),
-				m_parameters( other.m_parameters )
+				m_parameters( other.m_parameters ), m_metadata( other.m_metadata )
 		{
 			// boost::multi_array has a joke assignment operator that only works
 			// if you first resize the target of the assignment to match the
@@ -138,7 +138,7 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 			m_tiles = other.m_tiles;
 		}
 
-		virtual ~GafferDisplayDriver()
+		~GafferDisplayDriver() override
 		{
 		}
 
@@ -157,7 +157,12 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 			return m_parameters.get();
 		}
 
-		virtual void imageData( const Imath::Box2i &box, const float *data, size_t dataSize )
+		const CompoundData *metadata() const
+		{
+			return m_metadata.get();
+		}
+
+		void imageData( const Imath::Box2i &box, const float *data, size_t dataSize ) override
 		{
 			Box2i gafferBox = m_gafferFormat.fromEXRSpace( box );
 
@@ -208,17 +213,17 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 			dataReceivedSignal()( this, box );
 		}
 
-		virtual void imageClose()
+		void imageClose() override
 		{
 			imageReceivedSignal()( this );
 		}
 
-		virtual bool scanLineOrderOnly() const
+		bool scanLineOrderOnly() const override
 		{
 			return false;
 		}
 
-		virtual bool acceptsRepeatedData() const
+		bool acceptsRepeatedData() const override
 		{
 			return true;
 		}
@@ -275,7 +280,7 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 			)
 			{
 				// outside data window
-				return NULL;
+				return nullptr;
 			}
 
 			tbb::spin_rw_mutex::scoped_lock tileLock( m_tileMutex, false /* read */ );
@@ -304,12 +309,13 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 		Format m_gafferFormat;
 		Imath::Box2i m_gafferDataWindow;
 		IECore::ConstCompoundDataPtr m_parameters;
+		IECore::ConstCompoundDataPtr m_metadata;
 		DataReceivedSignal m_dataReceivedSignal;
 		ImageReceivedSignal m_imageReceivedSignal;
 
 };
 
-const DisplayDriver::DisplayDriverDescription<GafferDisplayDriver> GafferDisplayDriver::g_description;
+const IECoreImage::DisplayDriver::DisplayDriverDescription<GafferDisplayDriver> GafferDisplayDriver::g_description;
 
 } // namespace GafferImage
 
@@ -317,7 +323,7 @@ const DisplayDriver::DisplayDriverDescription<GafferDisplayDriver> GafferDisplay
 // Implementation of the Display class itself
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Display );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Display );
 
 size_t Display::g_firstPlugIndex = 0;
 
@@ -326,26 +332,11 @@ Display::Display( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
+	// This plug is incremented when a new driver is set, triggering dirty signals
+	// on all output plugs and prompting reevaluation in the viewer.
 	addChild(
 		new IntPlug(
-			"port",
-			Plug::In,
-			1559,
-			1,
-			65535,
-			// disabling input connections because they could be used
-			// to create a port number which changes with context. we
-			// can't allow that because we can only have a single server
-			// associated with a given node.
-			Plug::Default & ~Plug::AcceptsInputs
-		)
-	);
-
-	// This plug is incremented when new data is received, triggering dirty signals
-	// and prompting reevaluation in the viewer.
-	addChild(
-		new IntPlug(
-			"__updateCount",
+			"__driverCount",
 			Plug::In,
 			0,
 			0,
@@ -354,31 +345,40 @@ Display::Display( const std::string &name )
 		)
 	);
 
-	plugSetSignal().connect( boost::bind( &Display::plugSet, this, ::_1 ) );
-	driverCreatedSignal().connect( boost::bind( &Display::driverCreated, this, ::_1 ) );
-	setupServer();
+	// This plug is incremented when new data is received, triggering dirty signals
+	// on only the channel data plug and prompting reevaluation in the viewer.
+	addChild(
+		new IntPlug(
+			"__channelDataCount",
+			Plug::In,
+			0,
+			0,
+			Imath::limits<int>::max(),
+			Plug::Default & ~Plug::Serialisable
+		)
+	);
 }
 
 Display::~Display()
 {
 }
 
-Gaffer::IntPlug *Display::portPlug()
+Gaffer::IntPlug *Display::driverCountPlug()
 {
 	return getChild<IntPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::IntPlug *Display::portPlug() const
+const Gaffer::IntPlug *Display::driverCountPlug() const
 {
 	return getChild<IntPlug>( g_firstPlugIndex );
 }
 
-Gaffer::IntPlug *Display::updateCountPlug()
+Gaffer::IntPlug *Display::channelDataCountPlug()
 {
 	return getChild<IntPlug>( g_firstPlugIndex + 1 );
 }
 
-const Gaffer::IntPlug *Display::updateCountPlug() const
+const Gaffer::IntPlug *Display::channelDataCountPlug() const
 {
 	return getChild<IntPlug>( g_firstPlugIndex + 1 );
 }
@@ -387,12 +387,16 @@ void Display::affects( const Gaffer::Plug *input, AffectedPlugsContainer &output
 {
 	ImageNode::affects( input, outputs );
 
-	if( input == portPlug() || input == updateCountPlug() )
+	if( input == driverCountPlug() )
 	{
 		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
 		{
 			outputs.push_back( it->get() );
 		}
+	}
+	else if( input == channelDataCountPlug() )
+	{
+		outputs.push_back( outPlug()->channelDataPlug() );
 	}
 }
 
@@ -402,24 +406,13 @@ Display::DriverCreatedSignal &Display::driverCreatedSignal()
 	return s;
 }
 
-Node::UnaryPlugSignal &Display::dataReceivedSignal()
-{
-	static UnaryPlugSignal s;
-	return s;
-}
-
 Node::UnaryPlugSignal &Display::imageReceivedSignal()
 {
 	static UnaryPlugSignal s;
 	return s;
 }
 
-void Display::setDriver( IECore::DisplayDriverPtr driver )
-{
-	setDriver( driver, false );
-}
-
-void Display::setDriver( IECore::DisplayDriverPtr driver, bool copy )
+void Display::setDriver( IECoreImage::DisplayDriverPtr driver, bool copy )
 {
 	GafferDisplayDriver *gafferDisplayDriver = runTimeCast<GafferDisplayDriver>( driver.get() );
 	if( !gafferDisplayDriver )
@@ -428,14 +421,16 @@ void Display::setDriver( IECore::DisplayDriverPtr driver, bool copy )
 	}
 
 	setupDriver( copy ? new GafferDisplayDriver( *gafferDisplayDriver ) : gafferDisplayDriver );
+
+	driverCountPlug()->setValue( driverCountPlug()->getValue() + 1 );
 }
 
-IECore::DisplayDriver *Display::getDriver()
+IECoreImage::DisplayDriver *Display::getDriver()
 {
 	return m_driver.get();
 }
 
-const IECore::DisplayDriver *Display::getDriver() const
+const IECoreImage::DisplayDriver *Display::getDriver() const
 {
 	return m_driver.get();
 }
@@ -454,7 +449,8 @@ void Display::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Co
 		format = FormatPlug::getDefaultFormat( Context::current() );
 	}
 
-	h.append( format.getDisplayWindow() );
+	h.append( format.getDisplayWindow().min );
+	h.append( format.getDisplayWindow().max );
 	h.append( format.getPixelAspect() );
 }
 
@@ -514,9 +510,35 @@ Imath::Box2i Display::computeDataWindow( const Gaffer::Context *context, const I
 	return Box2i();
 }
 
+void Display::hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	const CompoundData *d = m_driver ? m_driver->metadata() : outPlug()->metadataPlug()->defaultValue();
+	h = d->Object::hash();
+}
+
 IECore::ConstCompoundDataPtr Display::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	return outPlug()->metadataPlug()->defaultValue();
+	return m_driver ? m_driver->metadata() : outPlug()->metadataPlug()->defaultValue();
+}
+
+void Display::hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	h.append( false );
+}
+
+bool Display::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	return false;
+}
+
+void Display::hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	h = ImagePlug::flatTileSampleOffsets()->Object::hash();
+}
+
+IECore::ConstIntVectorDataPtr Display::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	return ImagePlug::flatTileSampleOffsets();
 }
 
 void Display::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -545,60 +567,6 @@ IECore::ConstFloatVectorDataPtr Display::computeChannelData( const std::string &
 	return channelData;
 }
 
-void Display::plugSet( Gaffer::Plug *plug )
-{
-	if( plug == portPlug() )
-	{
-		setupServer();
-	}
-}
-
-void Display::setupServer()
-{
-	if( executeOnUIThreadSignal().empty() )
-	{
-		// If the executeOnUIThreadSignal is empty,
-		// it means that GafferImageUI hasn't
-		// been imported (see DisplayUI.py).
-		// If there's no UI then there's no point
-		// running a server because no-one will
-		// be looking anyway.
-		//
-		// This allows us to avoid confusing error output
-		// when the script is loaded in a separate process
-		// to do a local render dispatch, and the
-		// Display node trys to reuse the port that
-		// is already in use in the main GUI process.
-		return;
-	}
-
-	try
-	{
-		m_server = g_serverCache.get( portPlug()->getValue() );
-	}
-	catch( const std::exception &e )
-	{
-		m_server = 0;
-		g_serverCache.erase( portPlug()->getValue() );
-		msg( Msg::Error, "Display::setupServer", e.what() );
-	}
-}
-
-void Display::driverCreated( IECore::DisplayDriver *driver )
-{
-	GafferDisplayDriver *gafferDisplayDriver = runTimeCast<GafferDisplayDriver>( driver );
-	if( !gafferDisplayDriver )
-	{
-		return;
-	}
-
-	const StringData *portNumber = gafferDisplayDriver->parameters()->member<StringData>( "displayPort" );
-	if( portNumber && boost::lexical_cast<int>( portNumber->readable() ) == portPlug()->getValue() )
-	{
-		setupDriver( gafferDisplayDriver );
-	}
-}
-
 void Display::setupDriver( GafferDisplayDriverPtr driver )
 {
 	if( m_driver )
@@ -623,8 +591,7 @@ namespace
 {
 
 typedef set<PlugPtr> PlugSet;
-/// \todo Use std::unique_ptr when we can guarantee C++11
-typedef boost::shared_ptr<PlugSet> PlugSetPtr;
+typedef std::unique_ptr<PlugSet> PlugSetPtr;
 
 struct PendingUpdates
 {
@@ -642,13 +609,8 @@ PendingUpdates &pendingUpdates()
 
 };
 
-void Display::executeOnUIThread( UIThreadFunction function )
-{
-	executeOnUIThreadSignal()( function );
-}
-
 // Called on a background thread when data is received on the driver.
-// We need to increment `updateCountPlug()`, but all graph edits must
+// We need to increment `channelDataCountPlug()`, but all graph edits must
 // be performed on the UI thread, so we can't do it directly.
 void Display::dataReceived()
 {
@@ -664,13 +626,13 @@ void Display::dataReceived()
 		if( !pending.plugs.get() )
 		{
 			scheduleUpdate = true;
-			pending.plugs = boost::make_shared<PlugSet>();
+			pending.plugs.reset( new PlugSet );
 		}
 		pending.plugs->insert( outPlug() );
 	}
 	if( scheduleUpdate )
 	{
-		executeOnUIThread( &Display::dataReceivedUI );
+		ParallelAlgo::callOnUIThread( &Display::dataReceivedUI );
 	}
 }
 
@@ -688,8 +650,7 @@ void Display::dataReceivedUI()
 	{
 		PendingUpdates &pending = pendingUpdates();
 		tbb::spin_mutex::scoped_lock lock( pending.mutex );
-		batch = pending.plugs;
-		pending.plugs.reset();
+		batch.reset( pending.plugs.release() );
 	}
 
 	// Now increment the update count for the Display nodes
@@ -707,32 +668,18 @@ void Display::dataReceivedUI()
 			// the time we're called, so we must check.
 			if( Display *display = runTimeCast<Display>( plug->node() ) )
 			{
-				display->updateCountPlug()->setValue( display->updateCountPlug()->getValue() + 1 );
+				display->channelDataCountPlug()->setValue( display->channelDataCountPlug()->getValue() + 1 );
 			}
 		}
-	}
-
-	// Now that dirty propagation is complete, we can emit dataReceivedSignal()
-	// for any observers that wish to update that way.
-	/// \todo Do we even need this now? Could the tests just use plugDirtiedSignal()?
-	for( set<PlugPtr>::const_iterator it = batch->begin(), eIt = batch->end(); it != eIt; ++it )
-	{
-		dataReceivedSignal()( it->get() );
 	}
 }
 
 void Display::imageReceived()
 {
-	executeOnUIThread( boost::bind( &Display::imageReceivedUI, DisplayPtr( this ) ) );
+	ParallelAlgo::callOnUIThread( boost::bind( &Display::imageReceivedUI, DisplayPtr( this ) ) );
 }
 
 void Display::imageReceivedUI( Ptr display )
 {
 	imageReceivedSignal()( display->outPlug() );
-}
-
-Display::ExecuteOnUIThreadSignal &Display::executeOnUIThreadSignal()
-{
-	static ExecuteOnUIThreadSignal s;
-	return s;
 }

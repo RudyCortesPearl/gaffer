@@ -38,14 +38,16 @@
 #ifndef GAFFERSCENEUI_SCENEVIEW_H
 #define GAFFERSCENEUI_SCENEVIEW_H
 
+#include "GafferSceneUI/Export.h"
+#include "GafferSceneUI/SceneGadget.h"
+#include "GafferSceneUI/TypeIds.h"
+
+#include "GafferScene/PathFilter.h"
+#include "GafferScene/ScenePlug.h"
+
 #include "GafferUI/View.h"
 
-#include "GafferScene/ScenePlug.h"
-#include "GafferScene/PathMatcherData.h"
-#include "GafferScene/PathFilter.h"
-
-#include "GafferSceneUI/TypeIds.h"
-#include "GafferSceneUI/SceneGadget.h"
+#include <functional>
 
 namespace GafferScene
 {
@@ -64,21 +66,21 @@ namespace GafferSceneUI
 /// these in the public API as optional "bolt on" components that applications can
 /// use as they see fit. If we do this, we need to consider how these relate to
 /// Tools, which could also be seen as viewer components.
-class SceneView : public GafferUI::View
+class GAFFERSCENEUI_API SceneView : public GafferUI::View
 {
 
 	public :
 
 		SceneView( const std::string &name = defaultName<SceneView>() );
-		virtual ~SceneView();
+		~SceneView() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::SceneView, SceneViewTypeId, GafferUI::View );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::SceneView, SceneViewTypeId, GafferUI::View );
 
 		Gaffer::IntPlug *minimumExpansionDepthPlug();
 		const Gaffer::IntPlug *minimumExpansionDepthPlug() const;
 
-		Gaffer::ValuePlug *lookThroughPlug();
-		const Gaffer::ValuePlug *lookThroughPlug() const;
+		Gaffer::ValuePlug *cameraPlug();
+		const Gaffer::ValuePlug *cameraPlug() const;
 
 		Gaffer::ValuePlug *gridPlug();
 		const Gaffer::ValuePlug *gridPlug() const;
@@ -86,11 +88,11 @@ class SceneView : public GafferUI::View
 		Gaffer::ValuePlug *gnomonPlug();
 		const Gaffer::ValuePlug *gnomonPlug() const;
 
-		void frame( const GafferScene::PathMatcher &filter, const Imath::V3f &direction = Imath::V3f( -0.64, -0.422, -0.64 ) );
+		void frame( const IECore::PathMatcher &filter, const Imath::V3f &direction = Imath::V3f( -0.64, -0.422, -0.64 ) );
 		void expandSelection( size_t depth = 1 );
 		void collapseSelection();
 
-		virtual void setContext( Gaffer::ContextPtr context );
+		void setContext( Gaffer::ContextPtr context ) override;
 
 		/// If the view is locked to a particular camera,
 		/// this returns the bound of the resolution gate
@@ -100,21 +102,22 @@ class SceneView : public GafferUI::View
 		/// empty bound.
 		const Imath::Box2f &resolutionGate() const;
 
-		typedef boost::function<GafferScene::SceneProcessorPtr ()> ShadingModeCreator;
+		typedef std::function<GafferScene::SceneProcessorPtr ()> ShadingModeCreator;
 
 		static void registerShadingMode( const std::string &name, ShadingModeCreator );
 		static void registeredShadingModes( std::vector<std::string> &names );
 
 	protected :
 
-		virtual void contextChanged( const IECore::InternedString &name );
-		virtual Imath::Box3f framingBound() const;
+		void contextChanged( const IECore::InternedString &name ) override;
 
 	private :
 
 		// The filter for a preprocessing node used to hide things.
-		GafferScene::PathFilter *hideFilter();
-		const GafferScene::PathFilter *hideFilter() const;
+		GafferScene::PathFilter *deleteObjectFilter();
+		const GafferScene::PathFilter *deleteObjectFilter() const;
+
+		Imath::Box3f framingBound() const;
 
 		bool keyPress( GafferUI::GadgetPtr gadget, const GafferUI::KeyEvent &event );
 		void transferSelectionToContext();
@@ -124,16 +127,18 @@ class SceneView : public GafferUI::View
 
 		SceneGadgetPtr m_sceneGadget;
 
+		class SelectionMask;
+		std::unique_ptr<SelectionMask> m_selectionMask;
 		class DrawingMode;
-		boost::shared_ptr<DrawingMode> m_drawingMode;
+		std::unique_ptr<DrawingMode> m_drawingMode;
 		class ShadingMode;
-		boost::shared_ptr<ShadingMode> m_shadingMode;
-		class LookThrough;
-		boost::shared_ptr<LookThrough> m_lookThrough;
+		std::unique_ptr<ShadingMode> m_shadingMode;
+		class Camera;
+		std::unique_ptr<Camera> m_camera;
 		class Grid;
-		boost::shared_ptr<Grid> m_grid;
+		std::unique_ptr<Grid> m_grid;
 		class Gnomon;
-		boost::shared_ptr<Gnomon> m_gnomon;
+		std::unique_ptr<Gnomon> m_gnomon;
 
 		static size_t g_firstPlugIndex;
 		static ViewDescription<SceneView> g_viewDescription;

@@ -48,6 +48,8 @@ Gaffer.Metadata.registerNode(
 	saved to disk as a ".gfr" file and reloaded.
 	""",
 
+	"layout:visibilityActivator:hidden", lambda node : False,
+
 	plugs = {
 
 		"fileName" : (
@@ -107,6 +109,31 @@ Gaffer.Metadata.registerNode(
 			default frame ranges, and by the UI to define
 			the range of the time slider.
 			""",
+
+		),
+
+		"frame" : (
+
+			"description",
+			"""
+			The current frame.
+
+			> Note : To perform a computation at a particular time,
+			> you should create your own Context rather than change
+			> the value of this plug.
+			>
+			> ```
+			> with Gaffer.Context( script.context() ) as c :
+			> 	c.setFrame( f )
+			>   ...
+			> ```
+			>
+			> Likewise, you should never refer to this plug from
+			> an expression. Always retrieve the frame with
+			> `context.getFrame()` instead.
+			""",
+
+			"layout:visibilityActivator", "hidden",
 
 		),
 

@@ -45,31 +45,31 @@ from ChannelMaskPlugValueWidget import ChannelMaskPlugValueWidget
 from RGBAChannelsPlugValueWidget import RGBAChannelsPlugValueWidget
 from ChannelPlugValueWidget import ChannelPlugValueWidget
 
+import ImageReaderPathPreview
+
 import OpenImageIOReaderUI
 import ImageReaderUI
 import ImageViewUI
 import ImageTransformUI
 import ConstantUI
-import ImageSwitchUI
+import CheckerboardUI
+import RampUI
 import ColorSpaceUI
-import ImageContextVariablesUI
-import DeleteImageContextVariablesUI
 import ImageStatsUI
 import DeleteChannelsUI
-import ObjectToImageUI
 import ClampUI
 import ImageWriterUI
 import GradeUI
-import ImageTimeWarpUI
 import ImageSamplerUI
 import MergeUI
 import ImageNodeUI
+import FlatImageSourceUI
 import ChannelDataProcessorUI
 import ImageProcessorUI
+import FlatImageProcessorUI
 import ImageMetadataUI
 import DeleteImageMetadataUI
 import CopyImageMetadataUI
-import ImageLoopUI
 import ShuffleUI
 import PremultiplyUI
 import UnpremultiplyUI
@@ -91,10 +91,23 @@ import CopyChannelsUI
 import MedianUI
 import RankFilterUI
 import ErodeUI
-import DilateUI 
+import DilateUI
 import ColorProcessorUI
 import MixUI
 import CatalogueUI
 import CollectImagesUI
+import CatalogueSelectUI
+import BleedFillUI
+import RectangleUI
+import FlatToDeepUI
+import DeepMergeUI
+import DeepStateUI
+import EmptyUI
+import DeepSampleCountsUI
+import DeepSamplerUI
+import DeepToFlatUI
+import DeepTidyUI
+import DeepHoldoutUI
+import DeepRecolorUI
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferImageUI" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferImageUI" )

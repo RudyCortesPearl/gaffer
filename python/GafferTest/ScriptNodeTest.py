@@ -41,6 +41,7 @@ import weakref
 import gc
 import os
 import shutil
+import stat
 import inspect
 import functools
 
@@ -69,17 +70,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testExecution( self ) :
 
 		s = Gaffer.ScriptNode()
-
-		def f( n, s ) :
-			ScriptNodeTest.lastNode = n
-			ScriptNodeTest.lastScript = s
-
-		c = s.scriptExecutedSignal().connect( f )
-
 		s.execute( "script.addChild( Gaffer.Node( 'child' ) )" )
-		self.assertEqual( ScriptNodeTest.lastNode, s )
-		self.assertEqual( ScriptNodeTest.lastScript, "script.addChild( Gaffer.Node( 'child' ) )" )
-
 		self.assert_( s["child"].typeName(), "Node" )
 
 	def testSelection( self ) :
@@ -948,7 +939,8 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 
-		p = s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		p = Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
 		self.assertEqual( s.context().get( "test" ), 10 )
 		p["value"].setValue( 20 )
 		self.assertEqual( s.context().get( "test" ), 20 )
@@ -974,7 +966,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testReloadWithCustomVariables( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		s["variables"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
@@ -989,7 +981,8 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 
-		p = s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		p = Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
 		self.assertEqual( s.context().get( "test" ), 10 )
 
 		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
@@ -1198,12 +1191,57 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( s2["framesPerSecond"].getValue(), 48.0 )
 		self.assertEqual( s2.context().getFramesPerSecond(), 48.0 )
 
+	def testFrame( self ) :
+
+		s = Gaffer.ScriptNode()
+		self.assertEqual( s["frame"].getValue(), 1 )
+		self.assertEqual( s.context().getFrame(), 1.0 )
+
+		s["frame"].setValue( 2.0 )
+		self.assertEqual( s.context().getFrame(), 2.0 )
+
+		s.context().setFrame( 4.0 )
+		self.assertEqual( s["frame"].getValue(), 4.0 )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertEqual( s2["frame"].getValue(), 4.0 )
+		self.assertEqual( s2.context().getFrame(), 4.0 )
+
+	def testFrameRange( self ) :
+
+		s = Gaffer.ScriptNode()
+		self.assertEqual( s["frameRange"]["start"].getValue(), 1 )
+		self.assertEqual( s["frameRange"]["end"].getValue(), 100 )
+		self.assertEqual( s.context().get( "frameRange:start" ), 1 )
+		self.assertEqual( s.context().get( "frameRange:end" ), 100 )
+
+		s["frameRange"]["start"].setValue( 20 )
+		s["frameRange"]["end"].setValue( 50 )
+		self.assertEqual( s.context().get( "frameRange:start" ), 20 )
+		self.assertEqual( s.context().get( "frameRange:end" ), 50 )
+
+		# frame range remains valid
+		s["frameRange"]["end"].setValue( 15 )
+		self.assertEqual( s["frameRange"]["start"].getValue(), 15 )
+		self.assertEqual( s["frameRange"]["end"].getValue(), 15 )
+		self.assertEqual( s.context().get( "frameRange:start" ), 15 )
+		self.assertEqual( s.context().get( "frameRange:end" ), 15 )
+
+		s["frameRange"]["end"].setValue( 150 )
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertEqual( s2["frameRange"]["start"].getValue(), 15 )
+		self.assertEqual( s2["frameRange"]["end"].getValue(), 150 )
+		self.assertEqual( s2.context().get( "frameRange:start" ), 15 )
+		self.assertEqual( s2.context().get( "frameRange:end" ), 150 )
+
 	def testLineNumberForExecutionSyntaxError( self ) :
 
 		s = Gaffer.ScriptNode()
 		self.assertRaisesRegexp(
-			Exception,
-			"^Exception : Line 2",
+			IECore.Exception,
+			"^Line 2",
 			s.execute,
 			inspect.cleandoc(
 				"""
@@ -1245,20 +1283,43 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		self.assertFalse( s.isExecuting() )
 
-		self.__wasExecuting = None
+		self.__wasExecuting = []
 		def f( script, child ) :
-			self.__wasExecuting = script.isExecuting()
+			self.__wasExecuting.append( script.isExecuting() )
 
 		c = s.childAddedSignal().connect( f )
 
 		s["n"] = GafferTest.AddNode()
-		self.assertEqual( self.__wasExecuting, False )
 
-		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"] ] ) )
+		# add a reference so we guarantee it works with nested loads
+		s["n1"] = GafferTest.AddNode()
+		s["n2"] = GafferTest.AddNode()
+		s["n2"]["op1"].setInput( s["n1"]["sum"] )
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n1"] ] ) )
+		Gaffer.PlugAlgo.promote( b["n1"]["op1"] )
+
+		b.exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"]["op1"].setInput( s["n"]["sum"] )
+
+		s["x"] = GafferTest.AddNode()
+		# verifies that wasExecuting was False throughout this setup stage
+		self.assertEqual( self.__wasExecuting, map( lambda x: False, self.__wasExecuting ) )
+
+		self.__wasExecuting = []
+
+		# connecting n to r and then to x guarantees the order of serialisation
+		s["x"]["op1"].setInput( s["r"]["sum"] )
+
+		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"], s["r"], s["x"] ] ) )
 		s.execute( ss )
-		self.assertEqual( self.__wasExecuting, True )
+		# verifies that wasExecuting was True throughout this setup stage
+		self.assertEqual( self.__wasExecuting, map( lambda x: True, self.__wasExecuting ) )
 
-		self.__wasExecuting = None
+		self.__wasExecuting = []
 		self.assertRaises( RuntimeError, s.execute, ss + "\nsyntaxError" )
 		self.assertFalse( s.isExecuting() )
 
@@ -1339,6 +1400,69 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
 		self.assertTrue( "iAmAnError" in mh.messages[0].message )
 		self.assertEqual( len( script.children( Gaffer.Node ) ), 1 )
+
+	def testErrorTolerantExecutionWithSyntaxError( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		with IECore.CapturingMessageHandler() as mh :
+			script.execute( "import", continueOnError = True )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertIn( "SyntaxError: invalid syntax", mh.messages[0].message )
+
+	def testImport( self ) :
+
+		s1 = Gaffer.ScriptNode()
+
+		s1["n1"] = GafferTest.AddNode()
+		s1["n2"] = GafferTest.AddNode()
+		s1["n2"]["op1"].setInput( s1["n1"]["sum"] )
+
+		s1["p"] = Gaffer.Plug()
+		s1["frameRange"]["start"].setValue( -10 )
+		s1["frameRange"]["end"].setValue( 101 )
+		s1["variables"].addChild( Gaffer.NameValuePlug( "test", "test" ) )
+
+		fileName = self.temporaryDirectory() + "/toImport.gfr"
+		s1.serialiseToFile( fileName )
+
+		s2 = Gaffer.ScriptNode()
+		s2.importFile( fileName )
+
+		self.assertIn( "n1", s2 )
+		self.assertIn( "n2", s2 )
+		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
+
+		self.assertNotIn( "p", s2 )
+		self.assertEqual( len( s2["variables"] ), 0 )
+
+	def testReadOnlyMetadata( self ) :
+
+		fileName = self.temporaryDirectory() + "/test.gfr"
+
+		s = Gaffer.ScriptNode()
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		s["fileName"].setValue( fileName )
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+		s.save()
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( fileName )
+		s.load()
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		os.chmod( s["fileName"].getValue(), stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH )
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( fileName )
+		s.load()
+		self.assertTrue( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		s["fileName"].setValue( self.temporaryDirectory() + "/test2.gfr" )
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
 
 if __name__ == "__main__":
 	unittest.main()

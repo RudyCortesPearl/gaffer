@@ -35,12 +35,12 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import IECore
 
 import Gaffer
 import GafferUI
+
+import os
 
 ## Supported plug metadata - used to provide arguments to a
 # PathChooserDialogue :
@@ -70,10 +70,10 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__row.append( pathWidget )
 
 		button = GafferUI.Button( image = "pathChooser.png", hasFrame=False )
-		self.__buttonClickedConnection = button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
+		button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
 		self.__row.append( button )
 
-		self.__editingFinishedConnection = pathWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ) )
+		pathWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ), scoped = False )
 
 		self._updateFromPlug()
 
@@ -95,10 +95,13 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
-		result += "\n\n<ul>"
-		result += "<li>Tab to auto-complete</li>"
-		result += "<li>Cursor down to list</li>"
-		result += "</ul>"
+		if result :
+			result += "\n\n"
+
+		result += "## Actions\n\n"
+		result += "- <kbd>Tab</kbd> to autocomplete path component\n"
+		result += "- Select path component (or hit <kbd>&darr;</kbd>) to show path-level contents menu\n"
+		result += "- Select all to show path hierarchy menu\n"
 
 		return result
 
@@ -133,8 +136,8 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 			bookmarks = pathChooserDialogueKeywords.get( "bookmarks", None )
 			if bookmarks is not None :
 				pathCopy.setFromString( bookmarks.getDefault() )
-			else :
-				pathCopy.setFromString( "/" )
+			elif isinstance( pathCopy, Gaffer.FileSystemPath ) :
+				pathCopy.setFromString( os.path.expanduser( "~" ) )
 
 		return GafferUI.PathChooserDialogue( pathCopy, **pathChooserDialogueKeywords )
 

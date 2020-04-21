@@ -35,15 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-#include "Gaffer/ArrayPlug.h"
-
 #include "GafferImage/ImageProcessor.h"
+
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/Context.h"
 
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( ImageProcessor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ImageProcessor );
 
 size_t ImageProcessor::g_firstPlugIndex = 0;
 
@@ -69,7 +69,7 @@ ImageProcessor::~ImageProcessor()
 
 ImagePlug *ImageProcessor::inPlug()
 {
-	GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	GraphComponent *p = getChild( g_firstPlugIndex );
 	if( ImagePlug *i = IECore::runTimeCast<ImagePlug>( p ) )
 	{
 		return i;
@@ -82,7 +82,7 @@ ImagePlug *ImageProcessor::inPlug()
 
 const ImagePlug *ImageProcessor::inPlug() const
 {
-	const GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	const GraphComponent *p = getChild( g_firstPlugIndex );
 	if( const ImagePlug *i = IECore::runTimeCast<const ImagePlug>( p ) )
 	{
 		return i;

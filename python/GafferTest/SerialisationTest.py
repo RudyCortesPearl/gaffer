@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -56,11 +58,11 @@ class SerialisationTest( GafferTest.TestCase ) :
 
 	def testCustomSerialiser( self ) :
 
-		class CustomSerialiser( Gaffer.Serialisation.Serialiser ) :
+		class CustomSerialiser( Gaffer.NodeSerialiser ) :
 
 			def moduleDependencies( self, node, serialisation ) :
 
-				return ( "GafferTest", )
+				return { "GafferTest" } | Gaffer.NodeSerialiser.moduleDependencies( self, node, serialisation )
 
 			def constructor( self, node, serialisation ) :
 
@@ -68,33 +70,35 @@ class SerialisationTest( GafferTest.TestCase ) :
 
 			def postConstructor( self, node, identifier, serialisation ) :
 
-				return identifier + ".postConstructorWasHere = True\n"
+				result = Gaffer.NodeSerialiser.postConstructor( self, node, identifier, serialisation )
+				result += identifier + ".postConstructorWasHere = True\n"
+				return result
 
 			def postHierarchy( self, node, identifier, serialisation ) :
 
-				return identifier + ".postHierarchyWasHere = True\n"
+				result = Gaffer.NodeSerialiser.postHierarchy( self, node, identifier, serialisation )
+				result += identifier + ".postHierarchyWasHere = True\n"
+				return result
 
 			def postScript( self, node, identifier, serialisation ) :
 
-				return identifier + ".postScriptWasHere = True\n"
+				result = Gaffer.NodeSerialiser.postScript( self, node, identifier, serialisation )
+				result += identifier + ".postScriptWasHere = True\n"
+				return result
 
 			def childNeedsSerialisation( self, child, serialisation ) :
 
-				if isinstance( child, Gaffer.Node ) :
-					return child.getName() == "childNodeNeedingSerialisation"
-				elif isinstance( child, Gaffer.Plug ) :
-					return child.getFlags( Gaffer.Plug.Flags.Serialisable )
+				if isinstance( child, Gaffer.Node ) and child.getName() == "childNodeNeedingSerialisation" :
+					return True
 
-				return False
+				return Gaffer.NodeSerialiser.childNeedsSerialisation( self, child, serialisation )
 
 			def childNeedsConstruction( self, child, serialisation ) :
 
 				if isinstance( child, Gaffer.Node ) :
 					return False
-				elif isinstance( child, Gaffer.Plug ) :
-					return child.getFlags( Gaffer.Plug.Flags.Dynamic )
 
-				return False
+				return Gaffer.NodeSerialiser.childNeedsConstruction( self, child, serialisation )
 
 		customSerialiser = CustomSerialiser()
 		Gaffer.Serialisation.registerSerialiser( self.SerialisationTestNode, customSerialiser )
@@ -132,21 +136,21 @@ class SerialisationTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Serialisation.classPath( Gaffer.Node() ), "Gaffer.Node" )
 		self.assertEqual( Gaffer.Serialisation.classPath( Gaffer.Node ), "Gaffer.Node" )
 
-		self.assertEqual( Gaffer.Serialisation.classPath( GafferTest.SphereNode() ), "GafferTest.SphereNode" )
-		self.assertEqual( Gaffer.Serialisation.classPath( GafferTest.SphereNode ), "GafferTest.SphereNode" )
+		self.assertEqual( Gaffer.Serialisation.classPath( GafferTest.AddNode() ), "GafferTest.AddNode" )
+		self.assertEqual( Gaffer.Serialisation.classPath( GafferTest.AddNode ), "GafferTest.AddNode" )
 
 	def testModulePath( self ) :
 
 		self.assertEqual( Gaffer.Serialisation.modulePath( Gaffer.Node() ), "Gaffer" )
 		self.assertEqual( Gaffer.Serialisation.modulePath( Gaffer.Node ), "Gaffer" )
 
-		self.assertEqual( Gaffer.Serialisation.modulePath( GafferTest.SphereNode() ), "GafferTest" )
-		self.assertEqual( Gaffer.Serialisation.modulePath( GafferTest.SphereNode ), "GafferTest" )
+		self.assertEqual( Gaffer.Serialisation.modulePath( GafferTest.AddNode() ), "GafferTest" )
+		self.assertEqual( Gaffer.Serialisation.modulePath( GafferTest.AddNode ), "GafferTest" )
 
 	def testIncludeParentMetadataWhenExcludingChildren( self ) :
 
 		n1 = Gaffer.Node()
-		Gaffer.Metadata.registerValue( n1, "test", IECore.Color3f( 1, 2, 3 ) )
+		Gaffer.Metadata.registerValue( n1, "test", imath.Color3f( 1, 2, 3 ) )
 
 		with Gaffer.Context() as c :
 			c["serialiser:includeParentMetadata"] = IECore.BoolData( True )
@@ -155,7 +159,92 @@ class SerialisationTest( GafferTest.TestCase ) :
 		scope = { "parent" : Gaffer.Node() }
 		exec( s.result(), scope, scope )
 
-		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "test" ), IECore.Color3f( 1, 2, 3 ) )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "test" ), imath.Color3f( 1, 2, 3 ) )
+
+	class Outer( object ) :
+
+			class Inner( object ) :
+
+					# Emulate feature coming in Python 3.
+					# See https://www.python.org/dev/peps/pep-3155/
+					__qualname__ = "Outer.Inner"
+
+	def testClassPathForNestedClasses( self ) :
+
+		self.assertEqual( Gaffer.Serialisation.classPath( self.Outer.Inner ), "GafferTest.SerialisationTest.Outer.Inner" )
+
+	def testVersionMetadata( self ) :
+
+		n = Gaffer.Node()
+		serialisationWithMetadata = Gaffer.Serialisation( n ).result()
+
+		with Gaffer.Context() as c :
+			c["serialiser:includeVersionMetadata"] = IECore.BoolData( False )
+			serialisationWithoutMetadata = Gaffer.Serialisation( n ).result()
+
+		scope = { "parent" : Gaffer.Node() }
+		exec( serialisationWithMetadata, scope, scope )
+
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:milestoneVersion" ), Gaffer.About.milestoneVersion() )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:majorVersion" ), Gaffer.About.majorVersion() )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:minorVersion" ), Gaffer.About.minorVersion() )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:patchVersion" ), Gaffer.About.patchVersion() )
+
+		scope = { "parent" : Gaffer.Node() }
+		exec( serialisationWithoutMetadata, scope, scope )
+
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:milestoneVersion" ), None )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:majorVersion" ), None )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:minorVersion" ), None )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "serialiser:patchVersion" ), None )
+
+	def testProtectParentNamespace( self ) :
+
+		n = Gaffer.Node()
+		n["a"] = GafferTest.AddNode()
+		n["b"] = GafferTest.AddNode()
+		n["b"]["op1"].setInput( n["a"]["sum"] )
+
+		serialisationWithProtection = Gaffer.Serialisation( n ).result()
+
+		with Gaffer.Context() as c :
+			c["serialiser:protectParentNamespace"] = IECore.BoolData( False )
+			serialisationWithoutProtection = Gaffer.Serialisation( n ).result()
+
+		scope = { "parent" : Gaffer.Node() }
+		scope["parent"]["a"] = Gaffer.StringPlug()
+		exec( serialisationWithProtection, scope, scope )
+
+		self.assertIsInstance( scope["parent"]["a"], Gaffer.StringPlug )
+		self.assertIn( "a1", scope["parent"] )
+		self.assertEqual( scope["parent"]["b"]["op1"].getInput(), scope["parent"]["a1"]["sum"] )
+
+		scope = { "parent" : Gaffer.Node() }
+		scope["parent"]["a"] = Gaffer.StringPlug()
+		exec( serialisationWithoutProtection, scope, scope )
+
+		self.assertIsInstance( scope["parent"]["a"], GafferTest.AddNode )
+		self.assertNotIn( "a1", scope["parent"] )
+		self.assertEqual( scope["parent"]["b"]["op1"].getInput(), scope["parent"]["a"]["sum"] )
+
+	def testChildIdentifier( self ) :
+
+		node = Gaffer.Node()
+		node["a"] = GafferTest.AddNode()
+		node["b"] = GafferTest.AddNode()
+
+		filter = Gaffer.StandardSet( [ node["a"] ] )
+		serialisation = Gaffer.Serialisation( node, filter = filter )
+
+		aIdentifier = serialisation.identifier( node["a"] )
+		self.assertEqual(
+			serialisation.identifier( node["a"]["op1"] ),
+			serialisation.childIdentifier( aIdentifier, node["a"]["op1"] )
+		)
+
+		bIdentifier = serialisation.identifier( node["b"] )
+		self.assertEqual( bIdentifier, "" )
+		self.assertEqual( serialisation.childIdentifier( bIdentifier, node["b"]["op1"] ), "" )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -39,7 +39,7 @@
 
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( DependencyNode );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DependencyNode );
 
 DependencyNode::DependencyNode( const std::string &name )
 	:	Node( name )
@@ -61,20 +61,20 @@ void DependencyNode::affects( const Plug *input, AffectedPlugsContainer &outputs
 
 BoolPlug *DependencyNode::enabledPlug()
 {
-	return 0;
+	return nullptr;
 }
 
 const BoolPlug *DependencyNode::enabledPlug() const
 {
-	return 0;
+	return nullptr;
 }
 
 Plug *DependencyNode::correspondingInput( const Plug *output )
 {
-	return 0;
+	return nullptr;
 }
 
 const Plug *DependencyNode::correspondingInput( const Plug *output ) const
 {
-	return 0;
+	return nullptr;
 }

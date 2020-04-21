@@ -34,19 +34,20 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/algorithm/string/replace.hpp"
-
-#include "Gaffer/BoxIO.h"
-#include "Gaffer/UndoScope.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Metadata.h"
-#include "Gaffer/StringPlug.h"
-
-#include "GafferUI/StandardNodeGadget.h"
 #include "GafferUI/PlugAdder.h"
 #include "GafferUI/SpacerGadget.h"
+#include "GafferUI/StandardNodeGadget.h"
 #include "GafferUI/TextGadget.h"
+
+#include "Gaffer/BoxIO.h"
+#include "Gaffer/BoxOut.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/UndoScope.h"
+
+#include "boost/algorithm/string/replace.hpp"
+#include "boost/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -64,8 +65,8 @@ class BoxIOPlugAdder : public PlugAdder
 
 	public :
 
-		BoxIOPlugAdder( BoxIOPtr boxIO, StandardNodeGadget::Edge edge )
-			:	PlugAdder( edge ), m_boxIO( boxIO )
+		BoxIOPlugAdder( BoxIOPtr boxIO )
+			:	m_boxIO( boxIO )
 		{
 			m_boxIO->childAddedSignal().connect( boost::bind( &BoxIOPlugAdder::childAdded, this ) );
 			m_boxIO->childRemovedSignal().connect( boost::bind( &BoxIOPlugAdder::childRemoved, this ) );
@@ -74,34 +75,41 @@ class BoxIOPlugAdder : public PlugAdder
 
 	protected :
 
-		virtual bool acceptsPlug( const Plug *connectionEndPoint ) const
+		bool canCreateConnection( const Plug *endpoint ) const override
 		{
-			return connectionEndPoint->direction() == m_boxIO->direction();
+			if( !PlugAdder::canCreateConnection( endpoint ) )
+			{
+				return false;
+			}
+
+			return endpoint->direction() == m_boxIO->direction();
 		}
 
-		virtual void addPlug( Plug *connectionEndPoint )
+		void createConnection( Plug *endpoint ) override
 		{
-			UndoScope undoScope( m_boxIO->ancestor<ScriptNode>() );
-
-			std::string name = connectionEndPoint->relativeName( connectionEndPoint->node() );
+			std::string name = endpoint->relativeName( endpoint->node() );
 			boost::replace_all( name, ".", "_" );
 			m_boxIO->namePlug()->setValue( name );
 
-			m_boxIO->setup( connectionEndPoint );
+			m_boxIO->setup( endpoint );
 
-			applyEdgeMetadata( m_boxIO->plug<Plug>() );
-			if( m_boxIO->promotedPlug<Plug>() )
+			applyEdgeMetadata( m_boxIO->plug() );
+			if( BoxOut *boxOut = runTimeCast<BoxOut>( m_boxIO.get() ) )
 			{
-				applyEdgeMetadata( m_boxIO->promotedPlug<Plug>(), /* opposite = */ true );
+				applyEdgeMetadata( boxOut->passThroughPlug() );
+			}
+			if( m_boxIO->promotedPlug() )
+			{
+				applyEdgeMetadata( m_boxIO->promotedPlug(), /* opposite = */ true );
 			}
 
 			if( m_boxIO->direction() == Plug::In )
 			{
-				connectionEndPoint->setInput( m_boxIO->plug<Plug>() );
+				endpoint->setInput( m_boxIO->plug() );
 			}
 			else
 			{
-				m_boxIO->plug<Plug>()->setInput( connectionEndPoint );
+				m_boxIO->plug()->setInput( endpoint );
 			}
 		}
 
@@ -119,7 +127,7 @@ class BoxIOPlugAdder : public PlugAdder
 
 		void updateVisibility()
 		{
-			setVisible( !m_boxIO->plug<Plug>() );
+			setVisible( !m_boxIO->plug() );
 		}
 
 		BoxIOPtr m_boxIO;
@@ -185,10 +193,10 @@ struct BoxIONodeGadgetCreator
 			throw Exception( "Expected a BoxIO node" );
 		}
 		StandardNodeGadgetPtr result = new StandardNodeGadget( node );
-		result->setEdgeGadget( StandardNodeGadget::LeftEdge, new BoxIOPlugAdder( boxIO, StandardNodeGadget::LeftEdge ) );
-		result->setEdgeGadget( StandardNodeGadget::RightEdge, new BoxIOPlugAdder( boxIO, StandardNodeGadget::RightEdge ) );
-		result->setEdgeGadget( StandardNodeGadget::BottomEdge, new BoxIOPlugAdder( boxIO, StandardNodeGadget::BottomEdge ) );
-		result->setEdgeGadget( StandardNodeGadget::TopEdge, new BoxIOPlugAdder( boxIO, StandardNodeGadget::TopEdge ) );
+		result->setEdgeGadget( StandardNodeGadget::LeftEdge, new BoxIOPlugAdder( boxIO ) );
+		result->setEdgeGadget( StandardNodeGadget::RightEdge, new BoxIOPlugAdder( boxIO ) );
+		result->setEdgeGadget( StandardNodeGadget::BottomEdge, new BoxIOPlugAdder( boxIO ) );
+		result->setEdgeGadget( StandardNodeGadget::TopEdge, new BoxIOPlugAdder( boxIO ) );
 		result->setContents( new NameGadget( boxIO ) );
 		return result;
 	}

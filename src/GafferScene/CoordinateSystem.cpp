@@ -34,12 +34,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/CoordinateSystem.h"
+#include "GafferScene/CoordinateSystem.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/CoordinateSystem.h"
-#include "GafferScene/PathMatcherData.h"
+#include "IECoreScene/CoordinateSystem.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
@@ -47,7 +46,7 @@ using namespace Imath;
 
 static IECore::InternedString g_coordinateSystemsSetName( "__coordinateSystems" );
 
-IE_CORE_DEFINERUNTIMETYPED( CoordinateSystem );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CoordinateSystem );
 
 CoordinateSystem::CoordinateSystem( const std::string &name )
 	:	ObjectSource( name, "coordinateSystem" )
@@ -64,7 +63,7 @@ void CoordinateSystem::hashSource( const Gaffer::Context *context, IECore::Murmu
 
 IECore::ConstObjectPtr CoordinateSystem::computeSource( const Context *context ) const
 {
-	return new IECore::CoordinateSystem();
+	return new IECoreScene::CoordinateSystem();
 }
 
 IECore::ConstInternedStringVectorDataPtr CoordinateSystem::computeStandardSetNames() const

@@ -34,8 +34,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import functools
 
 import IECore
@@ -107,5 +105,5 @@ class _PlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 
-			self.__parameterHandler.parameter().setValue( self.__parameterHandler.parameter().presets()[preset] )
+			self.__parameterHandler.parameter().setValue( self.__parameterHandler.parameter().getPresets()[preset] )
 			self.__parameterHandler.setPlugValue()

@@ -35,6 +35,7 @@
 ##########################################################################
 
 import os
+import subprocess32 as subprocess
 import unittest
 
 import IECore
@@ -58,7 +59,7 @@ class SystemCommandTest( GafferTest.TestCase ) :
 
 		n = GafferDispatch.SystemCommand()
 		n["command"].setValue( "env > " + self.temporaryDirectory() + "/systemCommandTest.txt" )
-		n["environmentVariables"].addMember( "GAFFER_SYSTEMCOMMAND_TEST", IECore.StringData( "test" ) )
+		n["environmentVariables"].addChild( Gaffer.NameValuePlug( "GAFFER_SYSTEMCOMMAND_TEST", IECore.StringData( "test" ) ) )
 
 		n["task"].execute()
 
@@ -69,8 +70,8 @@ class SystemCommandTest( GafferTest.TestCase ) :
 
 		n = GafferDispatch.SystemCommand()
 		n["command"].setValue( "echo {adjective} {noun} > " + self.temporaryDirectory() + "/systemCommandTest.txt" )
-		n["substitutions"].addMember( "adjective", IECore.StringData( "red" ) )
-		n["substitutions"].addMember( "noun", IECore.StringData( "truck" ) )
+		n["substitutions"].addChild( Gaffer.NameValuePlug( "adjective", IECore.StringData( "red" ) ) )
+		n["substitutions"].addChild( Gaffer.NameValuePlug( "noun", IECore.StringData( "truck" ) ) )
 
 		n["task"].execute()
 		self.assertEqual( "red truck\n", open( self.temporaryDirectory() + "/systemCommandTest.txt" ).readlines()[0] )
@@ -88,10 +89,10 @@ class SystemCommandTest( GafferTest.TestCase ) :
 		n["command"].setValue( "echo abc" )
 		hashes.append( n["task"].hash() )
 
-		n["substitutions"].addMember( "test", IECore.StringData( "value" ) )
+		n["substitutions"].addChild( Gaffer.NameValuePlug( "test", IECore.StringData( "value" ) ) )
 		hashes.append( n["task"].hash() )
 
-		n["environmentVariables"].addMember( "test", IECore.StringData( "value" ) )
+		n["environmentVariables"].addChild( Gaffer.NameValuePlug( "test", IECore.StringData( "value" ) ) )
 		hashes.append( n["task"].hash() )
 
 		# check that all hashes are unique
@@ -114,6 +115,30 @@ class SystemCommandTest( GafferTest.TestCase ) :
 		sequences = IECore.ls( self.temporaryDirectory() )
 		self.assertEqual( len( sequences ), 1 )
 		self.assertEqual( str( sequences[0] ), "systemCommandTest.####.txt 1-10" )
+
+	def testShell( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferDispatch.SystemCommand()
+
+		self.assertEqual( s["n"]["shell"].getValue(), True )
+
+		# The following command is only valid when interpreted as a shell command
+		s["n"]["command"].setValue( "date | wc -l" )
+
+		s["n"].execute()
+
+		s["n"]["shell"].setValue( False )
+
+		with self.assertRaises( subprocess.CalledProcessError ) :
+			s["n"].execute()
+
+	def testEmptyCommand( self ) :
+
+		c = Gaffer.SystemCommand()
+		self.assertEqual( c["command"].getValue(), "" )
+		self.assertEqual( c["task"].hash(), IECore.MurmurHash() )
 
 if __name__ == "__main__":
 	unittest.main()

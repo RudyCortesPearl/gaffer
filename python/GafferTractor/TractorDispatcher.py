@@ -75,10 +75,8 @@ class TractorDispatcher( GafferDispatch.Dispatcher ) :
 		# might just be member data for a subclass of one of those.
 		dispatchData = {}
 		dispatchData["scriptNode"] = rootBatch.preTasks()[0].node().scriptNode()
-		dispatchData["scriptFile"] = os.path.join( self.jobDirectory(), os.path.basename( dispatchData["scriptNode"]["fileName"].getValue() ) or "untitled.gfr" )
+		dispatchData["scriptFile"] = Gaffer.Context.current()["dispatcher:scriptFileName"]
 		dispatchData["batchesToTasks"] = {}
-
-		dispatchData["scriptNode"].serialiseToFile( dispatchData["scriptFile"] )
 
 		# Create a Tractor job and set its basic properties.
 
@@ -145,43 +143,47 @@ class TractorDispatcher( GafferDispatch.Dispatcher ) :
 		# Make a task.
 
 		nodeName = batch.node().relativeName( dispatchData["scriptNode"] )
-		frames = str( IECore.frameListFromList( [ int( x ) for x in batch.frames() ] ) )
-		task = author.Task( title = nodeName + " " + frames )
+		task = author.Task( title = nodeName )
 
-		# Generate a `gaffer execute` command line suitable for
-		# executing the batch.
+		if batch.frames() :
 
-		args = [
-			"gaffer", "execute",
-			"-script", dispatchData["scriptFile"],
-			"-nodes", nodeName,
-			"-frames", frames,
-		]
+			# Generate a `gaffer execute` command line suitable for
+			# executing all the frames in the batch.
 
-		scriptContext = dispatchData["scriptNode"].context()
-		contextArgs = []
-		for entry in [ k for k in batch.context().keys() if k != "frame" and not k.startswith( "ui:" ) ] :
-			if entry not in scriptContext.keys() or batch.context()[entry] != scriptContext[entry] :
-				contextArgs.extend( [ "-" + entry, repr( batch.context()[entry] ) ] )
+			frames = str( IECore.frameListFromList( [ int( x ) for x in batch.frames() ] ) )
+			task.title += " " + frames
 
-		if contextArgs :
-			args.extend( [ "-context" ] + contextArgs )
+			args = [
+				"gaffer", "execute",
+				"-script", dispatchData["scriptFile"],
+				"-nodes", nodeName,
+				"-frames", frames,
+			]
 
-		# Create a Tractor command to execute that command line, and add
-		# it to the task.
+			scriptContext = dispatchData["scriptNode"].context()
+			contextArgs = []
+			for entry in [ k for k in batch.context().keys() if k != "frame" and not k.startswith( "ui:" ) ] :
+				if entry not in scriptContext.keys() or batch.context()[entry] != scriptContext[entry] :
+					contextArgs.extend( [ "-" + entry, IECore.repr( batch.context()[entry] ) ] )
 
-		command = author.Command( argv = args )
-		task.addCommand( command )
+			if contextArgs :
+				args.extend( [ "-context" ] + contextArgs )
 
-		# Apply any custom dispatch settings to the command.
+			# Create a Tractor command to execute that command line, and add
+			# it to the task.
 
-		tractorPlug = batch.node()["dispatcher"].getChild( "tractor" )
-		if tractorPlug is not None :
-			## \todo Remove these manual substitutions once #887 is resolved.
-			# Note though that we will need to use `with batch.context()` to
-			# ensure the substitutions occur in the right context.
-			command.service = batch.context().substitute( tractorPlug["service"].getValue() )
-			command.tags = batch.context().substitute( tractorPlug["tags"].getValue() ).split()
+			command = author.Command( argv = args )
+			task.addCommand( command )
+
+			# Apply any custom dispatch settings to the command.
+
+			tractorPlug = batch.node()["dispatcher"].getChild( "tractor" )
+			if tractorPlug is not None :
+				## \todo Remove these manual substitutions once #887 is resolved.
+				# Note though that we will need to use `with batch.context()` to
+				# ensure the substitutions occur in the right context.
+				command.service = batch.context().substitute( tractorPlug["service"].getValue() )
+				command.tags = batch.context().substitute( tractorPlug["tags"].getValue() ).split()
 
 		# Remember the task for next time, and return it.
 
@@ -194,9 +196,9 @@ class TractorDispatcher( GafferDispatch.Dispatcher ) :
 		if "tractor" in parentPlug :
 			return
 
-		parentPlug["tractor"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		parentPlug["tractor"]["service"] = Gaffer.StringPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		parentPlug["tractor"]["tags"] = Gaffer.StringPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		parentPlug["tractor"] = Gaffer.Plug()
+		parentPlug["tractor"]["service"] = Gaffer.StringPlug()
+		parentPlug["tractor"]["tags"] = Gaffer.StringPlug()
 
 IECore.registerRunTimeTyped( TractorDispatcher, typeName = "GafferTractor::TractorDispatcher" )
 

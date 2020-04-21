@@ -38,11 +38,15 @@
 #ifndef GAFFERUI_STANDARDSTYLE_H
 #define GAFFERUI_STANDARDSTYLE_H
 
-#include "boost/array.hpp"
-
-#include "OpenEXR/ImathColor.h"
-
 #include "GafferUI/Style.h"
+
+#include "IECore/Export.h"
+
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathColor.h"
+IECORE_POP_DEFAULT_VISIBILITY
+
+#include <array>
 
 namespace IECoreGL
 {
@@ -56,42 +60,47 @@ IE_CORE_FORWARDDECLARE( State )
 namespace GafferUI
 {
 
-class StandardStyle : public Style
+class GAFFERUI_API StandardStyle : public Style
 {
 
 	public :
 
 		StandardStyle();
-		virtual ~StandardStyle();
+		~StandardStyle() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::StandardStyle, StandardStyleTypeId, Style );
 
-		virtual void bind( const Style *currentStyle=0 ) const;
+		void bind( const Style *currentStyle=nullptr ) const override;
 
-		virtual void renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const;
-		virtual void renderLine( const IECore::LineSegment3f &line ) const;
-		virtual void renderSolidRectangle( const Imath::Box2f &box ) const;
-		virtual void renderRectangle( const Imath::Box2f &box ) const;
+		void renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const override;
+		void renderLine( const IECore::LineSegment3f &line, float width=0.5, const Imath::Color4f *userColor = nullptr ) const override;
+		void renderSolidRectangle( const Imath::Box2f &box ) const override;
+		void renderRectangle( const Imath::Box2f &box ) const override;
 
-		virtual Imath::Box3f characterBound( TextType textType ) const;
-		virtual Imath::Box3f textBound( TextType type, const std::string &text ) const;
-		virtual void renderText( TextType type, const std::string &text, State state = NormalState ) const;
-		virtual void renderWrappedText( TextType textType, const std::string &text, const Imath::Box2f &bound, State state = NormalState ) const;
+		Imath::Box3f characterBound( TextType textType ) const override;
+		Imath::Box3f textBound( TextType type, const std::string &text ) const override;
+		void renderText( TextType type, const std::string &text, State state = NormalState, const Imath::Color4f *userColor = nullptr ) const override;
+		void renderWrappedText( TextType textType, const std::string &text, const Imath::Box2f &bound, State state = NormalState ) const override;
 
-		virtual void renderFrame( const Imath::Box2f &frame, float borderWidth, State state = NormalState ) const;
-		virtual void renderSelectionBox( const Imath::Box2f &box ) const;
-		virtual void renderHorizontalRule( const Imath::V2f &center, float length, State state = NormalState ) const;
+		void renderFrame( const Imath::Box2f &frame, float borderWidth, State state = NormalState ) const override;
+		void renderSelectionBox( const Imath::Box2f &box ) const override;
+		void renderHorizontalRule( const Imath::V2f &center, float length, State state = NormalState ) const override;
 
-		virtual void renderNodeFrame( const Imath::Box2f &contents, float borderWidth, State state = NormalState, const Imath::Color3f *userColor = NULL ) const;
-		virtual void renderNodule( float radius, State state = NormalState, const Imath::Color3f *userColor = NULL ) const;
-		virtual void renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state = NormalState, const Imath::Color3f *userColor = NULL ) const;
-		virtual Imath::V3f closestPointOnConnection( const Imath::V3f &p, const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent ) const;
+		void renderNodeFrame( const Imath::Box2f &contents, float borderWidth, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const override;
+		void renderNodule( float radius, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const override;
+		void renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const override;
+		Imath::V3f closestPointOnConnection( const Imath::V3f &p, const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent ) const override;
+		void renderAuxiliaryConnection( const Imath::Box2f &srcNodeFrame, const Imath::Box2f &dstNodeFrame, State state ) const override;
+		void renderAuxiliaryConnection( const Imath::V2f &srcPosition, const Imath::V2f &srcTangent, const Imath::V2f &dstPosition, const Imath::V2f &dstTangent, State state ) const override;
 
-		virtual void renderBackdrop( const Imath::Box2f &box, State state = NormalState, const Imath::Color3f *userColor = NULL ) const;
+		void renderBackdrop( const Imath::Box2f &box, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const override;
 
-		virtual void renderTranslateHandle( Axes axes, State state = NormalState ) const;
-		virtual void renderRotateHandle( Axes axes, State state = NormalState ) const;
-		virtual void renderScaleHandle( Axes axes, State state = NormalState ) const;
+		void renderTranslateHandle( Axes axes, State state = NormalState ) const override;
+		void renderRotateHandle( Axes axes, State state = NormalState, const Imath::V3f &highlightVector = Imath::V3f( 0 ) ) const override;
+		void renderScaleHandle( Axes axes, State state = NormalState ) const override;
+
+		void renderAnimationCurve( const Imath::V2f &start, const Imath::V2f &end, const Imath::V2f &startTangent, const Imath::V2f &endTangent, State state, const Imath::Color3f *userColor = nullptr ) const override;
+		void renderAnimationKey( const Imath::V2f &position, State state, float size = 2.0, const Imath::Color3f *userColor = nullptr ) const override;
 
 		enum Color
 		{
@@ -101,9 +110,10 @@ class StandardStyle : public Style
 			ForegroundColor,
 			HighlightColor,
 			ConnectionColor,
+			AuxiliaryConnectionColor,
+			AnimationCurveColor,
 			LastColor
 		};
-
 
 		void setColor( Color c, Imath::Color3f v );
 		const Imath::Color3f &getColor( Color c ) const;
@@ -118,6 +128,7 @@ class StandardStyle : public Style
 
 	private :
 
+		void renderConnectionInternal( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent ) const;
 		static unsigned int connectionDisplayList();
 
 		static IECoreGL::Shader *shader();
@@ -133,9 +144,10 @@ class StandardStyle : public Style
 		static int g_v1Parameter;
 		static int g_t0Parameter;
 		static int g_t1Parameter;
+		static int g_lineWidthParameter;
 
-		Imath::Color3f colorForState( Color c, State s, const Imath::Color3f *userColor = NULL ) const;
-		boost::array<Imath::Color3f, LastColor> m_colors;
+		Imath::Color3f colorForState( Color c, State s, const Imath::Color3f *userColor = nullptr ) const;
+		std::array<Imath::Color3f, LastColor> m_colors;
 
 		IECoreGL::FontPtr m_fonts[LastText];
 		float m_fontScales[LastText];

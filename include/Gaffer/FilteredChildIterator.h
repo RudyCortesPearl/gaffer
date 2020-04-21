@@ -37,9 +37,9 @@
 #ifndef GAFFER_FILTEREDCHILDITERATOR_H
 #define GAFFER_FILTEREDCHILDITERATOR_H
 
-#include "boost/iterator/filter_iterator.hpp"
-
 #include "Gaffer/GraphComponent.h"
+
+#include "boost/iterator/filter_iterator.hpp"
 
 namespace Gaffer
 {
@@ -122,6 +122,35 @@ class FilteredChildIterator : public boost::filter_iterator<Predicate, GraphComp
 		{
 			return BaseIterator::base() == this->end();
 		}
+
+};
+
+template<typename Predicate>
+class FilteredChildRange
+{
+
+	public :
+
+		FilteredChildRange( const GraphComponent &parent )
+			:	m_parent( parent )
+		{
+		}
+
+		using Iterator = FilteredChildIterator<Predicate>;
+
+		Iterator begin() const
+		{
+			return Iterator( m_parent.children().begin(), m_parent.children().end() );
+		}
+
+		Iterator end() const
+		{
+			return Iterator( m_parent.children().end(), m_parent.children().end() );
+		}
+
+	private :
+
+		const GraphComponent &m_parent;
 
 };
 

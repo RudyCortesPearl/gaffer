@@ -35,13 +35,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "Gaffer/Path.h"
+
+#include "Gaffer/PathFilter.h"
 
 #include "IECore/SimpleTypedData.h"
+#include "IECore/StringAlgo.h"
 
-#include "Gaffer/StringAlgo.h"
-#include "Gaffer/Path.h"
-#include "Gaffer/PathFilter.h"
+#include "boost/bind.hpp"
 
 using namespace std;
 using namespace IECore;
@@ -53,20 +54,20 @@ static InternedString g_namePropertyName( "name" );
 static InternedString g_fullNamePropertyName( "fullName" );
 
 Path::Path( PathFilterPtr filter )
-	:	m_pathChangedSignal( NULL )
+	:	m_pathChangedSignal( nullptr )
 {
 	setFilter( filter );
 }
 
 Path::Path( const std::string &path, PathFilterPtr filter )
-	:	m_pathChangedSignal( NULL )
+	:	m_pathChangedSignal( nullptr )
 {
 	setFromString( path );
 	setFilter( filter );
 }
 
 Path::Path( const Names &names, const IECore::InternedString &root, PathFilterPtr filter )
-	:	m_root( root ), m_names( names ), m_pathChangedSignal( NULL )
+	:	m_root( root ), m_names( names ), m_pathChangedSignal( nullptr )
 {
 	for( Names::const_iterator it = m_names.begin(), eIt = m_names.end(); it != eIt; ++it )
 	{
@@ -94,7 +95,7 @@ const IECore::InternedString &Path::root() const
 	return m_root;
 }
 
-const bool Path::isEmpty() const
+bool Path::isEmpty() const
 {
 	return m_names.empty() && m_root.string().empty();
 }
@@ -132,14 +133,14 @@ IECore::ConstRunTimeTypedPtr Path::property( const IECore::InternedString &name 
 	{
 		return new StringData( this->string() );
 	}
-	return NULL;
+	return nullptr;
 }
 
 PathPtr Path::parent() const
 {
 	if( m_names.empty() )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	PathPtr result = copy();

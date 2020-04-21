@@ -1,4 +1,13 @@
+<!-- !NO_SCROLLSPY -->
+
 Appendices
 ==========
 
-- [License](License/index.md)
+<!-- TOC -->
+
+```eval_rst
+.. toctree::
+    :titlesonly:
+
+    License/index.md
+```

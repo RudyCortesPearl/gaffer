@@ -47,15 +47,15 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 
 /// The Dot node has no computational purpose - it is merely a pass-through,
 /// used as an organisational tool in the graph.
-class Dot : public DependencyNode
+class GAFFER_API Dot : public DependencyNode
 {
 
 	public :
 
 		Dot( const std::string &name=defaultName<Dot>() );
-		virtual ~Dot();
+		~Dot() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Dot, DotTypeId, DependencyNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Dot, DotTypeId, DependencyNode );
 
 		/// Because plugs are strongly typed in Gaffer, a
 		/// Dot cannot be set up in advance to work with
@@ -69,14 +69,14 @@ class Dot : public DependencyNode
 		/// \undoable
 		void setup( const Plug *plug );
 
-		template<typename T>
+		template<typename T=Plug>
 		T *inPlug();
-		template<typename T>
+		template<typename T=Plug>
 		const T *inPlug() const;
 
-		template<typename T>
+		template<typename T=Plug>
 		T *outPlug();
-		template<typename T>
+		template<typename T=Plug>
 		const T *outPlug() const;
 
 		enum LabelType
@@ -93,9 +93,9 @@ class Dot : public DependencyNode
 		StringPlug *labelPlug();
 		const StringPlug *labelPlug() const;
 
-		virtual void affects( const Plug *input, AffectedPlugsContainer &outputs ) const;
-		virtual Plug *correspondingInput( const Plug *output );
-		virtual const Plug *correspondingInput( const Plug *output ) const;
+		void affects( const Plug *input, AffectedPlugsContainer &outputs ) const override;
+		Plug *correspondingInput( const Plug *output ) override;
+		const Plug *correspondingInput( const Plug *output ) const override;
 
 	private :
 

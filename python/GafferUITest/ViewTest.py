@@ -45,33 +45,45 @@ import GafferUITest
 
 class ViewTest( GafferUITest.TestCase ) :
 
+	class MyView( GafferUI.View ) :
+
+		def __init__( self, viewedPlug = None ) :
+
+			GafferUI.View.__init__( self, "MyView", Gaffer.IntPlug( "in" ) )
+
+			self["in"].setInput( viewedPlug )
+
 	def testFactory( self ) :
 
-		sphere = GafferTest.SphereNode()
-		self.assertTrue( GafferUI.View.create( sphere["out"] ) is None )
+		node = GafferTest.AddNode()
+		self.assertTrue( GafferUI.View.create( node["sum"] ) is None )
 
 		# check that we can make our own view and register it for the node
 
-		class MyView( GafferUI.View ) :
+		GafferUI.View.registerView( GafferTest.AddNode, "sum", self.MyView )
 
-			def __init__( self, viewedPlug = None ) :
-
-				GafferUI.View.__init__( self, "MyView", Gaffer.ObjectPlug( "in", defaultValue = IECore.NullObject.defaultNullObject() ) )
-
-				self["in"].setInput( viewedPlug )
-
-		GafferUI.View.registerView( GafferTest.SphereNode, "out", MyView )
-
-		view = GafferUI.View.create( sphere["out"] )
-		self.assertTrue( isinstance( view, MyView ) )
-		self.assertTrue( view["in"].getInput().isSame( sphere["out"] ) )
+		view = GafferUI.View.create( node["sum"] )
+		self.assertTrue( isinstance( view, self.MyView ) )
+		self.assertTrue( view["in"].getInput().isSame( node["sum"] ) )
 
 		# and check that that registration leaves other nodes alone
 
 		n = Gaffer.Node()
-		n["out"] = Gaffer.ObjectPlug( direction = Gaffer.Plug.Direction.Out, defaultValue = IECore.NullObject.defaultNullObject() )
+		n["sum"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
 
-		self.assertTrue( GafferUI.View.create( n["out"] ) is None )
+		self.assertTrue( GafferUI.View.create( n["sum"] ) is None )
+
+	def testEditScope( self ) :
+
+		view = self.MyView()
+
+		addNode = GafferTest.AddNode()
+		editScope = Gaffer.EditScope()
+		editScope.setup( view["in"] )
+
+		self.assertEqual( view.editScope(), None )
+		view["editScope"].setInput( editScope["out"] )
+		self.assertEqual( view.editScope(), editScope )
 
 if __name__ == "__main__":
 	unittest.main()

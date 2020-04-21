@@ -37,22 +37,22 @@
 #ifndef GAFFERSCENE_TRANSFORM_H
 #define GAFFERSCENE_TRANSFORM_H
 
-#include "Gaffer/TransformPlug.h"
-
 #include "GafferScene/SceneElementProcessor.h"
+
+#include "Gaffer/TransformPlug.h"
 
 namespace GafferScene
 {
 
-class Transform : public SceneElementProcessor
+class GAFFERSCENE_API Transform : public SceneElementProcessor
 {
 
 	public :
 
 		Transform( const std::string &name=defaultName<Transform>() );
-		virtual ~Transform();
+		~Transform() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Transform, TransformTypeId, SceneElementProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Transform, TransformTypeId, SceneElementProcessor );
 
 		enum Space
 		{
@@ -69,13 +69,13 @@ class Transform : public SceneElementProcessor
 		Gaffer::TransformPlug *transformPlug();
 		const Gaffer::TransformPlug *transformPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual bool processesTransform() const;
-		virtual void hashProcessedTransform( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::M44f computeProcessedTransform( const ScenePath &path, const Gaffer::Context *context, const Imath::M44f &inputTransform ) const;
+		bool processesTransform() const override;
+		void hashProcessedTransform( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::M44f computeProcessedTransform( const ScenePath &path, const Gaffer::Context *context, const Imath::M44f &inputTransform ) const override;
 
 	private :
 

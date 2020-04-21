@@ -256,15 +256,15 @@ class NodeTest( GafferTest.TestCase ) :
 		cs = GafferTest.CapturingSlot( n.plugFlagsChangedSignal() )
 		self.assertEqual( len( cs ), 0 )
 
-		n["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		n["p"].setFlags( Gaffer.Plug.Flags.Dynamic, True )
 		self.assertEqual( len( cs ), 1 )
 		self.failUnless( cs[0][0].isSame( n["p"] ) )
 
 		# second time should have no effect because they're the same
-		n["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		n["p"].setFlags( Gaffer.Plug.Flags.Dynamic, True )
 		self.assertEqual( len( cs ), 1 )
 
-		n["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, False )
+		n["p"].setFlags( Gaffer.Plug.Flags.Dynamic, False )
 		self.assertEqual( len( cs ), 2 )
 		self.failUnless( cs[1][0].isSame( n["p"] ) )
 
@@ -349,6 +349,64 @@ class NodeTest( GafferTest.TestCase ) :
 		s.addChild( n )
 		assertConnections()
 
+	def testRanges( self ) :
+
+		n = Gaffer.Node()
+		n["c1"] = Gaffer.Node()
+		n["c2"] = GafferTest.AddNode()
+		n["c2"]["gc1"] = Gaffer.Node()
+		n["c3"] = Gaffer.Node()
+		n["c3"]["gc2"] = GafferTest.AddNode()
+		n["c3"]["gc3"] = GafferTest.AddNode()
+
+		self.assertEqual(
+			list( Gaffer.Node.Range( n ) ),
+			[ n["c1"], n["c2"], n["c3"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Node.RecursiveRange( n ) ),
+			[ n["c1"], n["c2"], n["c2"]["gc1"], n["c3"], n["c3"]["gc2"], n["c3"]["gc3"] ],
+		)
+
+		self.assertEqual(
+			list( GafferTest.AddNode.Range( n ) ),
+			[ n["c2"] ],
+		)
+
+		self.assertEqual(
+			list( GafferTest.AddNode.RecursiveRange( n ) ),
+			[ n["c2"], n["c3"]["gc2"], n["c3"]["gc3"] ],
+		)
+
+	def testRangesForPythonTypes( self ) :
+
+		n = Gaffer.Node()
+		n["a"] = GafferTest.AddNode()
+		n["b"] = Gaffer.Node()
+		n["c"] = GafferTest.AddNode()
+		n["d"] = Gaffer.Node()
+		n["d"]["e"] = GafferTest.AddNode()
+
+		self.assertEqual(
+			list( Gaffer.Node.Range( n ) ),
+			[ n["a"], n["b"], n["c"], n["d"] ],
+		)
+
+		self.assertEqual(
+			list( GafferTest.AddNode.Range( n ) ),
+			[ n["a"], n["c"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Node.RecursiveRange( n ) ),
+			[ n["a"], n["b"], n["c"], n["d"], n["d"]["e"] ],
+		)
+
+		self.assertEqual(
+			list( GafferTest.AddNode.RecursiveRange( n ) ),
+			[ n["a"], n["c"], n["d"]["e"] ],
+		)
 
 if __name__ == "__main__" :
 	unittest.main()

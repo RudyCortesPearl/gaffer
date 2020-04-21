@@ -37,16 +37,16 @@
 #ifndef IECORESCENEPREVIEW_RENDERER_H
 #define IECORESCENEPREVIEW_RENDERER_H
 
+#include "IECoreScene/Camera.h"
+#include "IECoreScene/Output.h"
+
 #include "IECore/CompoundObject.h"
-#include "IECore/Display.h"
-#include "IECore/Camera.h"
+
+#include "boost/unordered_set.hpp"
 
 namespace IECoreScenePreview
 {
 
-/// \todo Derive from RunTimeTyped - we're just avoiding doing that
-/// right now so we don't have to shuffle TypeIds between Gaffer and Cortex.
-///
 /// \todo Improve the API, particularly in terms of ownership
 /// semantics and the python bindings :
 ///
@@ -69,7 +69,7 @@ namespace IECoreScenePreview
 /// - Change the python bindings so that the lifetime of the object
 ///   handles and the renderer are tied together, or have the object
 ///   handles keep the renderer alive on the C++ side anyway.
-class Renderer : public IECore::RefCounted
+class IECORESCENE_API Renderer : public IECore::RefCounted
 {
 
 	public :
@@ -92,11 +92,11 @@ class Renderer : public IECore::RefCounted
 		/// Filename is only used if the renderType is SceneDescription.
 		static Ptr create( const IECore::InternedString &type, RenderType renderType = Batch, const std::string &fileName = "" );
 
-		/// \todo Rename Display->Output in Cortex.
-		typedef IECore::Display Output;
+		/// Returns the name of this renderer, for instance "OpenGL" or "Arnold".
+		virtual IECore::InternedString name() const = 0;
 
 		/// Sets a global option for the render. In interactive renders an option may
-		/// be unset by passing a NULL value.
+		/// be unset by passing a null value.
 		///
 		/// Standard Options
 		/// ----------------
@@ -104,10 +104,10 @@ class Renderer : public IECore::RefCounted
 		/// "camera", StringData, "", The name of the primary render camera.
 		/// "frame", IntData, 1, The frame being rendered.
 		/// "sampleMotion", BoolData, true, Whether to actually render motion blur.  Disable to render with motion blocks set up but no real blur.
-		virtual void option( const IECore::InternedString &name, const IECore::Data *value ) = 0;
+		virtual void option( const IECore::InternedString &name, const IECore::Object *value ) = 0;
 		/// Adds an output image to be rendered, In interactive renders an output may be
-		/// removed by passing NULL as the value.
-		virtual void output( const IECore::InternedString &name, const Output *output ) = 0;
+		/// removed by passing nullptr as the value.
+		virtual void output( const IECore::InternedString &name, const IECoreScene::Output *output ) = 0;
 
 		IE_CORE_FORWARDDECLARE( AttributesInterface );
 
@@ -123,7 +123,7 @@ class Renderer : public IECore::RefCounted
 
 			protected :
 
-				virtual ~AttributesInterface();
+				~AttributesInterface() override;
 
 		};
 
@@ -136,8 +136,8 @@ class Renderer : public IECore::RefCounted
 		/// -------------------
 		///
 		/// "doubleSided", BoolData, true
-		/// "surface", ObjectVector of IECore::Shaders
-		/// "light", ObjectVector of IECore::Shaders
+		/// "surface", IECoreScene::ShaderNetwork
+		/// "light", IECoreScene::ShaderNetwork
 		/// "sets", InternedStringVectorData of set names
 		/// "linkedLights", StringVectorData of light names
 		///
@@ -148,6 +148,9 @@ class Renderer : public IECore::RefCounted
 		virtual AttributesInterfacePtr attributes( const IECore::CompoundObject *attributes ) = 0;
 
 		IE_CORE_FORWARDDECLARE( ObjectInterface );
+		using ObjectSet = boost::unordered_set<ObjectInterfacePtr>;
+		using ObjectSetPtr = std::shared_ptr<ObjectSet>;
+		using ConstObjectSetPtr = std::shared_ptr<const ObjectSet>;
 
 		/// A handle to an object in the renderer. The reference counting semantics of an
 		/// ObjectInterfacePtr are as follows :
@@ -185,10 +188,18 @@ class Renderer : public IECore::RefCounted
 				/// such as Arnold where the attributes are not orthogonal to the
 				/// geometric representation.
 				virtual bool attributes( const AttributesInterface *attributes ) = 0;
+				/// Declares links between this object and others. Standard link
+				/// types are :
+				///
+				/// - "lights" : specifies the set of lights that should illuminate
+				///   an object.
+				/// - "lightFilters" : specifies the set of light filters that should
+				///   be applied to a light.
+				virtual void link( const IECore::InternedString &type, const ConstObjectSetPtr &objects ) = 0;
 
 			protected :
 
-				virtual ~ObjectInterface();
+				~ObjectInterface() override;
 
 		};
 
@@ -237,14 +248,18 @@ class Renderer : public IECore::RefCounted
 		/// "shutter", V2fData
 		/// The time interval for which the shutter is open - this is used in conjunction with the
 		/// times passed to motionBegin() to specify motion blur. Defaults to 0,0 if unspecified.
-		virtual ObjectInterfacePtr camera( const std::string &name, const IECore::Camera *camera, const AttributesInterface *attributes ) = 0;
+		virtual ObjectInterfacePtr camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes ) = 0;
 
 		/// Adds a named light with the initially supplied set of attributes, which are expected
-		/// to provide at least a light shader. Object may be non-NULL to specify arbitrary geometry
-		/// for a geometric area light, or NULL to indicate that the light shader specifies its own
+		/// to provide at least a light shader. Object may be non-null to specify arbitrary geometry
+		/// for a geometric area light, or null to indicate that the light shader specifies its own
 		/// geometry internally (or is non-geometric in nature).
 		/// \todo Should object be typed as Primitive?
 		virtual ObjectInterfacePtr light( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) = 0;
+
+		/// Adds a named light filter with the initially supplied set of attributes, which are expected
+		/// to provide at least a light filter shader.
+		virtual ObjectInterfacePtr lightFilter( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) = 0;
 
 		/// Adds a named object to the render with the initally supplied set of attributes.
 		/// The attributes may subsequently be edited in interactive mode using
@@ -268,14 +283,16 @@ class Renderer : public IECore::RefCounted
 		/// that edits may be made.
 		virtual void pause() = 0;
 
+		/// Performs an arbitrary renderer-specific action.
+		virtual IECore::DataPtr command( const IECore::InternedString name, const IECore::CompoundDataMap &parameters = IECore::CompoundDataMap() );
+
 	protected :
 
 		Renderer();
-		virtual ~Renderer();
+		~Renderer() override;
 
 		/// Construct a static instance of this to register a
 		/// renderer implementation.
-		/// \todo Derive this from RunTimeTyped::TypeDescription.
 		template<class T>
 		struct TypeDescription
 		{

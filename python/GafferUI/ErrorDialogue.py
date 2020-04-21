@@ -36,6 +36,7 @@
 
 import sys
 import traceback
+import imath
 
 import IECore
 
@@ -63,7 +64,7 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 				}
 			)
 
-			GafferUI.Spacer( IECore.V2i( 250, 1 ) )
+			GafferUI.Spacer( imath.V2i( 250, 1 ) )
 
 			if message is not None :
 				GafferUI.Label(
@@ -144,7 +145,12 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 		if exceptionInfo[0] is None :
 			return
 
-		message = str( exceptionInfo[1] )
+		excType, excValue, excTrace = exceptionInfo
+		if excValue and excValue.message:
+			message = excValue.message.strip( "\n" ).split( "\n" )[-1]
+		else:
+			message = str( excType.__name__ )
+
 		if messagePrefix :
 			message = messagePrefix + message
 

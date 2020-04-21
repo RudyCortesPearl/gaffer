@@ -38,38 +38,81 @@
 #ifndef GAFFERSCENE_CAMERA_H
 #define GAFFERSCENE_CAMERA_H
 
+#include "Gaffer/CompoundDataPlug.h"
 #include "GafferScene/ObjectSource.h"
 
 namespace GafferScene
 {
 
-class Camera : public ObjectSource
+class GAFFERSCENE_API Camera : public ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Camera, CameraTypeId, ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Camera, CameraTypeId, ObjectSource );
 
 		Camera( const std::string &name=defaultName<Camera>() );
-		virtual ~Camera();
+		~Camera() override;
 
 		Gaffer::StringPlug *projectionPlug();
 		const Gaffer::StringPlug *projectionPlug() const;
 
+		enum PerspectiveMode
+		{
+			FieldOfView,
+			ApertureFocalLength
+		};
+
+		Gaffer::IntPlug *perspectiveModePlug();
+		const Gaffer::IntPlug *perspectiveModePlug() const;
+
 		Gaffer::FloatPlug *fieldOfViewPlug();
 		const Gaffer::FloatPlug *fieldOfViewPlug() const;
+
+		Gaffer::FloatPlug *apertureAspectRatioPlug();
+		const Gaffer::FloatPlug *apertureAspectRatioPlug() const;
+
+		Gaffer::V2fPlug *aperturePlug();
+		const Gaffer::V2fPlug *aperturePlug() const;
+
+		Gaffer::FloatPlug *focalLengthPlug();
+		const Gaffer::FloatPlug *focalLengthPlug() const;
+
+		Gaffer::V2fPlug *orthographicAperturePlug();
+		const Gaffer::V2fPlug *orthographicAperturePlug() const;
+
+		Gaffer::V2fPlug *apertureOffsetPlug();
+		const Gaffer::V2fPlug *apertureOffsetPlug() const;
+
+		Gaffer::FloatPlug *fStopPlug();
+		const Gaffer::FloatPlug *fStopPlug() const;
+
+		Gaffer::FloatPlug *focalLengthWorldScalePlug();
+		const Gaffer::FloatPlug *focalLengthWorldScalePlug() const;
+
+		Gaffer::FloatPlug *focusDistancePlug();
+		const Gaffer::FloatPlug *focusDistancePlug() const;
 
 		Gaffer::V2fPlug *clippingPlanesPlug();
 		const Gaffer::V2fPlug *clippingPlanesPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::CompoundDataPlug *renderSettingOverridesPlug();
+		const Gaffer::CompoundDataPlug *renderSettingOverridesPlug() const;
+
+		Gaffer::CompoundDataPlug *visualiserAttributesPlug();
+		const Gaffer::CompoundDataPlug *visualiserAttributesPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
-		virtual IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const;
+		void hashAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
+
+		IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const override;
 
 	private :
 

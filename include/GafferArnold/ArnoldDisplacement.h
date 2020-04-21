@@ -37,10 +37,11 @@
 #ifndef GAFFERARNOLD_ARNOLDDISPLACEMENT_H
 #define GAFFERARNOLD_ARNOLDDISPLACEMENT_H
 
+#include "GafferArnold/Export.h"
+#include "GafferArnold/TypeIds.h"
+
 #include "GafferScene/Shader.h"
 #include "GafferScene/ShaderPlug.h"
-
-#include "GafferArnold/TypeIds.h"
 
 namespace GafferArnold
 {
@@ -51,15 +52,15 @@ namespace GafferArnold
 /// base class and renaming the current Shader class to StandardShader,
 /// or defining an even more general Assignable base class which both
 /// Shader and ArnoldDisplacement can inherit from.
-class ArnoldDisplacement : public GafferScene::Shader
+class GAFFERARNOLD_API ArnoldDisplacement : public GafferScene::Shader
 {
 
 	public :
 
 		ArnoldDisplacement( const std::string &name=defaultName<ArnoldDisplacement>() );
-		virtual ~ArnoldDisplacement();
+		~ArnoldDisplacement() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferArnold::ArnoldDisplacement, ArnoldDisplacementTypeId, GafferScene::Shader );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldDisplacement, ArnoldDisplacementTypeId, GafferScene::Shader );
 
 		GafferScene::ShaderPlug *mapPlug();
 		const GafferScene::ShaderPlug *mapPlug() const;
@@ -79,14 +80,14 @@ class ArnoldDisplacement : public GafferScene::Shader
 		Gaffer::Plug *outPlug();
 		const Gaffer::Plug *outPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void attributesHash( const Gaffer::Plug *output, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr attributes( const Gaffer::Plug *output ) const;
+		void attributesHash( const Gaffer::Plug *output, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr attributes( const Gaffer::Plug *output ) const override;
 
-		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
+		bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const override;
 
 	private :
 

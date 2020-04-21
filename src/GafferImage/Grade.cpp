@@ -34,21 +34,35 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-
 #include "GafferImage/Grade.h"
+
 #include "GafferImage/ImageAlgo.h"
+
+#include "Gaffer/Context.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( Grade );
+namespace
+{
+	struct GradeParametersScope : public Gaffer::Context::EditableScope
+	{
+		GradeParametersScope( const Gaffer::Context *context )
+			:   EditableScope( context )
+		{
+			remove( GafferImage::ImagePlug::tileOriginContextName );
+		}
+	};
+
+}
+
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Grade );
 
 size_t Grade::g_firstPlugIndex = 0;
 
 Grade::Grade( const std::string &name )
-	:	ChannelDataProcessor( name )
+	:	ChannelDataProcessor( name, true /* hasUnpremultPlug */ )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new Color4fPlug( "blackPoint" ) );
@@ -176,7 +190,7 @@ bool Grade::channelEnabled( const std::string &channel ) const
 		return false;
 	}
 
-	return gamma != 1.0f || a != 1.0f || b != 0.0f;
+	return gamma != 1.0f || a != 1.0f || b != 0.0f || blackClampPlug()->getValue() || whiteClampPlug()->getValue();
 }
 
 void Grade::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
@@ -220,7 +234,8 @@ void Grade::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer:
 
 	const std::string &channelName = context->get<std::string>( ImagePlug::channelNameContextName );
 	const int channelIndex = std::max( 0, ImageAlgo::colorIndex( channelName ) );
-	
+
+	GradeParametersScope s( context );
 	blackPointPlug()->getChild( channelIndex )->hash( h );
 	whitePointPlug()->getChild( channelIndex )->hash( h );
 	liftPlug()->getChild( channelIndex )->hash( h );
@@ -234,19 +249,20 @@ void Grade::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer:
 
 void Grade::processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channel, FloatVectorDataPtr outData ) const
 {
-	// Calculate the valid data window that we are to merge.
-	const int dataWidth = ImagePlug::tileSize()*ImagePlug::tileSize();
-
 	// Do some pre-processing.
 	float A, B, gamma;
-	parameters( std::max( 0, ImageAlgo::colorIndex( channel ) ), A, B, gamma );
+	bool whiteClamp, blackClamp;
+	{
+		GradeParametersScope s( context );
+		parameters( std::max( 0, ImageAlgo::colorIndex( channel ) ), A, B, gamma );
+		whiteClamp = whiteClampPlug()->getValue();
+		blackClamp = blackClampPlug()->getValue();
+	}
 	const float invGamma = 1. / gamma;
-	const bool whiteClamp = whiteClampPlug()->getValue();
-	const bool blackClamp = blackClampPlug()->getValue();
 
 	// Get some useful pointers.
 	float *outPtr = &(outData->writable()[0]);
-	const float *END = outPtr + dataWidth;
+	const float *END = outPtr + outData->writable().size();
 
 	while (outPtr != END)
 	{

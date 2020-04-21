@@ -37,11 +37,11 @@
 #ifndef GAFFERIMAGE_MIX_H
 #define GAFFERIMAGE_MIX_H
 
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/ImagePlug.h"
 #include "GafferImage/ImageProcessor.h"
+
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
 
 namespace GafferImage
 {
@@ -49,15 +49,15 @@ namespace GafferImage
 /// A node for blending between two images, based on a mask.
 /// Expands the dataWindow to the union of the two input dataWindows; create a union of
 /// channelNames from the connected inputs, and will blend the channelData according to the mask
-class Mix : public ImageProcessor
+class GAFFERIMAGE_API Mix : public ImageProcessor
 {
 
 	public :
 
 		Mix( const std::string &name=defaultName<Mix>() );
-		virtual ~Mix();
+		~Mix() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Mix, MixTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Mix, MixTypeId, ImageProcessor );
 
 		GafferImage::ImagePlug *maskPlug();
 		const GafferImage::ImagePlug *maskPlug() const;
@@ -69,21 +69,25 @@ class Mix : public ImageProcessor
 		const Gaffer::StringPlug *maskChannelPlug() const;
 
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
 		/// Reimplemented to hash the connected input plugs
-		virtual void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+
 
 		/// Sets the data window to the union of all of the data windows.
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 		/// Creates a union of all of the connected inputs channelNames.
-		virtual IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const;
-
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
+		bool computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const override;
+		IECore::ConstIntVectorDataPtr computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 	private :
 

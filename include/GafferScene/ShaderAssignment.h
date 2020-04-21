@@ -38,32 +38,30 @@
 #ifndef GAFFERSCENE_SHADERASSIGNMENT_H
 #define GAFFERSCENE_SHADERASSIGNMENT_H
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "GafferScene/AttributeProcessor.h"
 #include "GafferScene/ShaderPlug.h"
 
 namespace GafferScene
 {
 
-class ShaderAssignment : public SceneElementProcessor
+class GAFFERSCENE_API ShaderAssignment : public AttributeProcessor
 {
 
 	public :
 
 		ShaderAssignment( const std::string &name=defaultName<ShaderAssignment>() );
-		virtual ~ShaderAssignment();
+		~ShaderAssignment() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ShaderAssignment, ShaderAssignmentTypeId, SceneElementProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ShaderAssignment, ShaderAssignmentTypeId, AttributeProcessor );
 
 		GafferScene::ShaderPlug *shaderPlug();
 		const GafferScene::ShaderPlug *shaderPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
-
 	protected :
 
-		virtual bool processesAttributes() const;
-		virtual void hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const;
+		bool affectsProcessedAttributes( const Gaffer::Plug *input ) const override;
+		void hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, const IECore::CompoundObject *inputAttributes ) const override;
 
 	private :
 

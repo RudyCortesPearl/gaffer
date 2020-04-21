@@ -38,23 +38,29 @@
 #ifndef GAFFER_SET_H
 #define GAFFER_SET_H
 
+#include "Gaffer/Export.h"
 #include "Gaffer/Node.h"
 
 #include "IECore/RunTimeTyped.h"
 
+#include "boost/iterator/iterator_facade.hpp"
+
 namespace Gaffer
 {
+
+template<typename ContainerType, typename ValueType>
+class SetIterator;
 
 /// Set provides an abstract base class for an arbitrary collection
 /// of IECore::RunTimeTyped objects.
 /// \todo Provide an iterator wrapping member().
-class Set : public IECore::RunTimeTyped, public boost::signals::trackable
+class GAFFER_API Set : public IECore::RunTimeTyped, public boost::signals::trackable
 {
 
 	public :
 
 		Set();
-		virtual ~Set();
+		~Set() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Set, SetTypeId, IECore::RunTimeTyped );
 
@@ -80,6 +86,14 @@ class Set : public IECore::RunTimeTyped, public boost::signals::trackable
 		/// the responsibility of derived classes to emit this when appropriate.
 		MemberSignal &memberRemovedSignal();
 
+		typedef SetIterator<Set, Member> Iterator;
+		typedef SetIterator<Set const, Member const> ConstIterator;
+
+		Iterator begin();
+		ConstIterator begin() const;
+		Iterator end();
+		ConstIterator end() const;
+
 	private :
 
 		MemberSignal m_memberAddedSignal;
@@ -88,6 +102,59 @@ class Set : public IECore::RunTimeTyped, public boost::signals::trackable
 };
 
 IE_CORE_DECLAREPTR( Set );
+
+template<typename ContainerType, typename ValueType>
+class SetIterator : public boost::iterator_facade<SetIterator<ContainerType, ValueType>, ValueType, boost::random_access_traversal_tag, ValueType&, int64_t>
+{
+
+	public :
+		SetIterator( ContainerType* set )
+			:	SetIterator( set, 0 )
+		{
+		}
+
+		SetIterator( ContainerType* set, size_t index )
+			:	m_set( set ), m_index( index )
+		{
+		}
+
+	private :
+
+		friend class boost::iterator_core_access;
+
+		void increment()
+		{
+			++m_index;
+		}
+
+		void decrement()
+		{
+			--m_index;
+		}
+
+		void advance( int64_t n )
+		{
+			m_index += n;
+		}
+
+		int64_t distance_to( SetIterator const &other ) const
+		{
+			return int64_t( m_index ) - int64_t( other.m_index );
+		}
+
+		bool equal( SetIterator const &other ) const
+		{
+			return m_index == other.m_index;
+		}
+
+		ValueType& dereference() const
+		{
+			return *(m_set->member( m_index ));
+		}
+
+		ContainerType* const m_set;
+		size_t m_index;
+};
 
 } // namespace Gaffer
 

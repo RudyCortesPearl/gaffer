@@ -37,177 +37,54 @@
 
 #include "boost/python.hpp"
 
-#include "GafferBindings/ComputeNodeBinding.h"
-#include "GafferDispatchBindings/TaskNodeBinding.h"
-
-#include "GafferScene/SceneProcedural.h"
-#include "GafferScene/PrimitiveVariableProcessor.h"
-#include "GafferScene/DeletePrimitiveVariables.h"
-#include "GafferScene/DeleteSets.h"
-#include "GafferScene/MeshType.h"
-#include "GafferScene/Plane.h"
-#include "GafferScene/Seeds.h"
-#include "GafferScene/Instancer.h"
-#include "GafferScene/ObjectToScene.h"
-#include "GafferScene/Camera.h"
-#include "GafferScene/GlobalsProcessor.h"
-#include "GafferScene/Shader.h"
-#include "GafferScene/AlembicSource.h"
-#include "GafferScene/SubTree.h"
-#include "GafferScene/SceneWriter.h"
-#include "GafferScene/SceneReader.h"
-#include "GafferScene/Light.h"
-#include "GafferScene/OpenGLShader.h"
-#include "GafferScene/Prune.h"
-#include "GafferScene/Isolate.h"
-#include "GafferScene/Cube.h"
-#include "GafferScene/Sphere.h"
-#include "GafferScene/Text.h"
-#include "GafferScene/MapProjection.h"
-#include "GafferScene/MapOffset.h"
-
-#include "GafferSceneBindings/ScenePlugBinding.h"
-#include "GafferSceneBindings/ShaderPlugBinding.h"
-#include "GafferSceneBindings/SceneNodeBinding.h"
-#include "GafferSceneBindings/SceneProcessorBinding.h"
-#include "GafferSceneBindings/FilteredSceneProcessorBinding.h"
-#include "GafferSceneBindings/OutputsBinding.h"
-#include "GafferSceneBindings/PathMatcherBinding.h"
-#include "GafferSceneBindings/SceneProceduralBinding.h"
-#include "GafferSceneBindings/PathMatcherDataBinding.h"
-#include "GafferSceneBindings/RenderBinding.h"
-#include "GafferSceneBindings/ShaderBinding.h"
-#include "GafferSceneBindings/ConstraintBinding.h"
-#include "GafferSceneBindings/AttributesBinding.h"
-#include "GafferSceneBindings/FilterBinding.h"
-#include "GafferSceneBindings/MixinBinding.h"
-#include "GafferSceneBindings/TransformBinding.h"
-#include "GafferSceneBindings/ParentBinding.h"
-#include "GafferSceneBindings/SceneReaderBinding.h"
-#include "GafferSceneBindings/PrimitiveVariablesBinding.h"
-#include "GafferSceneBindings/DuplicateBinding.h"
-#include "GafferSceneBindings/GridBinding.h"
-#include "GafferSceneBindings/OptionsBinding.h"
-#include "GafferSceneBindings/SetBinding.h"
-#include "GafferSceneBindings/FreezeTransformBinding.h"
-#include "GafferSceneBindings/SceneAlgoBinding.h"
-#include "GafferSceneBindings/CoordinateSystemBinding.h"
-#include "GafferSceneBindings/DeleteGlobalsBinding.h"
-#include "GafferSceneBindings/ExternalProceduralBinding.h"
-#include "GafferSceneBindings/GroupBinding.h"
-#include "GafferSceneBindings/ScenePathBinding.h"
-#include "GafferSceneBindings/SceneFilterPathFilterBinding.h"
-#include "GafferSceneBindings/ClippingPlaneBinding.h"
-#include "GafferSceneBindings/FilterSwitchBinding.h"
-#include "GafferSceneBindings/PointsTypeBinding.h"
-#include "GafferSceneBindings/ParametersBinding.h"
-#include "GafferSceneBindings/PathMatcherDataPlugBinding.h"
-#include "GafferSceneBindings/MeshToPointsBinding.h"
-#include "GafferSceneBindings/FilterPlugBinding.h"
-#include "GafferSceneBindings/LightTweaksBinding.h"
-#include "GafferSceneBindings/LightToCameraBinding.h"
-#include "GafferSceneBindings/FilterResultsBinding.h"
-#include "GafferSceneBindings/RendererAlgoBinding.h"
-#include "GafferSceneBindings/SetAlgoBinding.h"
-#include "GafferSceneBindings/EvaluateLightLinksBinding.h"
-#include "GafferSceneBindings/MeshTangentsBinding.h"
-#include "GafferSceneBindings/DeleteFacesBinding.h"
-#include "GafferSceneBindings/DeleteCurvesBinding.h"
-#include "GafferSceneBindings/DeletePointsBinding.h"
-#include "GafferSceneBindings/CollectScenesBinding.h"
+#include "AttributesBinding.h"
+#include "CoreBinding.h"
+#include "EditScopeAlgoBinding.h"
+#include "FilterBinding.h"
+#include "GlobalsBinding.h"
+#include "HierarchyBinding.h"
+#include "IECoreGLPreviewBinding.h"
+#include "IOBinding.h"
+#include "TweaksBinding.h"
+#include "ObjectProcessorBinding.h"
+#include "OptionsBinding.h"
+#include "PrimitiveVariablesBinding.h"
+#include "PrimitivesBinding.h"
+#include "RenderBinding.h"
+#include "RenderControllerBinding.h"
+#include "RendererAlgoBinding.h"
+#include "SceneAlgoBinding.h"
+#include "ScenePathBinding.h"
+#include "SetAlgoBinding.h"
+#include "ShaderBinding.h"
+#include "TransformBinding.h"
 
 using namespace boost::python;
-using namespace GafferBindings;
-using namespace GafferScene;
-using namespace GafferSceneBindings;
+using namespace GafferSceneModule;
 
 BOOST_PYTHON_MODULE( _GafferScene )
 {
 
-	bindScenePlug();
-	bindShaderPlug();
-	bindSceneNode();
-	bindSceneProcessor();
+	bindCore();
 	bindFilter();
-	bindFilterPlug();
-	bindFilteredSceneProcessor();
-	GafferBindings::DependencyNodeClass<SceneElementProcessor>();
-	GafferBindings::DependencyNodeClass<MeshType>();
-	GafferBindings::DependencyNodeClass<ObjectSource>();
-	GafferBindings::DependencyNodeClass<Cube>();
-	GafferBindings::DependencyNodeClass<Plane>();
-	GafferBindings::DependencyNodeClass<BranchCreator>();
-	GafferBindings::DependencyNodeClass<Seeds>();
-	GafferBindings::DependencyNodeClass<Instancer>();
-	GafferBindings::DependencyNodeClass<ObjectToScene>();
-	GafferBindings::DependencyNodeClass<Camera>();
-	GafferBindings::DependencyNodeClass<GlobalsProcessor>();
-	GafferBindings::DependencyNodeClass<DeleteSets>();
-
-	GafferDispatchBindings::TaskNodeClass<SceneWriter>();
-
-	bindDeleteGlobals();
-	bindOutputs();
-	bindPathMatcher();
-	bindPathMatcherData();
-	bindSceneProcedural();
-	bindShader();
-	bindOptions();
-	bindGroup();
-
-	GafferBindings::DependencyNodeClass<AlembicSource>();
-	GafferBindings::DependencyNodeClass<SubTree>();
-	GafferBindings::DependencyNodeClass<Light>();
-	GafferBindings::DependencyNodeClass<Prune>();
-	GafferBindings::DependencyNodeClass<Isolate>();
-	GafferBindings::DependencyNodeClass<Text>();
-	GafferBindings::DependencyNodeClass<MapProjection>();
-	GafferBindings::DependencyNodeClass<MapOffset>();
-
-	GafferBindings::NodeClass<OpenGLShader>();
-
-	{
-		scope s = GafferBindings::DependencyNodeClass<Sphere>();
-
-		enum_<Sphere::Type>( "Type" )
-			.value( "Primitive", Sphere::Primitive )
-			.value( "Mesh", Sphere::Mesh )
-		;
-	}
-
-	bindRender();
-	bindConstraint();
-	bindAttributes();
-	bindMixin();
 	bindTransform();
-	bindParent();
-	bindSceneReader();
-	bindPrimitiveVariables();
-	bindDuplicate();
-	bindGrid();
-	bindSet();
-	bindFreezeTransform();
+	bindGlobals();
+	bindOptions();
+	bindAttributes();
 	bindSceneAlgo();
-	bindCoordinateSystem();
-	bindExternalProcedural();
-	bindScenePath();
-	bindSceneFilterPathFilter();
-	bindClippingPlane();
-	bindFilterSwitch();
-	bindPointsType();
-	bindParameters();
-	bindPathMatcherDataPlug();
-	bindMeshToPoints();
-	bindLightTweaks();
-	bindLightToCamera();
-	bindFilterResults();
 	bindRendererAlgo();
 	bindSetAlgo();
-	bindEvaluateLightLinks();
-	bindMeshTangents();
-	bindDeleteFaces();
-	bindDeleteCurves();
-	bindDeletePoints();
-	bindCollectScenes();
+	bindPrimitives();
+	bindScenePath();
+	bindShader();
+	bindRender();
+	bindRenderController();
+	bindHierarchy();
+	bindObjectProcessor();
+	bindPrimitiveVariables();
+	bindTweaks();
+	bindIO();
+	bindIECoreGLPreview();
+	bindEditScopeAlgo();
 
 }

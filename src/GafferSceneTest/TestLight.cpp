@@ -34,16 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Shader.h"
+#include "GafferSceneTest/TestLight.h"
 
 #include "Gaffer/CompoundNumericPlug.h"
 
-#include "GafferSceneTest/TestLight.h"
+#include "IECoreScene/Shader.h"
 
 using namespace Gaffer;
 using namespace GafferSceneTest;
 
-IE_CORE_DEFINERUNTIMETYPED( TestLight )
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TestLight )
 
 TestLight::TestLight( const std::string &name )
 	:	Light( name )
@@ -64,13 +64,14 @@ void TestLight::hashLight( const Gaffer::Context *context, IECore::MurmurHash &h
 	}
 }
 
-IECore::ObjectVectorPtr TestLight::computeLight( const Gaffer::Context *context ) const
+IECoreScene::ConstShaderNetworkPtr TestLight::computeLight( const Gaffer::Context *context ) const
 {
-	IECore::ShaderPtr result = new IECore::Shader( "testLight", "light" );
-	result->parameters()["intensity"] = new IECore::Color3fData( parametersPlug()->getChild<Color3fPlug>( "intensity" )->getValue() );
-	result->parameters()["__areaLight"] = new IECore::BoolData( parametersPlug()->getChild<BoolPlug>( "areaLight" )->getValue() );
+	IECoreScene::ShaderPtr shader = new IECoreScene::Shader( "testLight", "light" );
+	shader->parameters()["intensity"] = new IECore::Color3fData( parametersPlug()->getChild<Color3fPlug>( "intensity" )->getValue() );
+	shader->parameters()["__areaLight"] = new IECore::BoolData( parametersPlug()->getChild<BoolPlug>( "areaLight" )->getValue() );
 
-	IECore::ObjectVectorPtr resultVector = new IECore::ObjectVector();
-	resultVector->members().push_back( result );
-	return resultVector;
+	IECoreScene::ShaderNetworkPtr network = new IECoreScene::ShaderNetwork();
+	network->addShader( "light", std::move( shader ) );
+	network->setOutput( { "light" } );
+	return network;
 }

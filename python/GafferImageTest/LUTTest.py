@@ -36,6 +36,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
@@ -57,22 +58,22 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.LUT()
 		o["in"].setInput( n["out"] )
 
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImagesEqual( n["out"], o["out"] )
 
 		o["fileName"].setValue( self.lut )
 		o["interpolation"].setValue( GafferImage.LUT.Interpolation.Linear )
 
-		forward = o["out"].image()
-		self.assertNotEqual( n["out"].image(), forward )
+		forward = GafferImage.ImageAlgo.image( o["out"] )
+		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), forward )
 
 		o["direction"].setValue( GafferImage.LUT.Direction.Inverse )
-		inverse = o["out"].image()
-		self.assertNotEqual( n["out"].image(), inverse )
+		inverse = GafferImage.ImageAlgo.image( o["out"] )
+		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), inverse )
 		self.assertNotEqual( forward, inverse )
 
 		o["interpolation"].setValue( GafferImage.LUT.Interpolation.Nearest )
-		tet = o["out"].image()
-		self.assertNotEqual( n["out"].image(), tet )
+		tet = GafferImage.ImageAlgo.image( o["out"] )
+		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), tet )
 		self.assertNotEqual( forward, tet )
 		self.assertNotEqual( inverse, tet )
 
@@ -84,7 +85,7 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.LUT()
 		o["in"].setInput( n["out"] )
 		o["fileName"].setValue( "/not/a/real.cube" )
-		self.assertRaises( o["out"].image )
+		self.assertRaises( RuntimeError, GafferImage.ImageAlgo.image, o["out"] )
 
 	def testBadInterpolation( self ) :
 
@@ -95,7 +96,7 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o["in"].setInput( n["out"] )
 		o["fileName"].setValue( self.lut )
 		o["interpolation"].setValue( GafferImage.LUT.Interpolation.Tetrahedral )
-		self.assertRaises( o["out"].image )
+		self.assertRaises( RuntimeError, GafferImage.ImageAlgo.image, o["out"] )
 
 	def testHashPassThrough( self ) :
 
@@ -105,15 +106,17 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.LUT()
 		o["in"].setInput( n["out"] )
 
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 
 		o["fileName"].setValue( self.lut )
 
-		self.assertNotEqual( n["out"].image(), o["out"].image() )
+		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), GafferImage.ImageAlgo.image( o["out"] ) )
 
 		o["enabled"].setValue( False )
 
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 		self.assertEqual( n["out"]['format'].hash(), o["out"]['format'].hash() )
 		self.assertEqual( n["out"]['dataWindow'].hash(), o["out"]['dataWindow'].hash() )
 		self.assertEqual( n["out"]["metadata"].getValue(), o["out"]["metadata"].getValue() )
@@ -122,7 +125,8 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o["enabled"].setValue( True )
 
 		o["fileName"].setValue( "" )
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 		self.assertEqual( n["out"]['format'].hash(), o["out"]['format'].hash() )
 		self.assertEqual( n["out"]['dataWindow'].hash(), o["out"]['dataWindow'].hash() )
 		self.assertEqual( n["out"]["metadata"].getValue(), o["out"]["metadata"].getValue() )
@@ -136,11 +140,11 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.LUT()
 		o["in"].setInput( i["out"] )
 
-		self.assertEqual( i["out"].imageHash(), o["out"].imageHash() )
+		self.assertEqual( GafferImage.ImageAlgo.imageHash( i["out"] ), GafferImage.ImageAlgo.imageHash( o["out"] ) )
 
 		o["fileName"].setValue( self.lut )
 
-		self.assertNotEqual( i["out"].imageHash(), o["out"].imageHash() )
+		self.assertNotEqual( GafferImage.ImageAlgo.imageHash( i["out"] ), GafferImage.ImageAlgo.imageHash( o["out"] ) )
 
 	def testChannelsAreSeparate( self ) :
 
@@ -153,13 +157,13 @@ class LUTTest( GafferImageTest.ImageTestCase ) :
 		o["fileName"].setValue( self.lut )
 
 		self.assertNotEqual(
-			o["out"].channelDataHash( "R", IECore.V2i( 0 ) ),
-			o["out"].channelDataHash( "G", IECore.V2i( 0 ) )
+			o["out"].channelDataHash( "R", imath.V2i( 0 ) ),
+			o["out"].channelDataHash( "G", imath.V2i( 0 ) )
 		)
 
 		self.assertNotEqual(
-			o["out"].channelData( "R", IECore.V2i( 0 ) ),
-			o["out"].channelData( "G", IECore.V2i( 0 ) )
+			o["out"].channelData( "R", imath.V2i( 0 ) ),
+			o["out"].channelData( "G", imath.V2i( 0 ) )
 		)
 
 	def testPassThrough( self ) :

@@ -34,17 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/ExternalProcedural.h"
+#include "GafferScene/ExternalProcedural.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/ExternalProcedural.h"
+#include "IECoreScene/ExternalProcedural.h"
 
 using namespace Imath;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( ExternalProcedural );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ExternalProcedural );
 
 size_t ExternalProcedural::g_firstPlugIndex = 0;
 
@@ -114,7 +114,7 @@ void ExternalProcedural::hashSource( const Gaffer::Context *context, IECore::Mur
 
 IECore::ConstObjectPtr ExternalProcedural::computeSource( const Context *context ) const
 {
-	IECore::ExternalProceduralPtr result = new IECore::ExternalProcedural( fileNamePlug()->getValue(), boundPlug()->getValue() );
+	IECoreScene::ExternalProceduralPtr result = new IECoreScene::ExternalProcedural( fileNamePlug()->getValue(), boundPlug()->getValue() );
 	parametersPlug()->fillCompoundData( result->parameters()->writable() );
 	return result;
 }

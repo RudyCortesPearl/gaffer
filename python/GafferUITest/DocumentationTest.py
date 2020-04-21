@@ -73,5 +73,10 @@ class DocumentationTest( GafferUITest.TestCase ) :
 		self.assertEqual( undocumentedApps, [] )
 		self.assertEqual( undocumentedParameters, [] )
 
+	def testExamples( self ) :
+
+		self.assertExampleFilesExist()
+		self.assertExampleFilesDontReferenceUnstablePaths()
+
 if __name__ == "__main__":
 	unittest.main()

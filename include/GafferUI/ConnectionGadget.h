@@ -38,11 +38,13 @@
 #ifndef GAFFERUI_CONNECTIONGADGET_H
 #define GAFFERUI_CONNECTIONGADGET_H
 
-#include "boost/regex.hpp"
+#include "GafferUI/ConnectionCreator.h"
 
 #include "Gaffer/Plug.h"
 
-#include "GafferUI/Gadget.h"
+#include "boost/regex.hpp"
+
+#include <functional>
 
 namespace GafferUI
 {
@@ -59,20 +61,20 @@ IE_CORE_FORWARDDECLARE( ConnectionGadget )
 /// nodes - this allows the customisation of connection display. The most
 /// common customisation would be to apply a different style or custom
 /// tooltip - see ConnectionGadgetTest for an example.
-class ConnectionGadget : public Gadget
+class GAFFERUI_API ConnectionGadget : public ConnectionCreator
 {
 
 	public :
 
-		virtual ~ConnectionGadget();
+		~ConnectionGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::ConnectionGadget, ConnectionGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::ConnectionGadget, ConnectionGadgetTypeId, ConnectionCreator );
 
 		/// Accepts only GraphGadgets as parent.
-		virtual bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const;
+		bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const override;
 
 		/// Returns the Nodule representing the source plug in the connection.
-		/// Note that this may be NULL if the source plug belongs to a node which
+		/// Note that this may be null if the source plug belongs to a node which
 		/// has been hidden.
 		Nodule *srcNodule();
 		const Nodule *srcNodule() const;
@@ -90,11 +92,6 @@ class ConnectionGadget : public Gadget
 		void setMinimised( bool minimised );
 		bool getMinimised() const;
 
-		/// May be called by the recipient of a drag to set a more appropriate position
-		/// and tangent for the connection as the drag progresses within the destination.
-		/// Throws if this connection is not currently the source of a connection.
-		virtual void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent ) = 0;
-
 		/// Returns the closest point on this connection to the given point.
 		/// Used for snapping new dots onto an existing connection
 		virtual Imath::V3f closestPoint( const Imath::V3f &p ) const = 0;
@@ -103,7 +100,7 @@ class ConnectionGadget : public Gadget
 		/// specified Nodules.
 		static ConnectionGadgetPtr create( NodulePtr srcNodule, NodulePtr dstNodule );
 
-		typedef boost::function<ConnectionGadgetPtr ( NodulePtr, NodulePtr )> ConnectionGadgetCreator;
+		typedef std::function<ConnectionGadgetPtr ( NodulePtr, NodulePtr )> ConnectionGadgetCreator;
 		/// Registers a function which will return a ConnectionGadget instance for a
 		/// destination plug of a specific type.
 		static void registerConnectionGadget( IECore::TypeId dstPlugType, ConnectionGadgetCreator creator );

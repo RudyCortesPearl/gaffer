@@ -35,20 +35,24 @@
 #
 ##########################################################################
 
+import os
+import subprocess
 import unittest
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
 import GafferScene
 import GafferSceneTest
+import GafferDispatch
 
 class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 
 	def testFilter( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -148,7 +152,7 @@ class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 		s["a"]["shader"].setInput( s["s"]["out"] )
 
 		self.assertTrue( "test:surface" in s["a"]["out"].attributes( "/plane" ) )
-		self.assertEqual( s["a"]["out"].attributes( "/plane" )["test:surface"][-1].name, "test" )
+		self.assertEqual( s["a"]["out"].attributes( "/plane" )["test:surface"].outputShader().name, "test" )
 
 		s["s2"] = GafferSceneTest.TestShader()
 		s["s2"]["name"].setValue( "test2" )
@@ -159,12 +163,12 @@ class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 		s["a2"]["shader"].setInput( s["s2"]["out"] )
 
 		self.assertTrue( "test:surface" in s["a"]["out"].attributes( "/plane" ) )
-		self.assertEqual( s["a2"]["out"].attributes( "/plane" )["test:surface"][-1].name, "test2" )
+		self.assertEqual( s["a2"]["out"].attributes( "/plane" )["test:surface"].outputShader().name, "test2" )
 
 		s["s2"]["enabled"].setValue( False )
 
 		self.assertTrue( "test:surface" in s["a"]["out"].attributes( "/plane" ) )
-		self.assertEqual( s["a2"]["out"].attributes( "/plane" )["test:surface"][-1].name, "test" )
+		self.assertEqual( s["a2"]["out"].attributes( "/plane" )["test:surface"].outputShader().name, "test" )
 
 	def testInputAcceptanceInsideBoxes( self ) :
 
@@ -206,18 +210,22 @@ class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 		s["b"]["in"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		s["b"]["out"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic, direction = Gaffer.Plug.Direction.Out )
 
-		# shader assignments should accept connections speculatively
-		# from unconnected box inputs and outputs.
+		# Shader assignments should accept connections speculatively
+		# from unconnected box inputs and outputs. We use `execute()` for
+		# this because the backwards compatibility is provided only when
+		# a script is loading.
 
-		self.assertTrue( s["b"]["a"]["shader"].acceptsInput( s["b"]["in"] ) )
-		self.assertTrue( s["a"]["shader"].acceptsInput( s["b"]["out"] ) )
+		s.execute( """script["b"]["a"]["shader"].setInput( script["b"]["in"] )""" )
+		s.execute( """script["a"]["shader"].setInput( script["b"]["out"] )""" )
 
 		# but should reject connections to connected box inputs and outputs
 		# if they're unsuitable.
 
+		s["b"]["a"]["shader"].setInput( None )
 		s["b"]["in"].setInput( s["n"]["out"] )
 		self.assertFalse( s["b"]["a"]["shader"].acceptsInput( s["b"]["in"] ) )
 
+		s["a"]["shader"].setInput( None )
 		s["b"]["out"].setInput( s["b"]["n"]["out"] )
 		self.assertFalse( s["a"]["shader"].acceptsInput( s["b"]["out"] ) )
 
@@ -249,10 +257,13 @@ class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 
 	def testInputAcceptanceFromSwitches( self ) :
 
-		a = GafferScene.ShaderAssignment()
-		s = GafferScene.ShaderSwitch()
+		script = Gaffer.ScriptNode()
+		script["a"] = GafferScene.ShaderAssignment()
+		script["s"] = Gaffer.Switch()
+		script["s"].setup( Gaffer.Plug() )
 
-		self.assertTrue( a["shader"].acceptsInput( s["out"] ) )
+		script.execute( """script["a"]["shader"].setInput( script["s"]["out"] )""" )
+		self.assertTrue( script["a"]["shader"].getInput().isSame( script["s"]["out"] ) )
 
 	def testAcceptsNoneInputs( self ) :
 
@@ -261,13 +272,18 @@ class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 
 	def testInputAcceptanceFromDots( self ) :
 
-		a = GafferScene.ShaderAssignment()
+		script = Gaffer.ScriptNode()
 
-		s = GafferSceneTest.TestShader()
-		d = Gaffer.Dot()
-		d.setup( s["out"] )
+		script["a"] = GafferScene.ShaderAssignment()
 
-		self.assertTrue( a["shader"].acceptsInput( d["out"] ) )
+		script["s"] = GafferSceneTest.TestShader()
+		script["d"] = Gaffer.Dot()
+		script["d"].setup( script["s"]["out"] )
+
+		# Input only accepted during execution, for backwards compatibility
+		# when loading old scripts.
+		script.execute( """script["a"]["shader"].setInput( script["d"]["out"] )""" )
+		self.assertTrue( script["a"]["shader"].getInput().isSame( script["d"]["out"] ) )
 
 	def testFilterInputAcceptanceFromReferences( self ) :
 
@@ -327,6 +343,264 @@ class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 
 		s["enabled"].setValue( False )
 		self.assertEqual( set( x[0] for x in cs ), set( ( s["enabled"], s["out"]["attributes"], s["out"] ) ) )
+
+	def testInputAcceptanceFromBoxesViaBoxIO( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["s"] = GafferSceneTest.TestShader()
+		s["a"] = GafferScene.ShaderAssignment()
+		s["a"]["shader"].setInput( s["s"]["out"] )
+
+		Gaffer.Metadata.registerValue( s["s"]["out"], "nodule:type", "GafferUI::StandardNodule" )
+		Gaffer.Metadata.registerValue( s["a"]["shader"], "nodule:type", "GafferUI::StandardNodule" )
+
+		box = Gaffer.Box.create( s, Gaffer.StandardSet( { s["s"] } ) )
+		Gaffer.BoxIO.insert( box )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertTrue( s2["a"]["shader"].source().isSame( s2["Box"]["s"]["out"] ) )
+
+	def testInsertBoxIO( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferScene.ShaderAssignment()
+		s["n2"] = GafferScene.ShaderAssignment()
+		s["n2"]["in"].setInput( s["n1"]["out"] )
+		s["n3"] = GafferScene.ShaderAssignment()
+		s["n3"]["in"].setInput( s["n2"]["out"] )
+
+		box = Gaffer.Box.create( s, Gaffer.StandardSet( { s["n2"] } ) )
+		Gaffer.BoxIO.insert( box )
+
+		self.assertTrue( box["n2"]["in"].source().isSame( s["n1"]["out"] ) )
+		self.assertTrue( s["n3"]["in"].source().isSame( box["n2"]["out"] ) )
+
+	def testFilterOnlyAffectsAttributes( self ) :
+
+		f = GafferScene.PathFilter()
+		s = GafferScene.ShaderAssignment()
+		s["filter"].setInput( f["out"] )
+
+		cs = GafferTest.CapturingSlot( s.plugDirtiedSignal() )
+		f["enabled"].setValue( False )
+		self.assertEqual( { x[0] for x in cs }, { s["filter"], s["out"]["attributes"], s["out"] } )
+
+	def testPassThroughsDontDeclareDependency( self ) :
+
+		s = GafferScene.ShaderAssignment()
+		for inChild in s["in"] :
+			outChild = s["out"].getChild( inChild.getName() )
+			if outChild.getInput() is not None :
+				self.assertNotIn( outChild, s.affects( inChild ) )
+			else :
+				self.assertEqual( outChild.getName(), "attributes" )
+				self.assertIn( outChild, s.affects( inChild ) )
+
+	def testAssignThroughContextVaryingSwitch( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["shader1"] = GafferSceneTest.TestShader()
+		script["shader1"]["type"].setValue( "test:surface" )
+		script["shader1"]["name"].setValue( "shader1" )
+
+		script["shader2"] = GafferSceneTest.TestShader()
+		script["shader2"]["type"].setValue( "test:surface" )
+		script["shader2"]["name"].setValue( "shader2" )
+
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( script["shader1"]["out"] )
+		script["switch"]["in"][0].setInput( script["shader1"]["out"] )
+		script["switch"]["in"][1].setInput( script["shader2"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( 'parent["switch"]["index"] = context.getFrame()' )
+
+		script["plane"] = GafferScene.Plane()
+
+		script["planeFilter"] = GafferScene.PathFilter()
+		script["planeFilter"]["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
+
+		script["assignment"] = GafferScene.ShaderAssignment()
+		script["assignment"]["in"].setInput( script["plane"]["out"] )
+		script["assignment"]["filter"].setInput( script["planeFilter"]["out"] )
+		script["assignment"]["shader"].setInput( script["switch"]["out"] )
+
+		with Gaffer.Context() as context :
+
+			context.setFrame( 0 )
+			self.assertEqual(
+				script["assignment"]["out"].attributes( "/plane" )["test:surface"].outputShader().name,
+				"shader1"
+			)
+
+			context.setFrame( 1 )
+			self.assertEqual(
+				script["assignment"]["out"].attributes( "/plane" )["test:surface"].outputShader().name,
+				"shader2"
+			)
+
+	def testGlobalContext( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["shader"] = GafferSceneTest.TestShader()
+		script["shader"]["type"].setValue( "shader" )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( 'parent["shader"]["parameters"]["i"] = 1 if context.get( "scene:path", None ) else 0' )
+
+		script["sphere"] = GafferScene.Sphere()
+
+		script["filter"] = GafferScene.PathFilter()
+		script["filter"]["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		script["assignment"] = GafferScene.ShaderAssignment()
+		script["assignment"]["in"].setInput( script["sphere"]["out"] )
+		script["assignment"]["filter"].setInput( script["filter"]["out"] )
+		script["assignment"]["shader"].setInput( script["shader"]["out"] )
+
+		self.assertEqual(
+			script["assignment"]["out"].attributes( "/sphere" )["shader"].outputShader().parameters["i"].value, 0
+		)
+
+	def testInputRejectsNonShaderSwitch( self ) :
+
+		assignment = GafferScene.ShaderAssignment()
+
+		add = GafferTest.AddNode()
+		switch = Gaffer.Switch()
+		switch.setup( add["sum"] )
+
+		# We have to accept the input at this point, because all we know is
+		# that it's from a switch that provides ints. Later on a shader might
+		# be connected as an input.
+		self.assertTrue( assignment["shader"].acceptsInput( switch["out"] ) )
+
+		# But if the switch has a non-shader input, then we should
+		# reject the connection.
+		switch["in"][0].setInput( add["sum"] )
+		self.assertFalse( assignment["shader"].acceptsInput( switch["out"] ) )
+
+		# And this should hold true even if the switch has a context-varying
+		# index.
+		random = Gaffer.Random()
+		random["contextEntry"].setValue( "frame" )
+		switch["index"].setInput( random["outFloat"] )
+		self.assertFalse( assignment["shader"].acceptsInput( switch["out"] ) )
+
+		# Remove the switch input, and we should be able to connect.
+		# But once connected, the switch should reject a non-shader input.
+		switch["in"][0].setInput( None )
+		assignment["shader"].setInput( switch["out"] )
+		self.assertFalse( switch["in"][0].acceptsInput( add["sum"] ) )
+
+	def testBogusSwitchConnections( self ) :
+
+		assignment = GafferScene.ShaderAssignment()
+
+		switch = Gaffer.Switch()
+		switch.setup( assignment["shader"] )
+
+		shader = GafferSceneTest.TestShader()
+		self.assertFalse( switch["in"].acceptsInput( shader["out"] ) )
+
+	def testOSLAssignmentPrefix( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["shader"] = GafferSceneTest.TestShader()
+		script["shader"]["type"].setValue( "osl:shader" )
+
+		script["sphere"] = GafferScene.Sphere()
+
+		script["assignment"] = GafferScene.ShaderAssignment()
+		script["assignment"]["in"].setInput( script["sphere"]["out"] )
+		script["assignment"]["shader"].setInput( script["shader"]["out"] )
+
+		script["writer"] = GafferScene.SceneWriter()
+		script["writer"]["in"].setInput( script["assignment"]["out"] )
+		script["writer"]["fileName"].setValue( os.path.join( self.temporaryDirectory(), "test.scc" ) )
+
+		script["fileName"].setValue( os.path.join( self.temporaryDirectory(), "test.gfr" ) )
+		script.save()
+
+
+		def assertAssignment( expected, envVar ) :
+
+			env = os.environ.copy()
+			if envVar is not None :
+				env["GAFFERSCENE_SHADERASSIGNMENT_OSL_PREFIX"] = envVar
+
+			o = subprocess.check_output(
+				[ "gaffer", "execute", script["fileName"].getValue(), "-nodes", "writer" ],
+				env = env
+			)
+
+			scene = IECoreScene.SceneCache( script["writer"]["fileName"].getValue(), IECore.IndexedIO.OpenMode.Read )
+			sphere = scene.child( "sphere" )
+
+			self.assertEqual( [ i for i in sphere.attributeNames() if ":surface" in i ], [ expected ] )
+
+		assertAssignment( "osl:surface", envVar = None )
+		assertAssignment( "foo:surface", envVar = "foo" )
+
+	def testAssignThroughNameSwitch( self ) :
+
+		Gaffer.ScriptNode()
+
+		shader1 = GafferSceneTest.TestShader()
+		shader1["type"].setValue( "test:surface" )
+		shader1["name"].setValue( "shader1" )
+
+		shader2 = GafferSceneTest.TestShader()
+		shader2["type"].setValue( "test:surface" )
+		shader2["name"].setValue( "shader2" )
+
+		switch = Gaffer.NameSwitch()
+		switch["selector"].setValue( "${shader}" )
+		switch.setup( shader1["out"] )
+		switch["in"].resize( 3 )
+		switch["in"][1]["name"].setValue( "uno one un" )
+		switch["in"][1]["value"].setInput( shader1["out"] )
+		switch["in"][2]["name"].setValue( "dos two deux" )
+		switch["in"][2]["value"].setInput( shader2["out"] )
+
+		plane = GafferScene.Plane()
+
+		planeFilter = GafferScene.PathFilter()
+		planeFilter["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
+
+		assignment = GafferScene.ShaderAssignment()
+		assignment["in"].setInput( plane["out"] )
+		assignment["filter"].setInput( planeFilter["out"] )
+		assignment["shader"].setInput( switch["out"]["value"] )
+
+		with Gaffer.Context() as context :
+
+			context["shader"] = "uno"
+			self.assertEqual(
+				assignment["out"].attributes( "/plane" )["test:surface"].outputShader().name,
+				"shader1"
+			)
+
+			context["shader"] = "two"
+			self.assertEqual(
+				assignment["out"].attributes( "/plane" )["test:surface"].outputShader().name,
+				"shader2"
+			)
+
+	def testLoadFrom0_55( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["fileName"].setValue( os.path.join( os.path.dirname( __file__ ), "scripts", "shaderAssignment-0.55.0.0.gfr" ) )
+		script.load()
+
+		self.assertNotIn( "__contextCompatibility", script["ShaderAssignment"] )
 
 if __name__ == "__main__":
 	unittest.main()

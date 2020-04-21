@@ -38,21 +38,23 @@
 #ifndef GAFFERIMAGE_CROP_H
 #define GAFFERIMAGE_CROP_H
 
-#include "Gaffer/BoxPlug.h"
 #include "GafferImage/ImageProcessor.h"
+
+#include "Gaffer/BoxPlug.h"
 
 namespace GafferImage
 {
-	IE_CORE_FORWARDDECLARE( FormatPlug );
 
-class Crop : public ImageProcessor
+IE_CORE_FORWARDDECLARE( FormatPlug );
+
+class GAFFERIMAGE_API Crop : public ImageProcessor
 {
 	public :
 
 		Crop( const std::string &name=defaultName<Crop>() );
-		virtual ~Crop();
+		~Crop() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Crop, CropTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Crop, CropTypeId, ImageProcessor );
 
 		enum AreaSource
 		{
@@ -83,23 +85,24 @@ class Crop : public ImageProcessor
 		Gaffer::BoolPlug *resetOriginPlug();
 		const Gaffer::BoolPlug *resetOriginPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashFormat( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hashFormat( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 
-		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 	private :
 
 		Gaffer::AtomicBox2iPlug *cropWindowPlug();
 		const Gaffer::AtomicBox2iPlug *cropWindowPlug() const;
+
+		Gaffer::AtomicBox2iPlug *cropDataWindowPlug();
+		const Gaffer::AtomicBox2iPlug *cropDataWindowPlug() const;
 
 		Gaffer::V2iPlug *offsetPlug();
 		const Gaffer::V2iPlug *offsetPlug() const;

@@ -44,21 +44,21 @@ namespace GafferUI
 {
 
 /// The Frame class draws a frame around its child.
-class Frame : public IndividualContainer
+class GAFFERUI_API Frame : public IndividualContainer
 {
 
 	public :
 
 		Frame( GadgetPtr child );
-		virtual ~Frame();
+		~Frame() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Frame, FrameTypeId, IndividualContainer );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::Frame, FrameTypeId, IndividualContainer );
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 	private :
 

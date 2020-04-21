@@ -42,25 +42,25 @@
 namespace GafferScene
 {
 
-class ObjectToScene : public ObjectSource
+class GAFFERSCENE_API ObjectToScene : public ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ObjectToScene, ObjectToSceneTypeId, ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ObjectToScene, ObjectToSceneTypeId, ObjectSource );
 
 		ObjectToScene( const std::string &name=defaultName<ObjectToScene>() );
-		virtual ~ObjectToScene();
+		~ObjectToScene() override;
 
 		Gaffer::ObjectPlug *objectPlug();
 		const Gaffer::ObjectPlug *objectPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
 	private :
 

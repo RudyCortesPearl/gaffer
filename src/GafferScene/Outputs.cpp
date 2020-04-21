@@ -35,19 +35,20 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/multi_index_container.hpp"
-#include "boost/multi_index/sequenced_index.hpp"
-#include "boost/multi_index/ordered_index.hpp"
-#include "boost/multi_index/member.hpp"
+#include "GafferScene/Outputs.h"
 
 #include "Gaffer/CompoundDataPlug.h"
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/Outputs.h"
+#include "boost/multi_index/member.hpp"
+#include "boost/multi_index/ordered_index.hpp"
+#include "boost/multi_index/sequenced_index.hpp"
+#include "boost/multi_index_container.hpp"
 
 using namespace std;
 using namespace boost;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
@@ -58,7 +59,7 @@ using namespace GafferScene;
 namespace
 {
 
-typedef std::pair<std::string, DisplayPtr> NamedOutput;
+typedef std::pair<std::string, OutputPtr> NamedOutput;
 typedef multi_index::multi_index_container<
 	NamedOutput,
 	multi_index::indexed_by<
@@ -81,7 +82,7 @@ OutputMap &outputMap()
 // Outputs implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Outputs );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Outputs );
 
 size_t Outputs::g_firstPlugIndex = 0;
 
@@ -117,7 +118,7 @@ Gaffer::ValuePlug *Outputs::addOutput( const std::string &name )
 	return addOutput( it->first, it->second.get() );
 }
 
-Gaffer::ValuePlug *Outputs::addOutput( const std::string &name, const IECore::Display *output )
+Gaffer::ValuePlug *Outputs::addOutput( const std::string &name, const IECoreScene::Output *output )
 {
 	ValuePlugPtr outputPlug = new ValuePlug( "output1" );
 	outputPlug->setFlags( Plug::Dynamic, true );
@@ -148,7 +149,7 @@ Gaffer::ValuePlug *Outputs::addOutput( const std::string &name, const IECore::Di
 
 	CompoundDataPlugPtr parametersPlug = new CompoundDataPlug( "parameters" );
 	parametersPlug->setFlags( Plug::Dynamic, true );
-	parametersPlug->addMembers( const_cast<Display *>( output )->parametersData(), /* useNameAsPlugName = */ true );
+	parametersPlug->addMembers( const_cast<Output *>( output )->parametersData(), /* useNameAsPlugName = */ true );
 	outputPlug->addChild( parametersPlug );
 
 	outputsPlug()->addChild( outputPlug );
@@ -192,27 +193,17 @@ IECore::ConstCompoundObjectPtr Outputs::computeProcessedGlobals( const Gaffer::C
 		const ValuePlug *outputPlug = it->get();
 		if( outputPlug->getChild<BoolPlug>( "active" )->getValue() )
 		{
-			// backwards compatibility with old plug layout
-			const StringPlug *namePlug = outputPlug->getChild<StringPlug>( "label" );
-			if( !namePlug )
-			{
-				namePlug = outputPlug->getChild<StringPlug>( "name" );
-			}
+			const StringPlug *namePlug = outputPlug->getChild<StringPlug>( "name" );
 			const std::string name = namePlug->getValue();
 
 			const StringPlug *fileNamePlug = outputPlug->getChild<StringPlug>( "fileName" );
-			if( !fileNamePlug )
-			{
-				// backwards compatibility with old plug layout
-				fileNamePlug = outputPlug->getChild<StringPlug>( "name" );
-			}
 			const std::string fileName = fileNamePlug->getValue();
 
 			const std::string type = outputPlug->getChild<StringPlug>( "type" )->getValue();
 			const std::string data = outputPlug->getChild<StringPlug>( "data" )->getValue();
 			if( name.size() && fileName.size() && type.size() && data.size() )
 			{
-				DisplayPtr d = new Display( fileName, type, data );
+				OutputPtr d = new Output( fileName, type, data );
 				outputPlug->getChild<CompoundDataPlug>( "parameters" )->fillCompoundData( d->parameters() );
 				result->members()["output:" + name] = d;
 			}
@@ -222,7 +213,7 @@ IECore::ConstCompoundObjectPtr Outputs::computeProcessedGlobals( const Gaffer::C
 	return result;
 }
 
-void Outputs::registerOutput( const std::string &name, const IECore::Display *output )
+void Outputs::registerOutput( const std::string &name, const IECoreScene::Output *output )
 {
 	NamedOutput d( name, output->copy() );
 
@@ -236,6 +227,11 @@ void Outputs::registerOutput( const std::string &name, const IECore::Display *ou
 	{
 		index.replace( it, d );
 	}
+}
+
+void Outputs::deregisterOutput( const std::string &name )
+{
+	outputMap().erase( name );
 }
 
 void Outputs::registeredOutputs( std::vector<std::string> &names )

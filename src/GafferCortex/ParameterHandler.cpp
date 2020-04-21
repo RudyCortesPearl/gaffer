@@ -34,12 +34,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/CompoundObject.h"
-#include "IECore/SimpleTypedData.h"
+#include "GafferCortex/ParameterHandler.h"
 
 #include "Gaffer/GraphComponent.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ValuePlug.h"
 
-#include "GafferCortex/ParameterHandler.h"
+#include "IECore/CompoundObject.h"
+#include "IECore/SimpleTypedData.h"
 
 using namespace IECore;
 
@@ -53,6 +55,18 @@ ParameterHandler::~ParameterHandler()
 {
 }
 
+IECore::MurmurHash ParameterHandler::hash() const
+{
+	IECore::MurmurHash result;
+	const Gaffer::Plug *p = plug();
+	for( Gaffer::RecursiveValuePlugIterator it( p ); !it.done(); ++it )
+	{
+		result.append( (*it)->relativeName( p ) );
+		(*it)->hash( result );
+	}
+	return result;
+}
+
 void ParameterHandler::setupPlugFlags( Gaffer::Plug *plug, unsigned flags )
 {
 	plug->setFlags( flags );
@@ -63,7 +77,7 @@ void ParameterHandler::setupPlugFlags( Gaffer::Plug *plug, unsigned flags )
 		const BoolData *readOnly = ud->member<BoolData>( "readOnly" );
 		if( readOnly )
 		{
-			plug->setFlags( Gaffer::Plug::ReadOnly, readOnly->readable() );
+			Gaffer::MetadataAlgo::setReadOnly( plug, readOnly->readable() );
 		}
 	}
 }
@@ -81,7 +95,7 @@ ParameterHandlerPtr ParameterHandler::create( IECore::ParameterPtr parameter )
 		}
 		typeId = RunTimeTyped::baseTypeId( typeId );
 	}
-	return 0;
+	return nullptr;
 }
 
 void ParameterHandler::registerParameterHandler( IECore::TypeId parameterType, Creator creator )

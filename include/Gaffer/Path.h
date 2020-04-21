@@ -38,15 +38,16 @@
 #ifndef GAFFER_PATH_H
 #define GAFFER_PATH_H
 
-#include "boost/signals.hpp"
-
-#include "IECore/RunTimeTyped.h"
-#include "IECore/InternedString.h"
-#include "IECore/CompoundData.h"
-
+#include "Gaffer/Export.h"
 #include "Gaffer/TypeIds.h"
 
-namespace GafferBindings
+#include "IECore/CompoundData.h"
+#include "IECore/InternedString.h"
+#include "IECore/RunTimeTyped.h"
+
+#include "boost/signals.hpp"
+
+namespace GafferModule
 {
 
 // Forward declaration for friendship declared below.
@@ -55,7 +56,7 @@ namespace GafferBindings
 // modules.
 void bindPath();
 
-}
+} // namespace GafferModule
 
 namespace Gaffer
 {
@@ -70,27 +71,27 @@ IE_CORE_FORWARDDECLARE( PathFilter )
 ///
 /// A path is represented by a root location followed by a series of names
 /// which refer to items nested below the root.
-class Path : public IECore::RunTimeTyped
+class GAFFER_API Path : public IECore::RunTimeTyped
 {
 
 	public :
 
 		typedef std::vector<IECore::InternedString> Names;
 
-		Path( PathFilterPtr filter = NULL );
-		Path( const std::string &path, PathFilterPtr filter = NULL );
-		Path( const Names &names, const IECore::InternedString &root = "/", PathFilterPtr filter = NULL );
+		Path( PathFilterPtr filter = nullptr );
+		Path( const std::string &path, PathFilterPtr filter = nullptr );
+		Path( const Names &names, const IECore::InternedString &root = "/", PathFilterPtr filter = nullptr );
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Path, PathTypeId, IECore::RunTimeTyped );
 
-		virtual ~Path();
+		~Path() override;
 
 		/// Returns the root of the path - this will be "/" for absolute
 		/// paths and "" for relative paths.
 		const IECore::InternedString &root() const;
 
 		/// Returns true if this path is empty.
-		const bool isEmpty() const;
+		bool isEmpty() const;
 
 		/// Returns true if this path is valid - ie references something
 		/// which actually exists.
@@ -104,7 +105,7 @@ class Path : public IECore::RunTimeTyped
 		virtual void propertyNames( std::vector<IECore::InternedString> &names ) const;
 		/// Queries a property, whose name must have first been retrieved via propertyNames().
 		/// Derived class implementations should fall back to the base class implementation for
-		/// any unrecognised names. Returns NULL for unknown properties. May return NULL for invalid paths.
+		/// any unrecognised names. Returns null for unknown properties. May return null for invalid paths.
 		virtual IECore::ConstRunTimeTypedPtr property( const IECore::InternedString &name ) const;
 
 		/// Returns the parent of this path, or None if the path
@@ -117,7 +118,7 @@ class Path : public IECore::RunTimeTyped
 		size_t children( std::vector<PathPtr> &children ) const;
 
 		void setFilter( PathFilterPtr filter );
-		/// Filter may be NULL.
+		/// Filter may be null.
 		PathFilter *getFilter();
 		const PathFilter *getFilter() const;
 
@@ -212,7 +213,7 @@ class Path : public IECore::RunTimeTyped
 		PathChangedSignal *m_pathChangedSignal;
 
 		// So we can bind the emitPathChanged() method.
-		friend void GafferBindings::bindPath();
+		friend void GafferModule::bindPath();
 
 };
 

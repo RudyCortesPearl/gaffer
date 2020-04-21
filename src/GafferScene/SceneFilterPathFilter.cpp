@@ -34,14 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferScene/SceneFilterPathFilter.h"
+
+#include "GafferScene/Filter.h"
+#include "GafferScene/ScenePath.h"
+#include "GafferScene/ScenePlug.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferScene/SceneFilterPathFilter.h"
-#include "GafferScene/ScenePath.h"
-#include "GafferScene/Filter.h"
-#include "GafferScene/ScenePlug.h"
+#include "boost/bind.hpp"
 
 using namespace GafferScene;
 
@@ -90,7 +91,7 @@ struct SceneFilterPathFilter::Remove
 		Filter::setInputScene( m_context.get(), scenePath->getScene() );
 		m_context->set( ScenePlug::scenePathContextName, path->names() );
 		Gaffer::Context::Scope s( m_context.get() );
-		return !( m_filter->outPlug()->getValue() & ( Filter::DescendantMatch | Filter::ExactMatch ) );
+		return !( m_filter->outPlug()->getValue() & ( IECore::PathMatcher::DescendantMatch | IECore::PathMatcher::ExactMatch ) );
 	}
 
 	private :

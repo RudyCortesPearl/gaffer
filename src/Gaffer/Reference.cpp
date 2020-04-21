@@ -34,18 +34,26 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/algorithm/string/predicate.hpp"
-#include "boost/bind.hpp"
+#include "Gaffer/Reference.h"
+
+#include "Gaffer/BlockedConnection.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/PlugAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StandardSet.h"
+#include "Gaffer/StringPlug.h"
 
 #include "IECore/Exception.h"
 #include "IECore/MessageHandler.h"
+#include "IECore/SearchPath.h"
 
-#include "Gaffer/Reference.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Metadata.h"
-#include "Gaffer/MetadataAlgo.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/StandardSet.h"
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/bind.hpp"
+#include "boost/container/flat_set.hpp"
+
+#include <unordered_map>
+
 
 using namespace std;
 using namespace IECore;
@@ -66,7 +74,7 @@ void copyInputsAndValues( Gaffer::Plug *srcPlug, Gaffer::Plug *dstPlug, bool ign
 	// recursion to the `setInput()` call, which will
 	// also set all descendant inputs.
 
-	if( Plug *input = srcPlug->getInput<Plug>() )
+	if( Plug *input = srcPlug->getInput() )
 	{
 		dstPlug->setInput( input );
 		return;
@@ -80,7 +88,7 @@ void copyInputsAndValues( Gaffer::Plug *srcPlug, Gaffer::Plug *dstPlug, bool ign
 
 	if( !dstPlug->children().size() )
 	{
-		dstPlug->setInput( NULL );
+		dstPlug->setInput( nullptr );
 		if( ValuePlug *srcValuePlug = runTimeCast<ValuePlug>( srcPlug ) )
 		{
 			if( !ignoreDefaultValues || !srcValuePlug->isSetToDefault() )
@@ -136,13 +144,156 @@ void transferOutputs( Gaffer::Plug *srcPlug, Gaffer::Plug *dstPlug )
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
+// PlugEdits. This internal utility class is used to track where edits have
+// been applied to plugs following loading.
+//////////////////////////////////////////////////////////////////////////
+
+class Reference::PlugEdits : public boost::signals::trackable
+{
+
+	public :
+
+		PlugEdits( Reference *reference )
+			:	m_reference( reference )
+		{
+			m_connection = Metadata::plugValueChangedSignal().connect( boost::bind( &PlugEdits::plugValueChanged, this, ::_1, ::_2, ::_3, ::_4 ) );
+			m_reference->childRemovedSignal().connect( boost::bind( &PlugEdits::childRemoved, this, ::_1, ::_2 ) );
+		}
+
+		bool hasMetadataEdit( const Plug *plug, const InternedString &key ) const
+		{
+			const PlugEdit *edit = plugEdit( plug );
+
+			if( !edit )
+			{
+				return false;
+			}
+
+			return edit->m_metadataEdits.find( key ) != edit->m_metadataEdits.end();
+		}
+
+		const boost::container::flat_set<InternedString> &metadataEdits( const Plug *plug )
+		{
+			const PlugEdit *edit = plugEdit( plug );
+			if( edit )
+			{
+				return edit->m_metadataEdits;
+			}
+
+			static boost::container::flat_set<InternedString> g_emptyContainer;
+			return g_emptyContainer;
+		}
+
+		boost::signals::scoped_connection &connection()
+		{
+			return m_connection;
+		}
+
+	private :
+
+		Reference *m_reference;
+		boost::signals::scoped_connection m_connection;
+
+		struct PlugEdit
+		{
+			boost::container::flat_set<InternedString> m_metadataEdits;
+		};
+
+		std::unordered_map<const Plug*, PlugEdit> m_plugEdits;
+
+		const PlugEdit *plugEdit( const Plug *plug ) const
+		{
+			// Cheeky cast better than maintaining two near-identical functions.
+			return const_cast<PlugEdits *>( this )->plugEdit( plug, /* createIfMissing = */ false );
+		}
+
+		PlugEdit *plugEdit( const Plug *plug, bool createIfMissing )
+		{
+			if( plug->node() != m_reference )
+			{
+				return nullptr;
+			}
+
+			auto it = m_plugEdits.find( plug );
+			if( it != m_plugEdits.end() )
+			{
+				return &(it->second);
+			}
+
+			if( !m_reference->isReferencePlug( plug ) )
+			{
+				// We'll allow retrieval of existing edits on this plug, but we
+				// won't create new ones.
+				return nullptr;
+			}
+
+			if( !createIfMissing )
+			{
+				return nullptr;
+			}
+
+			return &m_plugEdits[plug];
+		}
+
+		void plugValueChanged( IECore::TypeId nodeTypeId, const IECore::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+		{
+			// We only record edits to this instance. If no plug is given, the
+			// change is to generic metadata, independently of instances.
+			if( !plug )
+			{
+				return;
+			}
+
+			ScriptNode *scriptNode = m_reference->ancestor<ScriptNode>();
+			if( scriptNode && ( scriptNode->currentActionStage() == Action::Undo || scriptNode->currentActionStage() == Action::Redo ) )
+			{
+				// Our edit tracking code below utilises the undo system, so we don't need
+				// to do anything for an Undo or Redo - our action from the original Do will
+				// be replayed automatically.
+				return;
+			}
+
+			PlugEdit *edit = plugEdit( plug, /* createIfMissing = */ true );
+			if( !edit )
+			{
+				// May get a NULL edit even with createIfMissing = true,
+				// if the plug is not a reference plug on the right Reference node.
+				return;
+			}
+
+			if( edit->m_metadataEdits.find( key ) != edit->m_metadataEdits.end() )
+			{
+				return;
+			}
+
+			Action::enact(
+				m_reference,
+				[edit, key](){ edit->m_metadataEdits.insert( key ); },
+				[edit, key](){ edit->m_metadataEdits.erase( key ); }
+			);
+		}
+
+		void childRemoved( GraphComponent *parent, GraphComponent *child )
+		{
+			const Plug *plug = runTimeCast<Plug>( child );
+			if( !plug )
+			{
+				return;
+			}
+
+			m_plugEdits.erase( plug );
+		}
+
+};
+
+//////////////////////////////////////////////////////////////////////////
 // Reference
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Reference );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Reference );
 
 Reference::Reference( const std::string &name )
-	:	SubGraph( name )
+	:	SubGraph( name ), m_plugEdits( new PlugEdits( this ) )
 {
 }
 
@@ -152,6 +303,14 @@ Reference::~Reference()
 
 void Reference::load( const std::string &fileName )
 {
+	const char *s = getenv( "GAFFER_REFERENCE_PATHS" );
+	IECore::SearchPath sp( s ? s : "" );
+	boost::filesystem::path path = sp.find( fileName );
+	if( path.empty() )
+	{
+		throw Exception( "Could not find file '" + fileName + "'" );
+	}
+
 	ScriptNode *script = scriptNode();
 	if( !script )
 	{
@@ -239,9 +398,15 @@ void Reference::loadInternal( const std::string &fileName )
 	// exception that we throw.
 
 	bool errors = false;
-	if( !fileName.empty() )
+	const char *s = getenv( "GAFFER_REFERENCE_PATHS" );
+	IECore::SearchPath sp( s ? s : "" );
+	boost::filesystem::path path = sp.find( fileName );
+	if( !path.empty() )
 	{
-		errors = script->executeFile( fileName, this, /* continueOnError = */ true );
+		// Changes made here aren't user edits and mustn't be tracked.
+		BlockedConnection blockedConnection( m_plugEdits->connection() );
+
+		errors = script->executeFile( path.string(), this, /* continueOnError = */ true );
 	}
 
 	// Do a little bit of post processing on everything that was loaded.
@@ -252,14 +417,11 @@ void Reference::loadInternal( const std::string &fileName )
 		{
 			// Make the loaded plugs non-dynamic, because we don't want them
 			// to be serialised in the script the reference is in - the whole
-			// point is that they are referenced. For the same reason, make
-			// their instance metadata non-persistent.
+			// point is that they are referenced.
 			plug->setFlags( Plug::Dynamic, false );
-			convertPersistentMetadata( plug );
 			for( RecursivePlugIterator it( plug ); !it.done(); ++it )
 			{
 				(*it)->setFlags( Plug::Dynamic, false );
-				convertPersistentMetadata( it->get() );
 			}
 		}
 	}
@@ -294,7 +456,8 @@ void Reference::loadInternal( const std::string &fileName )
 					copyInputsAndValues( oldPlug, newPlug, /* ignoreDefaultValues = */ !versionPriorTo09 );
 				}
 				transferOutputs( oldPlug, newPlug );
-				MetadataAlgo::copy( oldPlug, newPlug );
+
+				transferEditedMetadata( oldPlug, newPlug );
 			}
 			catch( const std::exception &e )
 			{
@@ -308,7 +471,7 @@ void Reference::loadInternal( const std::string &fileName )
 		}
 
 		// remove the old plug now we're done with it.
-		oldPlug->parent<GraphComponent>()->removeChild( oldPlug );
+		oldPlug->parent()->removeChild( oldPlug );
 	}
 
 	// Finish up.
@@ -323,6 +486,11 @@ void Reference::loadInternal( const std::string &fileName )
 
 }
 
+bool Reference::hasMetadataEdit( const Plug *plug, const IECore::InternedString key ) const
+{
+	return m_plugEdits->hasMetadataEdit( plug, key );
+}
+
 bool Reference::isReferencePlug( const Plug *plug ) const
 {
 	// If a plug is the descendant of a plug starting with
@@ -334,7 +502,7 @@ bool Reference::isReferencePlug( const Plug *plug ) const
 
 	// find ancestor of p which is a direct child of this node:
 	const Plug* ancestorPlug = plug;
-	const GraphComponent* parent = plug->parent<GraphComponent>();
+	const GraphComponent* parent = plug->parent();
 	while( parent != this )
 	{
 		ancestorPlug = runTimeCast< const Plug >( parent );
@@ -344,7 +512,7 @@ bool Reference::isReferencePlug( const Plug *plug ) const
 			// so we exit the loop.
 			break;
 		}
-		parent = ancestorPlug->parent<GraphComponent>();
+		parent = ancestorPlug->parent();
 	}
 
 	if( ancestorPlug && boost::starts_with( ancestorPlug->getName().c_str(), "__" ) )
@@ -372,13 +540,35 @@ bool Reference::isReferencePlug( const Plug *plug ) const
 	return true;
 }
 
+void Reference::transferEditedMetadata( const Plug *srcPlug, Plug *dstPlug ) const
+{
+	// Transfer metadata that was edited and won't be provided by a
+	// load. Note: Adding the metadata to a new plug
+	// automatically registers a PlugEdit for that plug.
+
+	for( const InternedString &key : m_plugEdits->metadataEdits( srcPlug ) )
+	{
+		Gaffer::Metadata::registerValue( dstPlug, key, Gaffer::Metadata::value<IECore::Data>( srcPlug, key ), /* persistent =*/ true);
+	}
+
+	// Recurse
+
+	for( PlugIterator it( srcPlug ); !it.done(); ++it )
+	{
+		if( Plug *dstChildPlug = dstPlug->getChild<Plug>( (*it)->getName() ) )
+		{
+			transferEditedMetadata( it->get(), dstChildPlug );
+		}
+	}
+}
+
 void Reference::convertPersistentMetadata( Plug *plug ) const
 {
 	vector<InternedString> keys;
 	Metadata::registeredValues( plug, keys, /* instanceOnly = */ true, /* persistentOnly = */ true );
 	for( vector<InternedString>::const_iterator it = keys.begin(), eIt = keys.end(); it != eIt; ++it )
 	{
-		ConstDataPtr value = Metadata::value<Data>( plug, *it );
+		ConstDataPtr value = Metadata::value( plug, *it );
 		Metadata::registerValue( plug, *it, value, /* persistent = */ false );
 	}
 }

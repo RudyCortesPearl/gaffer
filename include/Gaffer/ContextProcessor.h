@@ -38,63 +38,72 @@
 #define GAFFER_CONTEXTPROCESSOR_H
 
 #include "Gaffer/ComputeNode.h"
+#include "Gaffer/Context.h"
 
 namespace Gaffer
 {
 
 /// The ContextProcessor provides a base class to simplify the creation of nodes
 /// which evaluate their inputs using a modified context to that provided for the output
-/// evaluation - time warps being one good example. The ContextProcessor adds no plugs
-/// of it's own, but will automatically map all in* plugs to their out* equivalents.
-template<typename BaseType>
-class ContextProcessor : public BaseType
+/// evaluation - time warps being one good example.
+class IECORE_EXPORT ContextProcessor : public ComputeNode
 {
 
 	public :
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( ContextProcessor<BaseType>, BaseType );
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( ContextProcessor<BaseType> );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::ContextProcessor, ContextProcessorTypeId, ComputeNode );
 
 		ContextProcessor( const std::string &name=GraphComponent::defaultName<ContextProcessor>() );
-		virtual ~ContextProcessor();
+		~ContextProcessor() override;
 
-		virtual BoolPlug *enabledPlug();
-		virtual const BoolPlug *enabledPlug() const;
+		/// \undoable
+		void setup( const Plug *plug );
 
-		virtual Plug *correspondingInput( const Plug *output );
-		virtual const Plug *correspondingInput( const Plug *output ) const;
+		Plug *inPlug();
+		const Plug *inPlug() const;
 
-		virtual void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
+		Plug *outPlug();
+		const Plug *outPlug() const;
+
+		BoolPlug *enabledPlug() override;
+		const BoolPlug *enabledPlug() const override;
+
+		Plug *correspondingInput( const Plug *output ) override;
+		const Plug *correspondingInput( const Plug *output ) const override;
+
+		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const override;
+
+		/// Returns the context that `inPlug()` will be evaluated in
+		/// when `outPlug()` is evaluated in the current context.
+		ContextPtr inPlugContext() const;
 
 	protected :
 
 		/// Implemented to return the hash of the matching input using a context modified by
 		/// processContext() - derived class should therefore not need to reimplement hash(),
 		/// and should only implement processContext().
-		virtual void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( ValuePlug *output, const Context *context ) const;
+		void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const override;
+		void compute( ValuePlug *output, const Context *context ) const override;
 
-		/// Should be called by derived class affects() methods when the input
-		/// affects their implementation of processContext().
-		void appendAffectedPlugs( DependencyNode::AffectedPlugsContainer &outputs ) const;
-
+		/// Must be implemented to return true if the input is used in `processContext()`.
+		virtual bool affectsContext( const Plug *input ) const = 0;
 		/// Must be implemented to modify context in place.
-		/// \todo Pass `EditableScope` here in place of `Context`.
-		virtual void processContext( Context *context ) const = 0;
+		virtual void processContext( Context::EditableScope &context ) const = 0;
 
 	private :
 
-		static const ValuePlug *correspondingDescendant( const ValuePlug *plug, const ValuePlug *plugAncestor, const ValuePlug *oppositeAncestor );
+		class ProcessedScope;
+
+		static const Plug *correspondingDescendant( const Plug *plug, const Plug *plugAncestor, const Plug *oppositeAncestor );
 
 		/// Returns the input corresponding to the output and vice versa.
-		const ValuePlug *oppositePlug( const ValuePlug *plug ) const;
+		const Plug *oppositePlug( const Plug *plug ) const;
 
 		static size_t g_firstPlugIndex;
 
 };
 
-typedef ContextProcessor<ComputeNode> ContextProcessorComputeNode;
-IE_CORE_DECLAREPTR( ContextProcessorComputeNode );
+IE_CORE_DECLAREPTR( ContextProcessor );
 
 } // namespace Gaffer
 

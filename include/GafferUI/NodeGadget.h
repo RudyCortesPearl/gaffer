@@ -42,21 +42,24 @@
 
 #include "Gaffer/Set.h"
 
+#include <functional>
+
 namespace GafferUI
 {
 
 IE_CORE_FORWARDDECLARE( Nodule )
 IE_CORE_FORWARDDECLARE( NodeGadget )
+IE_CORE_FORWARDDECLARE( ConnectionCreator )
 
 /// A base class for representing nodes within a GraphGadget.
-class NodeGadget : public Gadget
+class GAFFERUI_API NodeGadget : public Gadget
 {
 
 	public :
 
-		virtual ~NodeGadget();
+		~NodeGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::NodeGadget, NodeGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::NodeGadget, NodeGadgetTypeId, Gadget );
 
 		Gaffer::Node *node();
 		const Gaffer::Node *node() const;
@@ -68,7 +71,7 @@ class NodeGadget : public Gadget
 		/// Returns the tangent for a nodule - this is a direction which
 		/// can be considered to be "away" from the NodeGadget for the
 		/// purposes of drawing connections.
-		virtual Imath::V3f noduleTangent( const Nodule *nodule ) const;
+		virtual Imath::V3f connectionTangent( const ConnectionCreator *creator ) const;
 
 		typedef boost::signal<void ( NodeGadget *, Nodule * )> NoduleSignal;
 		/// Emitted when a nodule is added. It is the responsibility
@@ -84,10 +87,10 @@ class NodeGadget : public Gadget
 		/// NodeGadget created can be controlled by registering a
 		/// "nodeGadget:type" metadata value for the node. Registering
 		/// "" suppresses creation of a NodeGadget, in which case
-		/// NULL will be returned.
+		/// nullptr will be returned.
 		static NodeGadgetPtr create( Gaffer::NodePtr node );
 
-		typedef boost::function<NodeGadgetPtr ( Gaffer::NodePtr )> NodeGadgetCreator;
+		typedef std::function<NodeGadgetPtr ( Gaffer::NodePtr )> NodeGadgetCreator;
 		/// Registers a named NodeGadget creator, optionally registering it as the default
 		/// creator for a particular type of node. The nodeGadgetType may subsequently be
 		/// used in a "nodeGadget:type" metadata registration to register the creator with
@@ -97,7 +100,7 @@ class NodeGadget : public Gadget
 		/// \deprecated Use the function above, or register "nodeGadget:type" metadata instead.
 		static void registerNodeGadget( IECore::TypeId nodeType, NodeGadgetCreator creator );
 
-		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
+		std::string getToolTip( const IECore::LineSegment3f &line ) const override;
 
 	protected :
 

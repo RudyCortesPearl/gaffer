@@ -39,8 +39,6 @@ import IECore
 
 import Gaffer
 import GafferUI
-import GafferCortexUI
-import GafferSceneUI
 
 class view( Gaffer.Application ) :
 
@@ -82,7 +80,8 @@ class view( Gaffer.Application ) :
 
 		self.__window = GafferUI.Window(
 			title = "Gaffer Viewer",
-			sizeMode = GafferUI.Window.SizeMode.Manual
+			sizeMode = GafferUI.Window.SizeMode.Manual,
+			borderWidth = 6
 		)
 
 		self.__window.setChild(

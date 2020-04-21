@@ -52,8 +52,13 @@ enum TypeId
 	ArnoldRenderTypeId = 110906,
 	ArnoldDisplacementTypeId = 110907,
 	ArnoldMeshLightTypeId = 110908,
+	ArnoldAOVShaderTypeId = 110909,
+	ArnoldAtmosphereTypeId = 110910,
+	ArnoldBackgroundTypeId = 110911,
+	ArnoldCameraShadersTypeId = 110912,
+	ArnoldLightFilterTypeId = 110913,
 
-	LastTypeId = 110949
+	LastTypeId = 110924
 };
 
 } // namespace GafferArnold

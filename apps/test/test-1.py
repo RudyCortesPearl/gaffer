@@ -35,8 +35,13 @@
 #
 ##########################################################################
 
+import glob
+import os
+import sys
+
 import IECore
 import Gaffer
+import GafferTest
 
 class test( Gaffer.Application ) :
 
@@ -50,6 +55,12 @@ class test( Gaffer.Application ) :
 			as part of Gaffer's build and review process, but it
 			is useful to run them manually when developing for
 			Gaffer or troubleshooting an installation.
+
+			Run all the tests :
+
+			```
+			gaffer test
+			```
 
 			Run all the tests for the scene module :
 
@@ -72,7 +83,7 @@ class test( Gaffer.Application ) :
 				IECore.StringVectorParameter(
 					name = "testCases",
 					description = "A list of names of specific test cases to run. If unspecified then all test cases are run.",
-					defaultValue = IECore.StringVectorData(),
+					defaultValue = IECore.StringVectorData( self.__allTestModules() ),
 				),
 
 				IECore.IntParameter(
@@ -80,6 +91,35 @@ class test( Gaffer.Application ) :
 					description = "The number of times to repeat the tests.",
 					defaultValue = 1,
 				),
+
+				IECore.BoolParameter(
+					name = "performanceOnly",
+					description = "Skips tests that don't compute performance metrics.",
+					defaultValue = False,
+				),
+
+				IECore.FileNameParameter(
+					name = "outputFile",
+					description = "The name of a JSON file that the results are written to.",
+					defaultValue = "",
+					allowEmptyString = True,
+					extensions = "json",
+				),
+
+				IECore.FileNameParameter(
+					name = "previousOutputFile",
+					description = "The name of a JSON file containing the results of a previous test run. "
+						"This will be used to detect and report performance regressions.",
+					defaultValue = "",
+					allowEmptyString = True,
+					extensions = "json",
+				),
+
+				IECore.BoolParameter(
+					name = "stopOnFailure",
+					description = "Stops on the first failure, instead of running the remaining tests.",
+					defaultValue = False,
+				)
 			]
 
 		)
@@ -95,31 +135,37 @@ class test( Gaffer.Application ) :
 		import unittest
 
 		testSuite = unittest.TestSuite()
-		if args["testCases"] :
+		for name in args["testCases"] :
+			testCase = unittest.defaultTestLoader.loadTestsFromName( name )
+			testSuite.addTest( testCase )
 
-			for name in args["testCases"] :
-				testCase = unittest.defaultTestLoader.loadTestsFromName( name )
-				testSuite.addTest( testCase )
-
-		else :
-
-			import GafferTest
-			import GafferUITest
-			import GafferSceneTest
-			import GafferImageTest
-			import GafferImageUITest
-
-			for module in ( GafferTest, GafferUITest, GafferSceneTest, GafferImageTest, GafferImageUITest ) :
-
-				moduleTestSuite = unittest.defaultTestLoader.loadTestsFromModule( module )
-				testSuite.addTest( moduleTestSuite )
+		if args["performanceOnly"].value :
+			GafferTest.TestRunner.filterPerformanceTests( testSuite )
 
 		for i in range( 0, args["repeat"].value ) :
-			testRunner = unittest.TextTestRunner( verbosity=2 )
+
+			testRunner = GafferTest.TestRunner( previousResultsFile = args["previousOutputFile"].value )
+			if args["stopOnFailure"].value :
+				testRunner.failfast = True
+
 			testResult = testRunner.run( testSuite )
+
+			if args["outputFile"].value :
+				testResult.save( args["outputFile"].value )
+
 			if not testResult.wasSuccessful() :
 				return 1
 
 		return 0
+
+	@staticmethod
+	def __allTestModules() :
+
+		result = set()
+		for path in sys.path :
+			for m in glob.glob( os.path.join( path, "Gaffer*Test" ) ) :
+				result.add( os.path.basename( m ) )
+
+		return sorted( result )
 
 IECore.registerRunTimeTyped( test )

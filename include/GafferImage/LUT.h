@@ -37,9 +37,9 @@
 #ifndef GAFFERIMAGE_LUT_H
 #define GAFFERIMAGE_LUT_H
 
-#include "Gaffer/NumericPlug.h"
-
 #include "GafferImage/OpenColorIOTransform.h"
+
+#include "Gaffer/NumericPlug.h"
 
 namespace Gaffer
 {
@@ -51,15 +51,15 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 namespace GafferImage
 {
 
-class LUT : public OpenColorIOTransform
+class GAFFERIMAGE_API LUT : public OpenColorIOTransform
 {
 
 	public :
 
 		LUT( const std::string &name=defaultName<LUT>() );
-		virtual ~LUT();
+		~LUT() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::LUT, LUTTypeId, OpenColorIOTransform );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::LUT, LUTTypeId, OpenColorIOTransform );
 
 		enum Interpolation
 		{
@@ -90,9 +90,9 @@ class LUT : public OpenColorIOTransform
 
 	protected :
 
-		virtual bool affectsTransform( const Gaffer::Plug *input ) const;
-		virtual void hashTransform( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual OpenColorIO::ConstTransformRcPtr transform() const;
+		bool affectsTransform( const Gaffer::Plug *input ) const override;
+		void hashTransform( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		OpenColorIO::ConstTransformRcPtr transform() const override;
 
 	private :
 

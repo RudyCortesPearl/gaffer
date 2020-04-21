@@ -36,8 +36,10 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
@@ -53,23 +55,34 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 		self.assertSceneValid( l["out"] )
 
 		self.assertEqual( l["out"].object( "/" ), IECore.NullObject() )
-		self.assertEqual( l["out"].transform( "/" ), IECore.M44f() )
+		self.assertEqual( l["out"].transform( "/" ), imath.M44f() )
 		self.assertEqual( l["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "light" ] ) )
 
 		self.assertTrue( isinstance( l["out"].object( "/light" ), IECore.NullObject ) )
-		self.assertTrue( isinstance( l["out"].attributes( "/light" )["light"][-1], IECore.Shader ) )
+		self.assertTrue( isinstance( l["out"].attributes( "/light" )["light"], IECoreScene.ShaderNetwork ) )
 
-		self.assertEqual( l["out"].transform( "/light" ), IECore.M44f() )
+		self.assertEqual( l["out"].transform( "/light" ), imath.M44f() )
 		self.assertEqual( l["out"].childNames( "/light" ), IECore.InternedStringVectorData() )
 
-		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "__lights" ] ) )
+		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "__lights", "defaultLights" ] ) )
 		lightSet = l["out"].set( "__lights" )
 		self.assertEqual(
 			lightSet,
-			GafferScene.PathMatcherData(
-				GafferScene.PathMatcher( [ "/light" ] )
+			IECore.PathMatcherData(
+				IECore.PathMatcher( [ "/light" ] )
 			)
 		)
+
+		defaultLightSet = l["out"].set( "defaultLights" )
+		self.assertEqual(
+			lightSet,
+			IECore.PathMatcherData(
+				IECore.PathMatcher( [ "/light" ] )
+			)
+		)
+
+		l["defaultLight"].setValue( False )
+		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "__lights" ] ) )
 
 	def testGroupMaintainsLightSet( self ) :
 
@@ -82,8 +95,8 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 		lightSet = g["out"].set( "__lights" )
 		self.assertEqual(
 			lightSet,
-			GafferScene.PathMatcherData(
-				GafferScene.PathMatcher( [ "/group/light" ] )
+			IECore.PathMatcherData(
+				IECore.PathMatcher( [ "/group/light" ] )
 			)
 		)
 
@@ -99,6 +112,15 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( "out.attributes" in dirtiedNames )
 		self.assertTrue( "out" in dirtiedNames )
 
+		cs = GafferTest.CapturingSlot( l.plugDirtiedSignal() )
+		self.assertEqual( len( cs ), 0 )
+
+		l['defaultLight'].setValue( not l['defaultLight'].getValue() )
+
+		dirtiedNames = [ p[0].relativeName( p[0].node() ) for p in cs ]
+		self.assertTrue( "out.set" in dirtiedNames )
+		self.assertTrue( "out" in dirtiedNames )
+
 	def testDisabled( self ) :
 
 		l = GafferSceneTest.TestLight()
@@ -110,10 +132,10 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 	def testAdditionalSets( self ) :
 
 		l = GafferSceneTest.TestLight()
-		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "__lights" ] ) )
+		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "__lights", "defaultLights" ] ) )
 
 		l["sets"].setValue( "A B")
-		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "A", "B", "__lights" ] ) )
+		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "A", "B", "__lights", "defaultLights" ] ) )
 
 		self.assertTrue( l["out"].set( "A", _copy = False ).isSame( l["out"].set( "B", _copy = False ) ) )
 		self.assertTrue( l["out"].set( "B", _copy = False ).isSame( l["out"].set( "__lights", _copy = False ) ) )
@@ -122,7 +144,7 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 
 		l = GafferSceneTest.TestLight()
 		l["sets"].setValue( "A B")
-		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "A", "B", "__lights" ] ) )
+		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "A", "B", "__lights", "defaultLights" ] ) )
 
 		l["enabled"].setValue( False )
 		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData() )
@@ -131,12 +153,104 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 
 		l = GafferSceneTest.TestLight()
 		l["sets"].setValue( "A B")
-		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "A", "B", "__lights" ] ) )
+		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "A", "B", "__lights", "defaultLights" ] ) )
 
-		self.assertEqual( l["out"].set( "" ), GafferScene.PathMatcherData() )
-		self.assertEqual( l["out"].set( "nonexistent1" ), GafferScene.PathMatcherData() )
+		self.assertEqual( l["out"].set( "" ), IECore.PathMatcherData() )
+		self.assertEqual( l["out"].set( "nonexistent1" ), IECore.PathMatcherData() )
 		self.assertEqual( l["out"].setHash( "nonexistent1" ), l["out"].setHash( "nonexistent2" ) )
 		self.assertTrue( l["out"].set( "nonexistent1", _copy = False ).isSame( l["out"].set( "nonexistent2", _copy = False ) ) )
+
+	def testTransformAffectsParentBound( self ) :
+
+		l = GafferSceneTest.TestLight()
+
+		g = GafferScene.Group()
+		g["in"][0].setInput( l["out"] )
+
+		# No transform
+
+		self.assertEqual(
+			l["out"].bound( "/" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+		self.assertEqual(
+			l["out"].bound( "/light" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+
+		self.assertEqual(
+			g["out"].bound( "/" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+		self.assertEqual(
+			g["out"].bound( "/group" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+		self.assertEqual(
+			g["out"].bound( "/group/light" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+
+		# Transform
+
+		l["transform"]["translate"].setValue( imath.V3f( 1 ) )
+
+		self.assertEqual(
+			l["out"].bound( "/" ),
+			imath.Box3f( imath.V3f( 0.5 ), imath.V3f( 1.5 ) ),
+		)
+		self.assertEqual(
+			l["out"].bound( "/light" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+
+		self.assertEqual(
+			g["out"].bound( "/" ),
+			imath.Box3f( imath.V3f( 0.5 ), imath.V3f( 1.5 ) ),
+		)
+		self.assertEqual(
+			g["out"].bound( "/group" ),
+			imath.Box3f( imath.V3f( 0.5 ), imath.V3f( 1.5 ) ),
+		)
+		self.assertEqual(
+			g["out"].bound( "/group/light" ),
+			imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ),
+		)
+
+	def testVisualisationAttributes( self ) :
+
+		l = GafferSceneTest.TestLight()
+
+		# Test not set by default
+
+		a = l["out"].attributes( "/light" )
+
+		self.assertFalse( "gl:light:drawingMode" in a.keys() )
+		self.assertFalse( "gl:visualiser:scale" in a.keys() )
+		self.assertFalse( "gl:visualiser:maxTextureResolution" in a.keys() )
+		self.assertFalse( "gl:visualiser:frustum" in a.keys() )
+		self.assertFalse( "gl:light:frustumScale" in a.keys() )
+
+		# Test attribute mapping
+
+		l["visualiserAttributes"]["lightDrawingMode"]["enabled"].setValue( True )
+		l["visualiserAttributes"]["lightDrawingMode"]["value"].setValue( "color" )
+		l["visualiserAttributes"]["scale"]["enabled"].setValue( True )
+		l["visualiserAttributes"]["scale"]["value"].setValue( 12.3 )
+		l["visualiserAttributes"]["maxTextureResolution"]["enabled"].setValue( True )
+		l["visualiserAttributes"]["maxTextureResolution"]["value"].setValue( 123 )
+		l["visualiserAttributes"]["frustum"]["enabled"].setValue( True )
+		l["visualiserAttributes"]["frustum"]["value"].setValue( "off" )
+		l["visualiserAttributes"]["lightFrustumScale"]["enabled"].setValue( True )
+		l["visualiserAttributes"]["lightFrustumScale"]["value"].setValue( 1.23 )
+
+		a = l["out"].attributes( "/light" )
+
+		self.assertEqual( a["gl:light:drawingMode"], IECore.StringData( "color" ) )
+		self.assertEqual( a["gl:visualiser:scale"], IECore.FloatData( 12.3 ) )
+		self.assertEqual( a["gl:visualiser:maxTextureResolution"], IECore.IntData( 123 ) )
+		self.assertEqual( a["gl:visualiser:frustum"], IECore.StringData( "off" ) )
+		self.assertEqual( a["gl:light:frustumScale"], IECore.FloatData( 1.23 ) )
 
 if __name__ == "__main__":
 	unittest.main()

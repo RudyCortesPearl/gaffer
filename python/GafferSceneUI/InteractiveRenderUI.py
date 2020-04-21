@@ -53,8 +53,8 @@ class _StatePlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.__startPauseButton = GafferUI.Button( image = 'timelinePlay.png' )
 			self.__stopButton = GafferUI.Button( image = 'timelineStop.png' )
 
-			self.__startPauseClickedConnection = self.__startPauseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__startPauseClicked ) )
-			self.__pauseClickedConnection = self.__stopButton.clickedSignal().connect( Gaffer.WeakMethod( self.__stopClicked ) )
+			self.__startPauseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__startPauseClicked ), scoped = False )
+			self.__stopButton.clickedSignal().connect( Gaffer.WeakMethod( self.__stopClicked ), scoped = False )
 
 		self._updateFromPlug()
 
@@ -96,7 +96,7 @@ class _StatePlugValueWidget( GafferUI.PlugValueWidget ) :
 
 Gaffer.Metadata.registerNode(
 
-	GafferScene.Preview.InteractiveRender,
+	GafferScene.InteractiveRender,
 
 	"description",
 	"""
@@ -155,101 +155,3 @@ Gaffer.Metadata.registerNode(
 	}
 )
 
-##########################################################################
-# Metadata for original InteractiveRender node. We hope to phase this
-# node out over time.
-##########################################################################
-
-Gaffer.Metadata.registerNode(
-
-	GafferScene.InteractiveRender,
-
-	"description",
-	"""
-	A base class for nodes which can render scenes interactively, updating
-	the render to reflect changes to the node graph.
-	""",
-
-	plugs = {
-
-		"*" : [
-
-			"nodule:type", "",
-
-		],
-
-		"in" : [
-
-			"description",
-			"""
-			The scene to be rendered.
-			""",
-
-			"nodule:type", "GafferUI::StandardNodule",
-
-		],
-
-		"out" : [
-
-			"description",
-			"""
-			A direct pass-through of the input scene.
-			""",
-
-		],
-
-		"state" : [
-
-			"description",
-			"""
-			The interactive state.
-			""",
-
-			"plugValueWidget:type", "GafferSceneUI.InteractiveRenderUI._StatePlugValueWidget",
-
-		],
-
-		"updateLights" : [
-
-			"description",
-			"""
-			When on, changes to lights are reflected in the
-			interactive render.
-			""",
-
-		],
-
-		"updateAttributes" : [
-
-			"description",
-			"""
-			When on, changes to attribute (and shaders) are reflected in the
-			interactive render. When working with complex scenes, it may be
-			worth turning this off to gain increased performance when only
-			editing lights.
-			""",
-
-		],
-
-		"updateCameras" : [
-
-			"description",
-			"""
-			When on, changes to the camera are reflected in the
-			interactive render.
-			""",
-
-		],
-
-		"updateCoordinateSystems" : [
-
-			"description",
-			"""
-			When on, changes to coordinate systems are reflected in the
-			interactive render.
-			""",
-
-		],
-
-	}
-)

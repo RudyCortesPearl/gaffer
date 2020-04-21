@@ -37,7 +37,7 @@
 #ifndef GAFFERSCENE_MAPPROJECTION_H
 #define GAFFERSCENE_MAPPROJECTION_H
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "GafferScene/ObjectProcessor.h"
 
 namespace Gaffer
 {
@@ -50,37 +50,27 @@ namespace GafferScene
 {
 
 /// Applies texture coordinates via a camera projection.
-/// \todo At some point I suspect we should move to storing
-/// texture coordinates as a single V2fVectorData primitive
-/// variable. It would be better to replace sNamePlug() and
-/// tNamePlug() with a single plug specifying a prefix (now)
-/// and the name of the primitive variable itself (later).
-class MapProjection : public SceneElementProcessor
+class GAFFERSCENE_API MapProjection : public ObjectProcessor
 {
 
 	public :
 
 		MapProjection( const std::string &name=defaultName<MapProjection>() );
-		virtual ~MapProjection();
+		~MapProjection() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::MapProjection, MapProjectionTypeId, SceneElementProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MapProjection, MapProjectionTypeId, ObjectProcessor );
 
 		Gaffer::StringPlug *cameraPlug();
 		const Gaffer::StringPlug *cameraPlug() const;
 
-		Gaffer::StringPlug *sNamePlug();
-		const Gaffer::StringPlug *sNamePlug() const;
-
-		Gaffer::StringPlug *tNamePlug();
-		const Gaffer::StringPlug *tNamePlug() const;
-
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::StringPlug *uvSetPlug();
+		const Gaffer::StringPlug *uvSetPlug() const;
 
 	protected :
 
-		virtual bool processesObject() const;
-		virtual void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const;
+		bool affectsProcessedObject( const Gaffer::Plug *input ) const override;
+		void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const override;
 
 	private :
 

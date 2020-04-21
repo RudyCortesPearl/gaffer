@@ -36,8 +36,7 @@
 ##########################################################################
 
 import weakref
-
-import IECore
+import functools
 
 import Gaffer
 import GafferUI
@@ -173,13 +172,13 @@ def appendMenuDefinitions( menuDefinition, prefix="" ) :
 	menuDefinition.append( prefix + "/Execute Selected", { "command" : executeSelected, "shortCut" : "Ctrl+E", "active" : selectionAvailable } )
 	menuDefinition.append( prefix + "/Repeat Previous", { "command" : repeatPrevious, "shortCut" : "Ctrl+R", "active" : previousAvailable } )
 
-def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
+def appendNodeContextMenuDefinitions( graphEditor, node, menuDefinition ) :
 
 	if not hasattr( node, "execute" ) :
 		return
 
 	menuDefinition.append( "/ExecuteDivider", { "divider" : True } )
-	menuDefinition.append( "/Execute", { "command" : IECore.curry( _showDispatcherWindow, [ node ] ) } )
+	menuDefinition.append( "/Execute", { "command" : functools.partial( _showDispatcherWindow, [ node ] ) } )
 
 def executeSelected( menu ) :
 	scriptWindow = menu.ancestor( GafferUI.ScriptWindow )
@@ -214,18 +213,18 @@ class DispatcherWindow( GafferUI.Window ) :
 
 		with self :
 
-			with GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Vertical, spacing = 2, borderWidth = 4 ) :
+			with GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Vertical, spacing = 2, borderWidth = 6 ) :
 
 				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) :
 					GafferUI.Label( "Dispatcher" )
 					self.__dispatchersMenu = GafferUI.MultiSelectionMenu( allowMultipleSelection = False, allowEmptySelection = False )
 					self.__dispatchersMenu.append( self.__dispatchers.keys() )
 					self.__dispatchersMenu.setSelection( [ defaultType ] )
-					self.__dispatchersMenuSelectionChangedConnection = self.__dispatchersMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__dispatcherChanged ) )
+					self.__dispatchersMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__dispatcherChanged ), scoped = False )
 
 				self.__frame = GafferUI.Frame( borderStyle=GafferUI.Frame.BorderStyle.None, borderWidth=0 )
 				self.__dispatchButton = GafferUI.Button( "Dispatch" )
-				self.__dispatchClickedConnection = self.__dispatchButton.clickedSignal().connect( Gaffer.WeakMethod( self.__dispatchClicked ) )
+				self.__dispatchButton.clickedSignal().connect( Gaffer.WeakMethod( self.__dispatchClicked ), scoped = False )
 
 		self.__update( resizeToFit = True )
 
@@ -249,7 +248,7 @@ class DispatcherWindow( GafferUI.Window ) :
 			toRemove = self.__dispatchers.get( label, None )
 			if toRemove and self.__currentDispatcher.isSame( toRemove ) :
 				if len(self.__dispatchers.items()) < 2 :
-					raise RuntimeError, "DispatcherWindow: " + label + " is the only dispatcher, so it cannot be removed."
+					raise RuntimeError( "DispatcherWindow: " + label + " is the only dispatcher, so it cannot be removed." )
 				self.setCurrentDispatcher( self.__dispatchers.values()[0] )
 
 			del self.__dispatchers[label]
@@ -272,7 +271,7 @@ class DispatcherWindow( GafferUI.Window ) :
 				break
 
 		if not dispatcherLabel :
-			raise RuntimeError, "DispatcherWindow: The current dispatcher must be added first. Use DispatcherWindow.addDispatcher( label, dispatcher )"
+			raise RuntimeError( "DispatcherWindow: The current dispatcher must be added first. Use DispatcherWindow.addDispatcher( label, dispatcher )" )
 
 		self.__currentDispatcher = dispatcher
 		self.__dispatchersMenu.setSelection( [ dispatcherLabel ] )
@@ -310,8 +309,6 @@ class DispatcherWindow( GafferUI.Window ) :
 		self.__updateTitle()
 
 		if resizeToFit :
-			# Force the node UI to build so we fit to the right contents
-			nodeUI.plugValueWidget( self.__currentDispatcher["framesMode"], lazy = False )
 			self.resizeToFitChild()
 
 	def __updateTitle( self ) :
@@ -343,7 +340,7 @@ class _DispatchButton( GafferUI.Button ) :
 		GafferUI.Button.__init__( self, "Execute", **kw )
 
 		self.__node = node
-		self.__clickedConnection = self.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ) )
+		self.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ), scoped = False )
 
 	def __clicked( self, button ) :
 
@@ -388,9 +385,10 @@ def selectedNodes( script ) :
 		if isinstance( n, GafferDispatch.TaskNode ) :
 			result.append( n )
 		elif isinstance( n, Gaffer.SubGraph ) :
-			for p in n.children( GafferDispatch.TaskNode.TaskPlug ) :
-				if p.direction() == Gaffer.Plug.Direction.Out and p.source() :
+			for p in GafferDispatch.TaskNode.TaskPlug.RecursiveOutputRange( n ) :
+				if isinstance( p.source().node(), GafferDispatch.TaskNode ) :
 					result.append( n )
+					break
 
 	return result
 

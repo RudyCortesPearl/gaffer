@@ -38,6 +38,8 @@
 import os
 import inspect
 import unittest
+import imath
+import re
 
 import IECore
 
@@ -343,8 +345,9 @@ class ExpressionTest( GafferTest.TestCase ) :
 		with IECore.CapturingMessageHandler() as mh :
 			s.load( continueOnError = True )
 
-		self.assertEqual( len( mh.messages ), 1 )
-		self.assertTrue( "rejects input " in mh.messages[0].message )
+		## \todo: When we run tests without compatibility configs we
+		## expect 4 messages regarding "has no attribute 'CompoundPlug'"
+		self.assertEqual( len( mh.messages ), 0 )
 
 		s.context().setFrame( 3 )
 		with s.context() :
@@ -407,22 +410,22 @@ class ExpressionTest( GafferTest.TestCase ) :
 		s["e"] = Gaffer.Expression()
 		s["e"].setExpression(
 			'import IECore;'
-			'parent["n"]["user"]["v2f"] = IECore.V2f( 1, 2 );'
-			'parent["n"]["user"]["v2i"] = IECore.V2i( 3, 4 );'
-			'parent["n"]["user"]["v3f"] = IECore.V3f( 4, 5, 6 );'
-			'parent["n"]["user"]["v3i"] = IECore.V3i( 6, 7, 8 );'
-			'parent["n"]["user"]["c3f"] = IECore.Color3f( 9, 10, 11 );'
-			'parent["n"]["user"]["c4f"] = IECore.Color4f( 12, 13, 14, 15 );'
+			'parent["n"]["user"]["v2f"] = imath.V2f( 1, 2 );'
+			'parent["n"]["user"]["v2i"] = imath.V2i( 3, 4 );'
+			'parent["n"]["user"]["v3f"] = imath.V3f( 4, 5, 6 );'
+			'parent["n"]["user"]["v3i"] = imath.V3i( 6, 7, 8 );'
+			'parent["n"]["user"]["c3f"] = imath.Color3f( 9, 10, 11 );'
+			'parent["n"]["user"]["c4f"] = imath.Color4f( 12, 13, 14, 15 );'
 		)
 
 		def assertExpectedValues( script ) :
 
-			self.assertEqual( script["n"]["user"]["v2f"].getValue(), IECore.V2f( 1, 2 ) )
-			self.assertEqual( script["n"]["user"]["v2i"].getValue(), IECore.V2i( 3, 4 ) )
-			self.assertEqual( script["n"]["user"]["v3f"].getValue(), IECore.V3f( 4, 5, 6 ) )
-			self.assertEqual( script["n"]["user"]["v3i"].getValue(), IECore.V3i( 6, 7, 8 ) )
-			self.assertEqual( script["n"]["user"]["c3f"].getValue(), IECore.Color3f( 9, 10, 11 ) )
-			self.assertEqual( script["n"]["user"]["c4f"].getValue(), IECore.Color4f( 12, 13, 14, 15 ) )
+			self.assertEqual( script["n"]["user"]["v2f"].getValue(), imath.V2f( 1, 2 ) )
+			self.assertEqual( script["n"]["user"]["v2i"].getValue(), imath.V2i( 3, 4 ) )
+			self.assertEqual( script["n"]["user"]["v3f"].getValue(), imath.V3f( 4, 5, 6 ) )
+			self.assertEqual( script["n"]["user"]["v3i"].getValue(), imath.V3i( 6, 7, 8 ) )
+			self.assertEqual( script["n"]["user"]["c3f"].getValue(), imath.Color3f( 9, 10, 11 ) )
+			self.assertEqual( script["n"]["user"]["c4f"].getValue(), imath.Color4f( 12, 13, 14, 15 ) )
 
 		assertExpectedValues( s )
 
@@ -443,19 +446,18 @@ class ExpressionTest( GafferTest.TestCase ) :
 
 		s["e"] = Gaffer.Expression()
 		s["e"].setExpression(
-			'import IECore;'
-			'parent["n"]["user"]["b2f"] = IECore.Box2f( IECore.V2f( 1, 2 ), IECore.V2f( 3, 4 ) );'
-			'parent["n"]["user"]["b2i"] = IECore.Box2i( IECore.V2i( 5, 6 ), IECore.V2i( 7, 8 ) );'
-			'parent["n"]["user"]["b3f"] = IECore.Box3f( IECore.V3f( 9, 10, 11 ), IECore.V3f( 12, 13, 14 ) );'
-			'parent["n"]["user"]["b3i"] = IECore.Box3i( IECore.V3i( 15, 16, 17 ), IECore.V3i( 18, 19, 20 ) );'
+			'parent["n"]["user"]["b2f"] = imath.Box2f( imath.V2f( 1, 2 ), imath.V2f( 3, 4 ) );'
+			'parent["n"]["user"]["b2i"] = imath.Box2i( imath.V2i( 5, 6 ), imath.V2i( 7, 8 ) );'
+			'parent["n"]["user"]["b3f"] = imath.Box3f( imath.V3f( 9, 10, 11 ), imath.V3f( 12, 13, 14 ) );'
+			'parent["n"]["user"]["b3i"] = imath.Box3i( imath.V3i( 15, 16, 17 ), imath.V3i( 18, 19, 20 ) );'
 		)
 
 		def assertExpectedValues( script ) :
 
-			self.assertEqual( script["n"]["user"]["b2f"].getValue(), IECore.Box2f( IECore.V2f( 1, 2 ), IECore.V2f( 3, 4 ) ) )
-			self.assertEqual( script["n"]["user"]["b2i"].getValue(), IECore.Box2i( IECore.V2i( 5, 6 ), IECore.V2i( 7, 8 ) ) )
-			self.assertEqual( script["n"]["user"]["b3f"].getValue(), IECore.Box3f( IECore.V3f( 9, 10, 11 ), IECore.V3f( 12, 13, 14 ) ) )
-			self.assertEqual( script["n"]["user"]["b3i"].getValue(), IECore.Box3i( IECore.V3i( 15, 16, 17 ), IECore.V3i( 18, 19, 20 ) ) )
+			self.assertEqual( script["n"]["user"]["b2f"].getValue(), imath.Box2f( imath.V2f( 1, 2 ), imath.V2f( 3, 4 ) ) )
+			self.assertEqual( script["n"]["user"]["b2i"].getValue(), imath.Box2i( imath.V2i( 5, 6 ), imath.V2i( 7, 8 ) ) )
+			self.assertEqual( script["n"]["user"]["b3f"].getValue(), imath.Box3f( imath.V3f( 9, 10, 11 ), imath.V3f( 12, 13, 14 ) ) )
+			self.assertEqual( script["n"]["user"]["b3i"].getValue(), imath.Box3i( imath.V3i( 15, 16, 17 ), imath.V3i( 18, 19, 20 ) ) )
 
 		assertExpectedValues( s )
 
@@ -605,24 +607,24 @@ class ExpressionTest( GafferTest.TestCase ) :
 
 		s["e"] = Gaffer.Expression()
 		s["e"].setExpression(
-			'parent["n"]["user"]["b2i"] = IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) );'
-			'parent["n"]["user"]["b2f"] = IECore.Box2f( IECore.V2f( 1, 2 ), IECore.V2f( 3, 4 ) );'
-			'parent["n"]["user"]["b3f"] = IECore.Box3f( IECore.V3f( 1, 2, 3 ), IECore.V3f( 4, 5, 6 ) );',
+			'parent["n"]["user"]["b2i"] = imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) );'
+			'parent["n"]["user"]["b2f"] = imath.Box2f( imath.V2f( 1, 2 ), imath.V2f( 3, 4 ) );'
+			'parent["n"]["user"]["b3f"] = imath.Box3f( imath.V3f( 1, 2, 3 ), imath.V3f( 4, 5, 6 ) );',
 		)
 
 		self.assertEqual(
 			s["n"]["user"]["b2i"].getValue(),
-			IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) )
+			imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) )
 		)
 
 		self.assertEqual(
 			s["n"]["user"]["b2f"].getValue(),
-			IECore.Box2f( IECore.V2f( 1, 2 ), IECore.V2f( 3, 4 ) )
+			imath.Box2f( imath.V2f( 1, 2 ), imath.V2f( 3, 4 ) )
 		)
 
 		self.assertEqual(
 			s["n"]["user"]["b3f"].getValue(),
-			IECore.Box3f( IECore.V3f( 1, 2, 3 ), IECore.V3f( 4, 5, 6 ) )
+			imath.Box3f( imath.V3f( 1, 2, 3 ), imath.V3f( 4, 5, 6 ) )
 		)
 
 	def testDisconnectOutput( self ) :
@@ -1131,10 +1133,10 @@ class ExpressionTest( GafferTest.TestCase ) :
 		s["n"]["user"].addChild( Gaffer.IntVectorDataPlug( defaultValue = IECore.IntVectorData( [ 0, 1 ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		s["n"]["user"].addChild( Gaffer.FloatVectorDataPlug( defaultValue = IECore.FloatVectorData( [ 0, 1 ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		s["n"]["user"].addChild( Gaffer.StringVectorDataPlug( defaultValue = IECore.StringVectorData( [ "a", "b" ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
-		s["n"]["user"].addChild( Gaffer.V3fVectorDataPlug( defaultValue = IECore.V3fVectorData( [ IECore.V3f( 1 ) ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
-		s["n"]["user"].addChild( Gaffer.Color3fVectorDataPlug( defaultValue = IECore.Color3fVectorData( [ IECore.Color3f( 1 ) ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
-		s["n"]["user"].addChild( Gaffer.M44fVectorDataPlug( defaultValue = IECore.M44fVectorData( [ IECore.M44f() ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
-		s["n"]["user"].addChild( Gaffer.V2iVectorDataPlug( defaultValue = IECore.V2iVectorData( [ IECore.V2i() ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["n"]["user"].addChild( Gaffer.V3fVectorDataPlug( defaultValue = IECore.V3fVectorData( [ imath.V3f( 1 ) ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["n"]["user"].addChild( Gaffer.Color3fVectorDataPlug( defaultValue = IECore.Color3fVectorData( [ imath.Color3f( 1 ) ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["n"]["user"].addChild( Gaffer.M44fVectorDataPlug( defaultValue = IECore.M44fVectorData( [ imath.M44f() ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["n"]["user"].addChild( Gaffer.V2iVectorDataPlug( defaultValue = IECore.V2iVectorData( [ imath.V2i() ] ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		s["e"] = Gaffer.Expression()
 
@@ -1266,6 +1268,250 @@ class ExpressionTest( GafferTest.TestCase ) :
 		] :
 			s["e"].setExpression( mutationAttempt + """\nparent["n"]["user"]["p"] = 100""" )
 			self.assertRaisesRegexp( RuntimeError, expectedError, s["n"]["user"]["p"].getValue )
+
+	def testDeleteCompoundDataPlug( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["user"]["p"] = Gaffer.CompoundDataPlug()
+		m = Gaffer.NameValuePlug( "test", 10, "m" )
+		s["n"]["user"]["p"].addChild( m )
+
+		e = """parent["n"]["user"]["p"]["m"]["value"] = 10"""
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( e )
+		self.assertEqual( s["e"].getExpression(), ( e, "python" ) )
+		self.assertEqual( s["n"]["user"]["p"]["m"]["value"].getValue(), 10 )
+
+		with Gaffer.UndoScope( s ) :
+			del s["n"]["user"]["p"]["m"]
+
+		self.assertEqual( m["value"].getInput(), None )
+		self.assertEqual( s["e"].getExpression(), ( "__disconnected = 10", "python" ) )
+
+		s.undo()
+		self.assertEqual( s["e"].getExpression(), ( e, "python" ) )
+		self.assertEqual( s["n"]["user"]["p"]["m"]["value"].getValue(), 10 )
+
+	def testCopyPaste( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.AddNode()
+
+		expression = """parent["n"]["op2"] = parent["n"]["op1"] * 2 + context.getFrame()"""
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( expression )
+
+		s["n"]["op1"].setValue( 2 )
+		self.assertEqual( s["n"]["sum"].getValue(), 7 )
+		self.assertTrue( s["n"]["op1"].outputs()[0].node().isSame( s["e"] ) )
+		self.assertTrue( s["n"]["op2"].getInput().node().isSame( s["e"] ) )
+
+		s.execute( s.serialise( filter = Gaffer.StandardSet( [ s["n"], s["e"] ] ) ) )
+
+		self.assertEqual( s["n"]["sum"].getValue(), 7 )
+		self.assertTrue( s["n"]["op1"].outputs()[0].node().isSame( s["e"] ) )
+		self.assertTrue( s["n"]["op2"].getInput().node().isSame( s["e"] ) )
+
+		self.assertEqual( s["n1"]["sum"].getValue(), 7 )
+		self.assertTrue( s["n1"]["op1"].outputs()[0].node().isSame( s["e1"] ) )
+		self.assertTrue( s["n1"]["op2"].getInput().node().isSame( s["e1"] ) )
+
+		self.assertEqual( s["e"].getExpression(), ( expression, "python" ) )
+		self.assertEqual( s["e1"].getExpression(), ( expression.replace( '"n"', '"n1"' ), "python" ) )
+
+		s["n"]["op1"].setValue( 10 )
+		s["n1"]["op1"].setValue( 11 )
+
+		self.assertEqual( s["n"]["sum"].getValue(), 31 )
+		self.assertEqual( s["n1"]["sum"].getValue(), 34 )
+
+		with Gaffer.Context() as c :
+			c.setFrame( 2 )
+			self.assertEqual( s["n"]["sum"].getValue(), 32 )
+			self.assertEqual( s["n1"]["sum"].getValue(), 35 )
+
+	def testNonSerialisableInput( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferTest.AddNode()
+		s["n1"]["op1"].setValue( 101 )
+		s["n1"]["op2"].setValue( 201 )
+		s["n1"]["sum"].setFlags( Gaffer.Plug.Flags.Serialisable, False )
+		s["n2"] = GafferTest.AddNode()
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( """parent["n2"]["op1"] = parent["n1"]["sum"]""" )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertEqual( s2["n2"]["op1"].getValue(), 302 )
+
+	def testReadFromCompoundDataPlug( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = Gaffer.Node()
+		s["n"]["c"] = Gaffer.CompoundDataPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["n"]["s"] = Gaffer.StringPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( inspect.cleandoc(
+			"""
+			c = parent["n"]["c"]
+			parent["n"]["s"] = ",".join( "{}:{}".format( k, c[k] ) for k in sorted( c.keys() ) )
+			"""
+		) )
+
+		self.assertEqual( s["n"]["s"].getValue(), "" )
+
+		cs = GafferTest.CapturingSlot( s["n"].plugDirtiedSignal() )
+		m1 = Gaffer.NameValuePlug( "a", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["n"]["c"].addChild( m1 )
+		self.assertTrue( s["n"]["s"] in { x[0] for x in cs } )
+		self.assertEqual( s["n"]["s"].getValue(), "a:1" )
+
+		del cs[:]
+		m2 = Gaffer.NameValuePlug( "b", 2, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["n"]["c"].addChild( m2 )
+		self.assertTrue( s["n"]["s"] in { x[0] for x in cs } )
+		self.assertEqual( s["n"]["s"].getValue(), "a:1,b:2" )
+
+		del cs[:]
+		m1["enabled"].setValue( False )
+		self.assertTrue( s["n"]["s"] in { x[0] for x in cs } )
+		self.assertEqual( s["n"]["s"].getValue(), "b:2" )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertEqual( s2["n"]["s"].getValue(), "b:2" )
+		s2["n"]["c"][m1.getName()]["enabled"].setValue( True )
+		self.assertEqual( s2["n"]["s"].getValue(), "a:1,b:2" )
+
+	def testContextContains( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferTest.AddNode()
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( inspect.cleandoc(
+			"""
+			parent["n"]["op1"] = 1 if "a" in context else 0
+			parent["n"]["op2"] = 1 if "a" not in context else 0
+			"""
+		) )
+
+		with Gaffer.Context() as c :
+
+			self.assertEqual( s["n"]["op1"].getValue(), 0 )
+			self.assertEqual( s["n"]["op2"].getValue(), 1 )
+
+			c["a"] = "a"
+			self.assertEqual( s["n"]["op1"].getValue(), 1 )
+			self.assertEqual( s["n"]["op2"].getValue(), 0 )
+
+			del c["a"]
+			self.assertEqual( s["n"]["op1"].getValue(), 0 )
+			self.assertEqual( s["n"]["op2"].getValue(), 1 )
+
+	def testDuplicateDeserialise( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["source"] = GafferTest.CompoundNumericNode()
+		s["source"]["p"].setValue( imath.V3f( 0.1, 0.2, 0.3 ) )
+
+		s["dest"] = GafferTest.CompoundNumericNode()
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression(
+			"parent[\"dest\"][\"p\"]['x'] = parent[\"source\"][\"p\"]['x'] + 1;\n" +
+			"parent[\"dest\"][\"p\"]['y'] = parent[\"source\"][\"p\"]['y'] + 2;\n" +
+			"parent[\"dest\"][\"p\"]['z'] = parent[\"source\"][\"p\"]['z'] + 3;\n",
+			"python",
+		)
+
+		ss = s.serialise()
+
+		s.execute( ss )
+		s.execute( ss )
+
+		self.assertEqual( s["dest"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		self.assertEqual( s["dest1"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		self.assertEqual( s["dest2"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+
+		# Working well so far, but we've had a bug that could be hidden by the caching.  Lets
+		# try evaluating the plugs again, but flushing the cache each time
+
+		Gaffer.ValuePlug.clearCache()
+		self.assertEqual( s["dest"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		self.assertEqual( s["dest1"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		self.assertEqual( s["dest2"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		Gaffer.ValuePlug.clearCache()
+
+		# Now test that the expressions still serialise OK, because our process for loading
+		# expressions with misordered plugs could have messed something up
+		ss2 = s.serialise()
+		del s
+
+		s = Gaffer.ScriptNode()
+		s.execute( ss2 )
+		self.assertEqual( s["dest"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		self.assertEqual( s["dest1"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+		self.assertEqual( s["dest2"]["p"].getValue(), imath.V3f( 1.1, 2.2, 3.3 ) )
+
+	def testIndependentOfOrderOfPlugNames( self ) :
+
+		# We shouldn't depend on p0 being the first plug mentioned in the expression - as long as p0 is assigned
+		# correctly, the expression should still work
+
+		# Set up an expression with lots of plugs
+		s = Gaffer.ScriptNode()
+
+		exprLines = []
+		for i in range( 10 ):
+			s["source%i"%i] = GafferTest.CompoundNumericNode()
+			s["source%i"%i]["p"].setValue( imath.V3f( 0.1, 0.2, 0.3 ) + 0.3 * i )
+			s["dest%i"%i] = GafferTest.CompoundNumericNode()
+			for a in "xyz":
+				exprLines.append(
+					"parent[\"dest%i\"][\"p\"]['%s'] = parent[\"source%i\"][\"p\"]['%s'] + 10 * %i;" % (
+						i, a, i, a, i
+					)
+				)
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "\n".join( exprLines ), "python" )
+
+		for i in range( 10 ):
+			self.assertAlmostEqual( s["dest%i"%i]["p"].getValue().x, 0.1 + 0.3 * i + 10 * i, places = 5 )
+			self.assertAlmostEqual( s["dest%i"%i]["p"].getValue().y, 0.2 + 0.3 * i + 10 * i, places = 5 )
+			self.assertAlmostEqual( s["dest%i"%i]["p"].getValue().z, 0.3 + 0.3 * i + 10 * i, places = 5 )
+
+		# Now serialize it, and reverse the order of all the lines in the expression before deserializing it
+		ss = s.serialise()
+
+		ssLines = ss.split( "\n" )
+		ssLinesEdited = []
+		for l in ssLines:
+			m = re.match( "^__children\[\"e\"\]\[\"__expression\"\].setValue\( '(.*)' \)$", l )
+			if not m:
+				ssLinesEdited.append( l )
+			else:
+				lines = m.groups()[0].split( "\\n" );
+				ssLinesEdited.append( "__children[\"e\"][\"__expression\"].setValue( '%s' )" % "\\n".join( lines[::-1] ) )
+
+		del s
+		s = Gaffer.ScriptNode()
+		s.execute( "\n".join( ssLinesEdited) )
+
+		for i in range( 10 ):
+			self.assertAlmostEqual( s["dest%i"%i]["p"].getValue().x, 0.1 + 0.3 * i + 10 * i, places = 5 )
+			self.assertAlmostEqual( s["dest%i"%i]["p"].getValue().y, 0.2 + 0.3 * i + 10 * i, places = 5 )
+			self.assertAlmostEqual( s["dest%i"%i]["p"].getValue().z, 0.3 + 0.3 * i + 10 * i, places = 5 )
 
 if __name__ == "__main__":
 	unittest.main()

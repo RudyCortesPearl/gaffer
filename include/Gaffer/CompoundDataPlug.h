@@ -38,10 +38,11 @@
 #ifndef GAFFER_COMPOUNDDATAPLUG_H
 #define GAFFER_COMPOUNDDATAPLUG_H
 
+#include "Gaffer/TypedPlug.h"
+#include "Gaffer/NameValuePlug.h"
+
 #include "IECore/CompoundData.h"
 #include "IECore/CompoundObject.h"
-
-#include "Gaffer/TypedPlug.h"
 
 namespace Gaffer
 {
@@ -50,8 +51,8 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 
 /// This plug provides an easy means of building CompoundData containing
 /// arbitrary keys and values, where each key and value is represented
-/// by an individual child plug.
-class CompoundDataPlug : public Gaffer::ValuePlug
+/// by an individual Gaffer::NameValuePlug.
+class GAFFER_API CompoundDataPlug : public Gaffer::ValuePlug
 {
 
 	public :
@@ -61,89 +62,29 @@ class CompoundDataPlug : public Gaffer::ValuePlug
 			Direction direction=In,
 			unsigned flags = Default
 		);
-		virtual ~CompoundDataPlug();
+		~CompoundDataPlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::CompoundDataPlug, CompoundDataPlugTypeId, Gaffer::ValuePlug );
+		GAFFER_PLUG_DECLARE_TYPE( Gaffer::CompoundDataPlug, CompoundDataPlugTypeId, Gaffer::ValuePlug );
 
 		/// Accepts only children that can generate values for the CompoundData.
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
-		/// The plug type used to represent the data members.
-		class MemberPlug : public ValuePlug
-		{
-
-			public :
-
-				IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::CompoundDataPlug::MemberPlug, CompoundDataMemberPlugTypeId, Gaffer::ValuePlug );
-
-				MemberPlug( const std::string &name=defaultName<MemberPlug>(), Direction direction=In, unsigned flags=Default );
-
-				StringPlug *namePlug();
-				const StringPlug *namePlug() const;
-
-				template<typename T>
-				T *valuePlug();
-				template<typename T>
-				const T *valuePlug() const;
-
-				/// May return NULL, since the enabled plug
-				/// is optional.
-				BoolPlug *enabledPlug();
-				const BoolPlug *enabledPlug() const;
-
-				virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
-				virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
-
-		};
-
-		typedef Gaffer::FilteredChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Invalid, MemberPlug> > MemberPlugIterator;
-		IE_CORE_DECLAREPTR( MemberPlug )
-
-		/// Adds a plug to represent a CompoundData member with the specified name and default value.
-		/// \todo Consider replacing all these add*Member() methods with convenience constructors on MemberPlug,
-		/// and a simple addChild( new MemberPlug( ... ) ).
-		MemberPlug *addMember( const std::string &name, const IECore::Data *defaultValue, const std::string &plugName = "member1", unsigned plugFlags = Plug::Default | Plug::Dynamic );
-		MemberPlug *addMember( const std::string &name, ValuePlug *valuePlug, const std::string &plugName = "member1" );
-		/// As above, but adds an additional BoolPlug to allow the user to control whether or not
-		/// this particular member is enabled.
-		MemberPlug *addOptionalMember( const std::string &name, const IECore::Data *defaultValue, const std::string &plugName = "member1", unsigned plugFlags = Plug::Default | Plug::Dynamic, bool enabled = false );
-		MemberPlug *addOptionalMember( const std::string &name, ValuePlug *valuePlug, const std::string &plugName = "member1", bool enabled = false );
 		/// Adds each member from the specified CompoundData.
 		void addMembers( const IECore::CompoundData *members, bool useNameAsPlugName = false );
 
 		/// Returns the value for the member specified by the child parameterPlug, and fills name with the
 		/// name for the member. If the user has disabled the member or the name is the empty string, then
 		/// 0 is returned.
-		IECore::DataPtr memberDataAndName( const MemberPlug *parameterPlug, std::string &name ) const;
+		IECore::DataPtr memberDataAndName( const NameValuePlug *parameterPlug, std::string &name ) const;
 
 		/// Fills the CompoundDataMap with values based on the child plugs of this node.
 		void fillCompoundData( IECore::CompoundDataMap &compoundDataMap ) const;
 		/// As above but fills a CompoundObjectMap instead.
 		void fillCompoundObject( IECore::CompoundObject::ObjectMap &compoundObjectMap ) const;
 
-		/// Creates an appropriate plug to hold the specified data.
-		/// \todo This is exposed so it may be reused elsewhere, but is there a better place for it? What about PlugAlgo.h?
-		static ValuePlugPtr createPlugFromData( const std::string &name, Plug::Direction direction, unsigned flags, const IECore::Data *value );
-		/// Extracts a Data value from a plug previously created with createPlugFromData().
-		static IECore::DataPtr extractDataFromPlug( const ValuePlug *plug );
-
-		virtual IECore::MurmurHash hash() const;
+		IECore::MurmurHash hash() const override;
 		void hash( IECore::MurmurHash &h ) const;
-
-	private :
-
-		template<typename T>
-		static ValuePlugPtr boxValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value );
-
-		template<typename T>
-		static ValuePlugPtr compoundNumericValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value );
-
-		template<typename T>
-		static ValuePlugPtr geometricCompoundNumericValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value );
-
-		template<typename T>
-		static ValuePlugPtr typedObjectValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value );
 
 };
 
@@ -158,7 +99,5 @@ typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plu
 typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Out, CompoundDataPlug>, PlugPredicate<> > RecursiveOutputCompoundDataPlugIterator;
 
 } // namespace Gaffer
-
-#include "Gaffer/CompoundDataPlug.inl"
 
 #endif // GAFFER_COMPOUNDDATAPLUG_H

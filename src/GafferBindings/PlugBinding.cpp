@@ -37,56 +37,122 @@
 
 #include "boost/python.hpp"
 
-#include "Gaffer/Plug.h"
+#include "Gaffer/BoxIn.h"
+#include "Gaffer/BoxOut.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/Dot.h"
 #include "Gaffer/Node.h"
+#include "Gaffer/Plug.h"
+#include "Gaffer/Switch.h"
 
 #include "GafferBindings/PlugBinding.h"
+
 #include "GafferBindings/MetadataBinding.h"
 
 using namespace boost::python;
+using namespace IECore;
 using namespace GafferBindings;
 using namespace Gaffer;
 
-static std::string maskedRepr( const Plug *plug, unsigned flagsMask )
+namespace
 {
-	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
 
-	if( plug->direction()!=Plug::In )
+bool shouldSerialiseInput( const Plug *plug, const Serialisation &serialisation )
+{
+	if( !plug->getInput() )
 	{
-		result += "direction = " + PlugSerialiser::directionRepr( plug->direction() ) + ", ";
+		return false;
 	}
 
-	const unsigned flags = plug->getFlags() & flagsMask;
-	if( flags != Plug::Default )
+	if( auto parent = plug->parent<Plug>() )
 	{
-		result += "flags = " + PlugSerialiser::flagsRepr( flags ) + ", ";
+		if( parent->getInput() && parent != serialisation.parent() )
+		{
+			// Parent plug's input will have been serialised, so a serialisation
+			// for the child would be redundant.
+			return false;
+		}
 	}
 
-	result += ")";
-
-	return result;
-}
-
-static std::string repr( const Plug *plug )
-{
-	return maskedRepr( plug, Plug::All );
-}
-
-static boost::python::tuple outputs( Plug &p )
-{
-	const Plug::OutputContainer &o = p.outputs();
-	boost::python::list l;
-	for( Plug::OutputContainer::const_iterator it=o.begin(); it!=o.end(); it++ )
+	if( !plug->getFlags( Plug::Serialisable ) )
 	{
-		l.append( PlugPtr( *it ) );
+		// Removing the Serialisable flag is a common way of
+		// disabling serialisation of a `setInput()` call, but
+		// it has problems :
+		//
+		// - Plug flags get propagated round by `Plug::createCounterpart()`,
+		//   often in an unwanted fashion. Our goal should be to remove
+		//   them entirely.
+		// - It's too blunt an instrument. It disables all serialisation
+		//   for the plug, including any metadata that has been registered.
+		return false;
 	}
-	return boost::python::tuple( l );
+
+	// Because of the problems with using Plug::Serialisable, it seems we
+	// need a mechanism for a node to say whether or not an input needs to
+	// be serialised. Options might include :
+	//
+	// 1. Adding a `virtual bool Node::serialiseInput( const Plug * ) const`
+	//    method that can be overridden by subclasses. This would be pretty
+	//    convenient, but it would blur the separation between the Gaffer
+	//    and GafferBindings libraries. Maybe we can justify this because it's
+	//    not actually a dependency on Python, and doesn't know anything about
+	//    the serialisation format. In other words, maybe it's OK for a node
+	//    to know _what_ needs to be serialised, as long as it doesn't know
+	//    _how_. It seems that if we had similar `bool GraphComponent::serialiseChild()`
+	//    and `bool GraphComponent::serialiseChildConstructor()` methods, we
+	//    could actually ditch a fair proportion of custom serialisers, which
+	//    might be nice.
+	//
+	// 2. Adding a `virtual bool NodeSerialiser::serialiseInput( const Plug * )`
+	//    method, and finding the registered serialiser for the node in `postHierarchy()`
+	//    below. This is purer, but probably a bit more of a faff in practice.
+	//
+	// 3. Coming up with a sensible rule that doesn't require more API. Perhaps
+	//    we only need to serialise internal connections if they come from a
+	//    child node which itself is serialised? It sure would be nice to simplify
+	//    all this serialisation logic, and if a simple rule allows us to avoid
+	//    greater complexity, that would be great.
+	//
+	// In lieu of a decision on this, for now we just hardcode the end result
+	// we want, which is to omit serialisation for the internal connections of
+	// the nodes below...
+
+	if( auto boxIn = runTimeCast<const BoxIn>( plug->node() ) )
+	{
+		if( plug == boxIn->plug() )
+		{
+			return false;
+		}
+	}
+	else if( runTimeCast<const BoxOut>( plug->node() ) )
+	{
+		if( plug->getName() == "__out" )
+		{
+			return false;
+		}
+	}
+	else if( auto dot = runTimeCast<const Dot>( plug->node() ) )
+	{
+		if( plug == dot->outPlug() )
+		{
+			return false;
+		}
+	}
+	else if( auto sw = runTimeCast<const Switch>( plug->node() ) )
+	{
+		if( plug == sw->outPlug() )
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
-static NodePtr node( Plug &p )
-{
-	return p.node();
-}
+const IECore::InternedString g_includeParentPlugMetadata( "plugSerialiser:includeParentPlugMetadata" );
+
+} // namespace
 
 void PlugSerialiser::moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const
 {
@@ -96,30 +162,35 @@ void PlugSerialiser::moduleDependencies( const Gaffer::GraphComponent *graphComp
 
 std::string PlugSerialiser::constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const
 {
-	return maskedRepr( static_cast<const Plug *>( graphComponent ), Plug::All & ~Plug::ReadOnly );
+	return repr( static_cast<const Plug *>( graphComponent ) );
 }
 
 std::string PlugSerialiser::postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
 {
 	const Plug *plug = static_cast<const Plug *>( graphComponent );
-	if( plug->getFlags( Plug::Serialisable ) )
+
+	std::string result = Serialiser::postHierarchy( graphComponent, identifier, serialisation );
+
+	if( shouldSerialiseInput( plug, serialisation ) )
 	{
-		std::string result;
-		std::string inputIdentifier = serialisation.identifier( plug->getInput<Plug>() );
+		std::string inputIdentifier = serialisation.identifier( plug->getInput() );
 		if( inputIdentifier.size() )
 		{
 			result += identifier + ".setInput( " + inputIdentifier + " )\n";
 		}
-		if( plug->getFlags( Plug::ReadOnly ) )
-		{
-			result += identifier + ".setFlags( Gaffer.Plug.Flags.ReadOnly, True )\n";
-		}
-
-		result += metadataSerialisation( plug, identifier );
-
-		return result;
 	}
-	return "";
+
+	bool shouldSerialiseMetadata = true;
+	if( plug->node() == serialisation.parent() )
+	{
+		shouldSerialiseMetadata = Context::current()->get<bool>( g_includeParentPlugMetadata, true );
+	}
+	if( shouldSerialiseMetadata )
+	{
+		result += metadataSerialisation( plug, identifier );
+	}
+
+	return result;
 }
 
 bool PlugSerialiser::childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const
@@ -151,15 +222,15 @@ std::string PlugSerialiser::directionRepr( Plug::Direction direction )
 
 std::string PlugSerialiser::flagsRepr( unsigned flags )
 {
-	static const Plug::Flags values[] = { Plug::Dynamic, Plug::Serialisable, Plug::AcceptsInputs, Plug::PerformsSubstitutions, Plug::Cacheable, Plug::ReadOnly, Plug::AcceptsDependencyCycles, Plug::None };
-	static const char *names[] = { "Dynamic", "Serialisable", "AcceptsInputs", "PerformsSubstitutions", "Cacheable", "ReadOnly", "AcceptsDependencyCycles", 0 };
+	static const Plug::Flags values[] = { Plug::Dynamic, Plug::Serialisable, Plug::AcceptsInputs, Plug::Cacheable, Plug::AcceptsDependencyCycles, Plug::None };
+	static const char *names[] = { "Dynamic", "Serialisable", "AcceptsInputs", "Cacheable", "AcceptsDependencyCycles", nullptr };
 
 	int defaultButOffCount = 0;
 	std::string defaultButOff;
 	std::string nonDefaultButOn;
 	for( int i=0; names[i]; i++ )
 	{
-		std::string *s = NULL;
+		std::string *s = nullptr;
 		if( flags & values[i] )
 		{
 			if( !(values[i] & Plug::Default) )
@@ -208,64 +279,23 @@ std::string PlugSerialiser::flagsRepr( unsigned flags )
 	return result;
 }
 
-static PlugPtr getInput( Plug &p )
+std::string PlugSerialiser::repr( const Plug *plug, unsigned flagsMask )
 {
-	return p.getInput<Plug>();
-}
+	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
 
-static PlugPtr source( Plug &p )
-{
-	return p.source<Plug>();
-}
-
-void GafferBindings::bindPlug()
-{
-	typedef PlugWrapper<Plug> Wrapper;
-
-	PlugClass<Plug, Wrapper> c;
+	if( plug->direction()!=Plug::In )
 	{
-		scope s( c );
-		enum_<Plug::Direction>( "Direction" )
-			.value( "Invalid", Plug::Invalid )
-			.value( "In", Plug::In )
-			.value( "Out", Plug::Out )
-		;
-		enum_<Plug::Flags>( "Flags" )
-			.value( "None", Plug::None )
-			.value( "Dynamic", Plug::Dynamic )
-			.value( "Serialisable", Plug::Serialisable )
-			.value( "AcceptsInputs", Plug::AcceptsInputs )
-			.value( "PerformsSubstitutions", Plug::PerformsSubstitutions )
-			.value( "Cacheable", Plug::Cacheable )
-			.value( "ReadOnly", Plug::ReadOnly )
-			.value( "AcceptsDependencyCycles", Plug::AcceptsDependencyCycles )
-			.value( "Default", Plug::Default )
-			.value( "All", Plug::All )
-		;
+		result += "direction = " + PlugSerialiser::directionRepr( plug->direction() ) + ", ";
 	}
 
-	c.def(  init< const std::string &, Plug::Direction, unsigned >
-			(
-				(
-					arg( "name" ) = GraphComponent::defaultName<Plug>(),
-					arg( "direction" ) = Plug::In,
-					arg( "flags" ) = Plug::Default
-				)
-			)
-		)
-		.def( "node", &node )
-		.def( "direction", &Plug::direction )
-		.def( "getFlags", (unsigned (Plug::*)() const )&Plug::getFlags )
-		.def( "getFlags", (bool (Plug::*)( unsigned ) const )&Plug::getFlags )
-		.def( "setFlags", (void (Plug::*)( unsigned ) )&Plug::setFlags )
-		.def( "setFlags", (void (Plug::*)( unsigned, bool ) )&Plug::setFlags )
-		.def( "getInput", &getInput )
-		.def( "source", &source )
-		.def( "removeOutputs", &Plug::removeOutputs )
-		.def( "outputs", &outputs )
-		.def( "__repr__", &repr )
-	;
+	const unsigned flags = plug->getFlags() & flagsMask;
+	if( flags != Plug::Default )
+	{
+		result += "flags = " + PlugSerialiser::flagsRepr( flags ) + ", ";
+	}
 
-	Serialisation::registerSerialiser( Gaffer::Plug::staticTypeId(), new PlugSerialiser );
+	result += ")";
 
+	return result;
 }
+

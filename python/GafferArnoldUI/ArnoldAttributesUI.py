@@ -50,14 +50,31 @@ def __visibilitySummary( plug ) :
 
 		( "camera", "Camera" ),
 		( "shadow", "Shad" ),
-		( "reflected", "Refl" ),
-		( "refracted", "Refr" ),
-		( "diffuse", "Diff" ),
-		( "glossy", "Glossy" ),
+		( "diffuseReflection", "DiffRefl" ),
+		( "specularReflection", "SpecRefl" ),
+		( "diffuseTransmission", "DiffTrans" ),
+		( "specularTransmission", "SpecTrans" ),
+		( "volume", "Volume" ),
+		( "subsurface", "Subsurf" ),
 
 	)	:
 		if plug[childName+"Visibility"]["enabled"].getValue() :
 			info.append( label + ( " On" if plug[childName+"Visibility"]["value"].getValue() else " Off" ) )
+
+	if plug["shadowGroup"]["enabled"].getValue() :
+		info.append( "ShadowGroup Applied" )
+
+	return ", ".join( info )
+
+__transformTypeEnumNames = { "linear" : "Linear", "rotate_about_origin" : "RotateAboutOrigin",
+	"rotate_about_center" : "RotateAboutCenter" }
+
+def __transformSummary( plug ) :
+
+	info = []
+
+	if plug["transformType"]["enabled"].getValue() :
+		info.append( "Transform Type " + __transformTypeEnumNames[ plug["transformType"]["value"].getValue() ] )
 
 	return ", ".join( info )
 
@@ -68,13 +85,14 @@ def __shadingSummary( plug ) :
 		if plug[childName]["enabled"].getValue() :
 			info.append( IECore.CamelCase.toSpaced( childName ) + ( " On" if plug[childName]["value"].getValue() else " Off" ) )
 
+	if plug["sssSetName"]["enabled"].getValue() :
+		info.append( "SSS Set Name " + plug["sssSetName"]["value"].getValue() )
+
 	return ", ".join( info )
 
 def __subdivisionSummary( plug ) :
 
 	info = []
-	if plug["subdividePolygons"]["enabled"].getValue() :
-		info.append( "Subdivide Polygons " + ( "On" if plug["subdividePolygons"]["value"].getValue() else "Off" ) )
 	if plug["subdivIterations"]["enabled"].getValue() :
 		info.append( "Iterations %d" % plug["subdivIterations"]["value"].getValue() )
 	if plug["subdivAdaptiveError"]["enabled"].getValue() :
@@ -83,6 +101,19 @@ def __subdivisionSummary( plug ) :
 		info.append( string.capwords( plug["subdivAdaptiveMetric"]["value"].getValue().replace( "_", " " ) ) + " Metric" )
 	if plug["subdivAdaptiveSpace"]["enabled"].getValue() :
 		info.append( string.capwords( plug["subdivAdaptiveSpace"]["value"].getValue() ) + " Space" )
+	if plug["subdivUVSmoothing"]["enabled"].getValue() :
+		info.append(
+			{
+				"pin_corners" : "Pin UV Corners",
+				"pin_borders" : "Pin UV Borders",
+				"linear" : "Linear UVs",
+				"smooth" : "Smooth UVs",
+			}.get( plug["subdivUVSmoothing"]["value"].getValue() )
+		)
+	if plug["subdivSmoothDerivs"]["enabled"].getValue() :
+		info.append( "Smooth Derivs " + ( "On" if plug["subdivSmoothDerivs"]["value"].getValue() else "Off" ) )
+	if plug["subdividePolygons"]["enabled"].getValue() :
+		info.append( "Subdivide Polygons " + ( "On" if plug["subdividePolygons"]["value"].getValue() else "Off" ) )
 
 	return ", ".join( info )
 
@@ -99,8 +130,30 @@ def __curvesSummary( plug ) :
 def __volumeSummary( plug ) :
 
 	info = []
+	if plug["volumeStepScale"]["enabled"].getValue() :
+		info.append( "Volume Step Scale %s" % GafferUI.NumericWidget.valueToString( plug["volumeStepScale"]["value"].getValue() ) )
 	if plug["volumeStepSize"]["enabled"].getValue() :
-		info.append( "Step %s" % GafferUI.NumericWidget.valueToString( plug["volumeStepSize"]["value"].getValue() ) )
+		info.append( "Volume Step Size %s" % GafferUI.NumericWidget.valueToString( plug["volumeStepSize"]["value"].getValue() ) )
+	if plug["shapeStepScale"]["enabled"].getValue() :
+		info.append( "Shape Step Scale %s" % GafferUI.NumericWidget.valueToString( plug["shapeStepScale"]["value"].getValue() ) )
+	if plug["shapeStepSize"]["enabled"].getValue() :
+		info.append( "Shape Step Size %s" % GafferUI.NumericWidget.valueToString( plug["shapeStepSize"]["value"].getValue() ) )
+	if plug["volumePadding"]["enabled"].getValue() :
+		info.append( "Padding %s" % GafferUI.NumericWidget.valueToString( plug["volumePadding"]["value"].getValue() ) )
+	if plug["velocityScale"]["enabled"].getValue() :
+		info.append( "Velocity Scale %s" % GafferUI.NumericWidget.valueToString( plug["velocityScale"]["value"].getValue() ) )
+	if plug["velocityFPS"]["enabled"].getValue() :
+		info.append( "Velocity FPS %s" % GafferUI.NumericWidget.valueToString( plug["velocityFPS"]["value"].getValue() ) )
+	if plug["velocityOutlierThreshold"]["enabled"].getValue() :
+		info.append( "Velocity Outlier Threshold %s" % GafferUI.NumericWidget.valueToString( plug["velocityOutlierThreshold"]["value"].getValue() ) )
+
+	return ", ".join( info )
+
+def __toonSummary( plug ) :
+
+	info = []
+	if plug["toonId"]["enabled"].getValue() :
+		info.append( "Toon Id " + plug["toonId"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -120,10 +173,12 @@ Gaffer.Metadata.registerNode(
 		"attributes" : [
 
 			"layout:section:Visibility:summary", __visibilitySummary,
+			"layout:section:Transform:summary", __transformSummary,
 			"layout:section:Shading:summary", __shadingSummary,
 			"layout:section:Subdivision:summary", __subdivisionSummary,
 			"layout:section:Curves:summary", __curvesSummary,
 			"layout:section:Volume:summary", __volumeSummary,
+			"layout:section:Toon:summary", __toonSummary,
 
 		],
 
@@ -157,55 +212,120 @@ Gaffer.Metadata.registerNode(
 
 		],
 
-		"attributes.reflectedVisibility" : [
+		"attributes.shadowGroup" : [
+
+			"description",
+			"""
+			The lights that cause this object to cast shadows.
+			Accepts a set expression or a space separated list of
+			lights. Use \"defaultLights\" to refer to all lights that
+			contribute to illumination by default.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Shadow Group",
+		],
+
+		"attributes.diffuseReflectionVisibility" : [
 
 			"description",
 			"""
 			Whether or not the object is visible in
-			tight mirror reflections.
+			reflected diffuse ( ie. if it casts bounce light )
 			""",
 
 			"layout:section", "Visibility",
-			"label", "Reflections",
+			"label", "Diffuse Reflection",
 
 		],
 
-		"attributes.refractedVisibility" : [
+		"attributes.specularReflectionVisibility" : [
 
 			"description",
 			"""
 			Whether or not the object is visible in
-			refractions.
+			reflected specular ( ie. if it is visible in mirrors ).
 			""",
 
 			"layout:section", "Visibility",
-			"label", "Refractions",
+			"label", "Specular Reflection",
 
 		],
 
-		"attributes.diffuseVisibility" : [
-
-			"description",
-			"""
-			Whether or not the object is visible to diffuse
-			rays - whether it casts bounce light or not.
-			""",
-
-			"layout:section", "Visibility",
-			"label", "Diffuse",
-
-		],
-
-		"attributes.glossyVisibility" : [
+		"attributes.diffuseTransmissionVisibility" : [
 
 			"description",
 			"""
 			Whether or not the object is visible in
-			soft specular reflections.
+			transmitted diffuse ( ie. if it casts light through leaves ).
 			""",
 
 			"layout:section", "Visibility",
-			"label", "Glossy",
+			"label", "Diffuse Transmission",
+
+		],
+
+		"attributes.specularTransmissionVisibility" : [
+
+			"description",
+			"""
+			Whether or not the object is visible in
+			refracted specular ( ie. if it can be seen through glass ).
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Specular Transmission",
+
+		],
+
+		"attributes.volumeVisibility" : [
+
+			"description",
+			"""
+			Whether or not the object is visible in
+			volume scattering.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Volume",
+
+		],
+
+		"attributes.subsurfaceVisibility" : [
+
+			"description",
+			"""
+			Whether or not the object is visible to subsurface
+			rays.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Subsurface",
+
+		],
+
+		# Transform
+
+		"attributes.transformType" : [
+
+			"description",
+			"""
+			Choose how transform motion is interpolated.  Linear
+			produces classic linear vertex motion, RotateAboutOrigin
+			produces curved arcs centred on the object's origin, and
+			RotateAboutCenter, the default, produces curved arcs
+			centred on the object's bounding box middle.
+			""",
+
+			"layout:section", "Transform",
+
+		],
+		"attributes.transformType.value" : [
+
+			"presetNames", lambda plug : IECore.StringVectorData( __transformTypeEnumNames.values() ),
+			"presetValues", lambda plug : IECore.StringVectorData( __transformTypeEnumNames.keys() ),
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
 		],
 
@@ -259,33 +379,18 @@ Gaffer.Metadata.registerNode(
 
 		],
 
-		# Subdivision
-
-		"attributes.subdividePolygons" : [
+		"attributes.sssSetName" : [
 
 			"description",
 			"""
-			Causes polygon meshes to be rendered with Arnold's
-			subdiv_type parameter set to "linear" rather than
-			"none". This can be used to increase detail when
-			using polygons with displacement shaders and/or mesh
-			lights.
+			If given, subsurface will be blended across any other objects which share the same sss set name.
 			""",
 
-			"layout:section", "Subdivision",
-			"label", "Subdivide Polygons",
-
+			"layout:section", "Shading",
+			"label", "SSS Set Name",
 		],
 
-		"attributes.subdivType.value" : [
-
-			"preset:None", "none",
-			"preset:Linear", "linear",
-			"preset:Catclark", "catclark",
-
-			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
-
-		],
+		# Subdivision
 
 		"attributes.subdivIterations" : [
 
@@ -395,6 +500,29 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"attributes.subdivUVSmoothing" : [
+
+			"label", "UV Smoothing",
+			"description",
+			"""
+			Determines how UVs are subdivided.
+			""",
+
+			"layout:section", "Subdivision",
+
+		],
+
+		"attributes.subdivUVSmoothing.value" : [
+
+			"preset:Pin Corners", "pin_corners",
+			"preset:Pin Borders", "pin_borders",
+			"preset:Linear", "linear",
+			"preset:Smooth", "smooth",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
+		],
+
 		"attributes.subdivSmoothDerivs" : [
 
 			"layout:section", "Subdivision",
@@ -407,6 +535,27 @@ Gaffer.Metadata.registerNode(
 			from anisotropic specular and other shading effects
 			that use the derivatives.
 			""",
+
+		],
+
+		"attributes.subdividePolygons" : [
+
+			"description",
+			"""
+			Causes polygon meshes to be rendered with Arnold's
+			subdiv_type parameter set to "linear" rather than
+			"none". This can be used to increase detail when
+			using polygons with displacement shaders and/or mesh
+			lights.
+
+			> Caution : This is not equivalent to converting a polygon
+			> mesh into a subdivision surface. To render with Arnold's
+			> subdiv_type set to "catclark", you must use the MeshType
+			> node to convert polygon meshes into subdivision surfaces.
+			""",
+
+			"layout:section", "Subdivision",
+			"label", "Subdivide Polygons (Linear)",
 
 		],
 
@@ -463,18 +612,120 @@ Gaffer.Metadata.registerNode(
 
 		# Volume
 
+		"attributes.volumeStepScale" : [
+
+			"description",
+			"""
+			Raymarching step size is calculated using this value 
+			multiplied by the volume voxel size or volumeStepSize if set.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Volume Step Scale",
+
+		],
+
 		"attributes.volumeStepSize" : [
 
 			"description",
 			"""
-			The step size to take when raymarching volumes.
-			A non-zero value causes an object to be treated
-			as a volume container, and a value of 0 causes
-			an object to be treated as regular geometry.
+			Override the step size taken when raymarching volumes. 
+			If this value is disabled or zero then value is calculated from the voxel size.  
 			""",
 
 			"layout:section", "Volume",
-			"label", "Step Size",
+			"label", "Volume Step Size",
+
+		],
+
+		"attributes.shapeStepScale" : [
+
+			"description",
+			"""
+			Raymarching step size is calculated using this value 
+			multiplied by the shapeStepSize.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Shape Step Scale",
+
+		],
+
+		"attributes.shapeStepSize" : [
+
+			"description",
+			"""
+			A non-zero value causes an object to be treated
+			as a volume container, and a value of 0 causes
+			an object to be treated as regular geometry.  
+			""",
+
+			"layout:section", "Volume",
+			"label", "Shape Step Size",
+
+		],
+
+		"attributes.volumePadding" : [
+
+			"description",
+			"""
+			Allows a volume to be displaced outside its bounds.  When
+			rendering a mesh as a volume, this enables displacement.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Padding",
+
+		],
+
+		"attributes.velocityScale" : [
+
+			"description",
+			"""
+			Scales the vector used in VDB motion blur computation.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Velocity Scale",
+
+		],
+
+		"attributes.velocityFPS" : [
+
+			"description",
+			"""
+			Sets the frame rate used in VDB motion blur computation.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Velocity FPS",
+
+		],
+
+		"attributes.velocityOutlierThreshold" : [
+
+			"description",
+			"""
+			Sets the outlier threshold used in VDB motion blur computation.
+
+			When rendering physics simulations resulting velocities are
+			potentially noisy and require some filtering for faster rendering.
+			""",
+
+			"layout:section", "Volume",
+			"label", "Velocity Outlier Threshold",
+
+		],
+
+		"attributes.toonId" : [
+
+			"description",
+			"""
+			You can select in the toon shader to skip outlines between objects with the same toon id set.
+			""",
+
+			"layout:section", "Toon",
+			"label", "Toon Id",
 
 		],
 

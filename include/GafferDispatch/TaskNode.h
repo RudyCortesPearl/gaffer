@@ -37,12 +37,13 @@
 #ifndef GAFFERDISPATCH_TASKNODE_H
 #define GAFFERDISPATCH_TASKNODE_H
 
-#include "IECore/MurmurHash.h"
+#include "GafferDispatch/Export.h"
+#include "GafferDispatch/TypeIds.h"
 
-#include "Gaffer/Node.h"
+#include "Gaffer/DependencyNode.h"
 #include "Gaffer/Plug.h"
 
-#include "GafferDispatch/TypeIds.h"
+#include "IECore/MurmurHash.h"
 
 namespace Gaffer
 {
@@ -73,7 +74,7 @@ IE_CORE_FORWARDDECLARE( TaskNode )
 /// TaskNode can be chained together with other TaskNodes to define a required execution
 /// order. Typically TaskNodes should be executed by Dispatcher classes that can query the
 /// required execution order and schedule Tasks appropriately.
-class TaskNode : public Gaffer::Node
+class GAFFERDISPATCH_API TaskNode : public Gaffer::DependencyNode
 {
 
 	public :
@@ -81,8 +82,7 @@ class TaskNode : public Gaffer::Node
 		IE_CORE_FORWARDDECLARE( TaskPlug )
 
 		/// Defines a task for dispatch by storing a TaskPlug and
-		/// the context in which it should be executed. This is
-		/// primarily for the use of Dispatcher classes. See TaskPlug
+		/// the context in which it should be executed. See TaskPlug
 		/// for the main public interface for the execution of
 		/// individual tasks.
 		class Task
@@ -98,35 +98,25 @@ class TaskNode : public Gaffer::Node
 				const TaskPlug *plug() const;
 				/// Returns the Context component of the task.
 				const Gaffer::Context *context() const;
-				/// Returns a hash uniquely representing the side effects
-				/// of the task. This is stored from `plug->hash()`
-				/// during construction, so editing the node or upstream
-				/// graph will invalidate the hash (and therefore the task).
-				const IECore::MurmurHash hash() const;
-				/// Compares hashes.
+
 				bool operator == ( const Task &rhs ) const;
-				/// Compares hashes.
-				bool operator < ( const Task &rhs ) const;
 
 				/// \deprecated
 				Task( TaskNodePtr n, const Gaffer::Context *c );
-				/// \deprecated
-				const TaskNode *node() const;
 
 			private :
 
 				ConstTaskPlugPtr m_plug;
 				Gaffer::ConstContextPtr m_context;
-				IECore::MurmurHash m_hash;
 
 		};
 
 		typedef std::vector<Task> Tasks;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferDispatch::TaskNode, TaskNodeTypeId, Gaffer::Node );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferDispatch::TaskNode, TaskNodeTypeId, Gaffer::DependencyNode );
 
 		TaskNode( const std::string &name=defaultName<TaskNode>() );
-		virtual ~TaskNode();
+		~TaskNode() override;
 
 		/// Plug type used to represent tasks within the
 		/// node graph. This provides the primary public
@@ -136,13 +126,13 @@ class TaskNode : public Gaffer::Node
 
 			public :
 
-				IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferDispatch::TaskNode::TaskPlug, TaskNodeTaskPlugTypeId, Gaffer::Plug );
+				GAFFER_PLUG_DECLARE_TYPE( GafferDispatch::TaskNode::TaskPlug, TaskNodeTaskPlugTypeId, Gaffer::Plug );
 
 				TaskPlug( const std::string &name=defaultName<TaskPlug>(), Direction direction=In, unsigned flags=Default );
 
-				virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
-				virtual bool acceptsInput( const Gaffer::Plug *input ) const;
-				virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+				bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
+				bool acceptsInput( const Gaffer::Plug *input ) const override;
+				Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 				/// Returns a hash representing the side effects of
 				/// calling `execute()` in the current context.
@@ -193,7 +183,14 @@ class TaskNode : public Gaffer::Node
 		Gaffer::Plug *dispatcherPlug();
 		const Gaffer::Plug *dispatcherPlug() const;
 
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+
 	protected :
+
+		/// The default implementation of `affects()` calls this and appends
+		/// `taskPlug()` to the outputs if it returns true. The default implementation
+		/// should be sufficient for most node types.
+		virtual bool affectsTask( const Gaffer::Plug *input ) const;
 
 		/// Called by `TaskPlug::preTasks()`. The default implementation collects
 		/// the upstream Tasks connected into the preTasksPlug().

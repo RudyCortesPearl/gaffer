@@ -35,6 +35,7 @@
 ##########################################################################
 
 import functools
+import imath
 
 import IECore
 
@@ -44,22 +45,24 @@ import GafferUI
 ## Appends menu items for the creation of user plugs on the specified parent.
 def appendPlugCreationMenuDefinitions( plugParent, menuDefinition, prefix = "" ) :
 
-	menuDefinition.append( prefix + "/Bool", { "command" : functools.partial( __addPlug, plugParent, Gaffer.BoolPlug ) } )
-	menuDefinition.append( prefix + "/Float", { "command" : functools.partial( __addPlug, plugParent, Gaffer.FloatPlug ) } )
-	menuDefinition.append( prefix + "/Int", { "command" : functools.partial( __addPlug, plugParent, Gaffer.IntPlug ) } )
+	active = not Gaffer.MetadataAlgo.readOnly( plugParent )
+
+	menuDefinition.append( prefix + "/Bool", { "command" : functools.partial( __addPlug, plugParent, Gaffer.BoolPlug ), "active" : active } )
+	menuDefinition.append( prefix + "/Float", { "command" : functools.partial( __addPlug, plugParent, Gaffer.FloatPlug ), "active" : active } )
+	menuDefinition.append( prefix + "/Int", { "command" : functools.partial( __addPlug, plugParent, Gaffer.IntPlug ), "active" : active } )
 	menuDefinition.append( prefix + "/NumericDivider", { "divider" : True } )
 
-	menuDefinition.append( prefix + "/String", { "command" : functools.partial( __addPlug, plugParent, Gaffer.StringPlug ) } )
+	menuDefinition.append( prefix + "/String", { "command" : functools.partial( __addPlug, plugParent, Gaffer.StringPlug ), "active" : active } )
 	menuDefinition.append( prefix + "/StringDivider", { "divider" : True } )
 
-	menuDefinition.append( prefix + "/V2i", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V2iPlug ) } )
-	menuDefinition.append( prefix + "/V3i", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V3iPlug ) } )
-	menuDefinition.append( prefix + "/V2f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V2fPlug ) } )
-	menuDefinition.append( prefix + "/V3f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V3fPlug  ) } )
+	menuDefinition.append( prefix + "/V2i", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V2iPlug ), "active" : active } )
+	menuDefinition.append( prefix + "/V3i", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V3iPlug ), "active" : active } )
+	menuDefinition.append( prefix + "/V2f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V2fPlug ), "active" : active } )
+	menuDefinition.append( prefix + "/V3f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.V3fPlug  ), "active" : active } )
 	menuDefinition.append( prefix + "/VectorDivider", { "divider" : True } )
 
-	menuDefinition.append( prefix + "/Color3f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.Color3fPlug ) } )
-	menuDefinition.append( prefix + "/Color4f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.Color4fPlug ) } )
+	menuDefinition.append( prefix + "/Color3f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.Color3fPlug ), "active" : active } )
+	menuDefinition.append( prefix + "/Color4f", { "command" : functools.partial( __addPlug, plugParent, Gaffer.Color4fPlug ), "active" : active } )
 	menuDefinition.append( prefix + "/ColorDivider", { "divider" : True } )
 
 	# Arrays
@@ -77,7 +80,8 @@ def appendPlugCreationMenuDefinitions( plugParent, menuDefinition, prefix = "" )
 					"command" : functools.partial(
 						__addPlug, plugParent,
 						plugCreator = functools.partial( plugType, defaultValue = plugType.ValueType() )
-					)
+					),
+					"active" : active
 				}
 			)
 		else :
@@ -87,14 +91,7 @@ def appendPlugCreationMenuDefinitions( plugParent, menuDefinition, prefix = "" )
 # Intended for use within a PlugLayout.
 def plugCreationWidget( plugParent ) :
 
-	with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal ) as row :
-
-		GafferUI.Spacer( IECore.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
-		button = GafferUI.MenuButton( image="plus.png", hasFrame=False, menu=GafferUI.Menu( functools.partial( __plugCreationMenuDefinition, plugParent ) ) )
-		button.setToolTip( "Click to add plugs" )
-		GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ), parenting = { "expand" : True } )
-
-	return row
+	return __PlugCreationWidget( plugParent )
 
 def __addPlug( plugParent, plugCreator, **kw ) :
 
@@ -103,8 +100,52 @@ def __addPlug( plugParent, plugCreator, **kw ) :
 		Gaffer.Metadata.registerValue( plug, "nodule:type", "" )
 		plugParent.addChild( plug )
 
-def __plugCreationMenuDefinition( plugParent ) :
+## \todo Maybe it would make more sense to expose this directly?
+class __PlugCreationWidget( GafferUI.Widget ) :
 
-	result = IECore.MenuDefinition()
-	appendPlugCreationMenuDefinitions( plugParent, result )
-	return result
+	def __init__( self, plugParent, **kw ) :
+
+		row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal )
+		GafferUI.Widget.__init__( self, row, **kw )
+
+		with row :
+			GafferUI.Spacer( imath.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
+			self.__button = GafferUI.MenuButton(
+				image="plus.png",
+				hasFrame=False,
+				menu=GafferUI.Menu( Gaffer.WeakMethod( self.__menuDefinition ) ),
+				toolTip = "Click to add plugs"
+			)
+			GafferUI.Spacer( imath.V2i( 1 ), imath.V2i( 999999, 1 ), parenting = { "expand" : True } )
+
+		self.__plugParent = plugParent
+
+		Gaffer.Metadata.nodeValueChangedSignal().connect(
+			Gaffer.WeakMethod( self.__nodeMetadataChanged ), scoped = False
+		)
+		Gaffer.Metadata.plugValueChangedSignal().connect(
+			Gaffer.WeakMethod( self.__plugMetadataChanged ), scoped = False
+		)
+
+		self.__updateReadOnly()
+
+	def __menuDefinition( self ) :
+
+		result = IECore.MenuDefinition()
+		appendPlugCreationMenuDefinitions( self.__plugParent, result )
+		return result
+
+	def __updateReadOnly( self ) :
+
+		self.__button.setEnabled( not Gaffer.MetadataAlgo.readOnly( self.__plugParent ) )
+
+	def __nodeMetadataChanged( self, nodeTypeId, key, node ) :
+
+		if Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__plugParent, nodeTypeId, key, node ) :
+			self.__updateReadOnly()
+
+	def __plugMetadataChanged( self, nodeTypeId, plugPath, key, plug ) :
+
+		if Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__plugParent, nodeTypeId, plugPath, key, plug ) :
+			self.__updateReadOnly()
+

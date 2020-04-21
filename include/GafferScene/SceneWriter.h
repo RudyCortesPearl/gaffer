@@ -37,27 +37,28 @@
 #ifndef GAFFERSCENE_SCENEWRITER_H
 #define GAFFERSCENE_SCENEWRITER_H
 
-#include "IECore/SceneInterface.h"
-
-#include "Gaffer/TypedPlug.h"
+#include "GafferScene/ScenePlug.h"
+#include "GafferScene/TypeIds.h"
 
 #include "GafferDispatch/TaskNode.h"
 
-#include "GafferScene/TypeIds.h"
-#include "GafferScene/ScenePlug.h"
+#include "Gaffer/TypedPlug.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECoreScene/SceneInterface.h"
 
 namespace GafferScene
 {
 
-class SceneWriter : public GafferDispatch::TaskNode
+class GAFFERSCENE_API SceneWriter : public GafferDispatch::TaskNode
 {
 
 	public :
 
 		SceneWriter( const std::string &name=defaultName<SceneWriter>() );
-		virtual ~SceneWriter();
+		~SceneWriter() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SceneWriter, SceneWriterTypeId, GafferDispatch::TaskNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::SceneWriter, SceneWriterTypeId, GafferDispatch::TaskNode );
 
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
@@ -68,21 +69,20 @@ class SceneWriter : public GafferDispatch::TaskNode
 		ScenePlug *outPlug();
 		const ScenePlug *outPlug() const;
 
-		virtual IECore::MurmurHash hash( const Gaffer::Context *context ) const;
+		IECore::MurmurHash hash( const Gaffer::Context *context ) const override;
 
-		virtual void execute() const;
+		void execute() const override;
 
 		/// Re-implemented to open the file for writing, then iterate through the
 		/// frames, modifying the current Context and calling writeLocation().
-		virtual void executeSequence( const std::vector<float> &frames ) const;
+		void executeSequence( const std::vector<float> &frames ) const override;
 
 		/// Re-implemented to return true, since the entire file must be written at once.
-		virtual bool requiresSequenceExecution() const;
+		bool requiresSequenceExecution() const override;
 
 	private :
 
 		void createDirectories( const std::string &fileName ) const;
-		void writeLocation( const GafferScene::ScenePlug *scene, const ScenePlug::ScenePath &scenePath, Gaffer::Context *context, IECore::SceneInterface *output, double time ) const;
 
 		static size_t g_firstPlugIndex;
 

@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2012, John Haddon. All rights reserved.
-//  Copyright (c) 2012-2015, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2012-2019, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -35,23 +35,36 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/filesystem/path.hpp"
-#include "boost/regex.hpp"
+#include "GafferImage/OpenImageIOReader.h"
 
-#include "OpenEXR/half.h"
+// The nested TaskMutex needs to be the first to include tbb
+#include "Gaffer/Private/IECorePreview/LRUCache.h"
 
-#include "OpenImageIO/imagecache.h"
-OIIO_NAMESPACE_USING
-
-#include "IECore/FileSequence.h"
-#include "IECore/FileSequenceFunctions.h"
+#include "GafferImage/FormatPlug.h"
+#include "GafferImage/ImageAlgo.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/OpenImageIOReader.h"
-#include "GafferImage/FormatPlug.h"
+#include "IECoreImage/OpenImageIOAlgo.h"
+
+#include "IECore/Export.h"
+#include "IECore/FileSequence.h"
+#include "IECore/FileSequenceFunctions.h"
+#include "IECore/MessageHandler.h"
+
+#include "OpenImageIO/imagecache.h"
+#include "OpenImageIO/deepdata.h"
+
+#include "boost/bind.hpp"
+#include "boost/filesystem/path.hpp"
+#include "boost/regex.hpp"
+
+#include "tbb/mutex.h"
+
+#include <memory>
+
+OIIO_NAMESPACE_USING
 
 using namespace std;
 using namespace tbb;
@@ -60,65 +73,643 @@ using namespace IECore;
 using namespace GafferImage;
 using namespace Gaffer;
 
-//////////////////////////////////////////////////////////////////////////
-// We use an OIIO image cache to deal with all file loading etc. This works
-// well for us, as due to the Gaffer architecture we'll be receiving many
-// different calls on different threads, each potentially asking for different
-// files (expressions and timewarps etc can change the fileName at any time).
-// The OIIO image cache is designed for exactly this scenario.
-//////////////////////////////////////////////////////////////////////////
-
 namespace
 {
 
-spin_rw_mutex g_imageCacheMutex;
-ImageCache *imageCache()
-{
-	spin_rw_mutex::scoped_lock lock( g_imageCacheMutex, false );
-	static ImageCache *cache = 0;
-	if( cache == 0 )
-	{
-		if( lock.upgrade_to_writer() )
-		{
-			cache = ImageCache::create();
-			// ImageReaderTest.testOIIOJpgRead exposes a bug in
-			// OpenImageIO where ImageCache::get_pixels() returns
-			// incorrect data when reading from non-float images.
-			// By forcing the image to be float on loading, we
-			// can work around that problem.
-			/// \todo Consider removing this once the bug is fixed in
-			/// OIIO - and test any performance implications of performing
-			/// the conversion in get_pixels() rather than immediately on load.
-			cache->attribute( "forcefloat", 1 );
+const IECore::InternedString g_tileBatchIndexContextName( "__tileBatchIndex" );
 
-			// Set an initial cache size of 500Mb
-			cache->attribute( "max_memory_MB", 500.0f );
-		}
-	}
-	return cache;
+struct ChannelMapEntry
+{
+	ChannelMapEntry( int subImage, int channelIndex )
+		: subImage( subImage ), channelIndex( channelIndex )
+	{}
+
+	ChannelMapEntry( const ChannelMapEntry & ) = default;
+
+	ChannelMapEntry()
+		: subImage( 0 ), channelIndex( 0 )
+	{}
+
+	int subImage;
+	int channelIndex;
+};
+
+// This function transforms an input region to account for the display window being flipped.
+// This is similar to Format::fromEXRSpace/toEXRSpace but those functions mix in switching
+// between inclusive/exclusive bounds, so in order to use them we would have to add a bunch
+// of confusing offsets by 1.  In this class, we always interpret ranges as [ minPixel, onePastMaxPixel )
+Box2i flopDisplayWindow( Box2i b, int displayOriginY, int displayHeight )
+{
+	return Box2i(
+		V2i( b.min.x, displayOriginY + displayOriginY + displayHeight - b.max.y ),
+		V2i( b.max.x, displayOriginY + displayOriginY + displayHeight - b.min.y )
+	);
 }
 
-// Returns the OIIO ImageSpec for the given filename in the current
-// context. Throws if the file is invalid, and returns NULL if
+// A divide that always rounds down, instead of towards zero
+//  ( note that b is assumed positive )
+int coordinateDivide( int a, int b )
+{
+	int result = a / b;
+	int remainder = a - result * b;
+	return result - ( remainder < 0 );
+}
+
+V2i coordinateDivide( V2i a, V2i b )
+{
+	return V2i( coordinateDivide( a.x, b.x ), coordinateDivide( a.y, b.y ) );
+}
+
+// This class handles storing a file handle, and reading data from it in a way compatible with how we want
+// to store it on plugs.
+//
+// The primary complexity is that Gaffer will request channel data a single tile at a time for a single channel,
+// but the OpenImageIO will usually be forced to read a larger chunk of information in order to access that one
+// tile - it will read all channels that are stored interleaved, and either full scanlines, or all overlapping
+// tiles if the file is tiled on disk.
+//
+// To avoid repeatedly loading large chunks of data, and then discarding most of it, we group data into
+// "tile batches".  A tile batch is an ObjectVector containing an array of separate channelData tiles.  It is
+// a large enough chunk of data that it can be read from the file with minimal waste.  We cache tile batches
+// on OpenImageIOReader::tileBatchPlug, and then OpenImageIOReader::computeChannelData just needs to select the
+// correct tile batch index, access tileBatchPlug, and then return the tile at the correct tileBatchSubIndex.
+//
+// For scanline images, a tile batch is one tile high, and the full width of the image.
+// For tiled images, a tile batch is a fairly large fixed size ( current 512 pixels, or the tile size of the
+// image, whichever is larger ).  This amortizes the waste from tiles which lie over the edge of a tile batch,
+// and need to be read multiple times.
+// Either way, a tile batch contains all channels stored in the subimage which contains the desired channel.
+// For deep images, the tile batch also contains an extra channel worth of tiles at the end which store the
+// samples offsets.
+//
+// Tile batches are selected using V3i "tileBatchIndex".  The Z component is the subimage to load channels from.
+// The X and Y component select a region of the image.
+// For tiled images, the <0,0> tileBatch is at the origin of the image, and the X and Y components specify
+// how many tile batches to offset from that, horizontally and vertically.
+// For scanline images, Y works the same, but X is always 0, and the tile batch always covers the whole width
+// of the image horizontally ( this means that the left of the tileBatch is aligned to the data window, not
+// the origin ).
+//
+//
+class File
+{
+
+	public:
+
+		// Create a File handle object for an image input and image spec
+		File( std::unique_ptr<ImageInput> imageInput, ImageSpec imageSpec, const std::string &infoFileName )
+			: m_imageInput( std::move( imageInput ) ), m_imageSpec( imageSpec )
+		{
+			std::vector<std::string> channelNames;
+
+			// \todo - for stereo images, we would need to take note of which view a subimage is for,
+			// and drive loading based on that.  This might require reorganizing this structure where
+			// we store m_imageSpec together with m_imageInput, since a stero image would have one
+			// m_imageInput, but could need two separate image specs ( different data windows for the two eyes seem
+			// reasonable )
+			ImageSpec currentSpec = m_imageSpec;
+			int subImageIndex = 0;
+			do {
+				if( !(
+					currentSpec.x == m_imageSpec.x &&
+					currentSpec.y == m_imageSpec.y &&
+					currentSpec.z == m_imageSpec.z &&
+					currentSpec.width == m_imageSpec.width &&
+					currentSpec.height == m_imageSpec.height &&
+					currentSpec.depth == m_imageSpec.depth &&
+					currentSpec.tile_width == m_imageSpec.tile_width &&
+					currentSpec.tile_height == m_imageSpec.tile_height &&
+					currentSpec.tile_depth == m_imageSpec.tile_depth &&
+					currentSpec.deep == m_imageSpec.deep
+				) )
+				{
+					IECore::msg( IECore::Msg::Warning, "OpenImageIOReader",
+						boost::format( "Ignoring subimage %i of \"%s\" because spec does not match first subimage." )
+						% subImageIndex % infoFileName
+					);
+					subImageIndex++;
+					continue;
+				}
+
+				const OIIO::string_view subImageName = currentSpec.get_string_attribute( "name", "" );
+
+				for( const auto &n : currentSpec.channelnames )
+				{
+					std::string channelName = ImageAlgo::channelName( subImageName, n );
+					auto mapEntry = m_channelMap.find( channelName );
+					if( mapEntry != m_channelMap.end() )
+					{
+						IECore::msg( IECore::Msg::Warning, "OpenImageIOReader",
+							boost::format( "Ignoring channel \"%s\" in subimage \"%i\" of \"%s\" because it's already in subimage \"%i\"." )
+							% channelName % subImageIndex % infoFileName % mapEntry->second.subImage
+						);
+					}
+					else
+					{
+						m_channelMap[ channelName ] = ChannelMapEntry( subImageIndex, &n - &currentSpec.channelnames[0] );
+						channelNames.push_back( channelName );
+					}
+				}
+
+				if( currentSpec.deep )
+				{
+					// Don't try to load multiple subimages for deep - we require the same sampleOffsets for
+					// all channels, so we don't really support multiple subimages for deep.
+					break;
+				}
+				subImageIndex++;
+			} while( m_imageInput->seek_subimage( subImageIndex, 0, currentSpec ) );
+
+			m_channelNamesData = new StringVectorData( channelNames );
+
+			if( m_imageSpec.tile_width == 0 && m_imageSpec.tile_height == 0 )
+			{
+				m_tiled = false;
+
+				// Set up a tile batch that is one tile high, and wide enough to hold everything from the beginning
+				// of a scanline to the end
+				m_tileBatchSize = V2i( 0, 1 ) +
+					ImagePlug::tileIndex( V2i( m_imageSpec.x + m_imageSpec.width + ImagePlug::tileSize() - 1, 0 ) ) -
+					ImagePlug::tileIndex( V2i( m_imageSpec.x, 0 ) );
+			}
+			else
+			{
+				m_tiled = true;
+
+				// Our tiling will usually not line up exactly with the file format's tiling - especially because
+				// our origin is lower left instead of upper left.  This means that there will almost always be
+				// OpenImageIO tiles that lie across the edge of a Gaffer tile batch, and get loaded multiple times.
+				// In order to amortize this cost, we make the tile batches for tiled source images a fairly large
+				// fixed size.
+				const int batchTargetSize = std::max( 512, std::max( m_imageSpec.tile_width, m_imageSpec.tile_height ) );
+				const int batchTileCount = ( batchTargetSize + ImagePlug::tileSize() - 1 ) / ImagePlug::tileSize();
+				m_tileBatchSize = Imath::V2i( batchTileCount );
+			}
+		}
+
+
+		// Read a chunk of data from the file, formatted as a tile batch that will be stored on the tile batch plug
+		ConstObjectVectorPtr readTileBatch( V3i tileBatchIndex )
+		{
+			V2i batchFirstTile = V2i( tileBatchIndex.x, tileBatchIndex.y ) * m_tileBatchSize;
+			Box2i targetRegion = Box2i( batchFirstTile * ImagePlug::tileSize(),
+				( batchFirstTile + m_tileBatchSize ) * ImagePlug::tileSize()
+			);
+
+			if( !m_tiled )
+			{
+				// For scanline images, we always treat the tile batch as starting from the left of the data window
+				batchFirstTile.x = ImagePlug::tileIndex( V2i( m_imageSpec.x, 0 ) ).x;
+
+				targetRegion.min.x = m_imageSpec.x;
+				targetRegion.max.x = m_imageSpec.x + m_imageSpec.width;
+			}
+
+			// Do the actual read of data
+			std::vector<float> fileData;
+			DeepData fileDeepData;
+			Box2i fileDataRegion;
+			const int nchannels = readRegion( tileBatchIndex.z, targetRegion, fileData, fileDeepData, fileDataRegion );
+
+			// Pull data apart into tiles ( separate for each channel instead of interleaved )
+			int tileBatchNumElements = nchannels * m_tileBatchSize.y * m_tileBatchSize.x;
+			ObjectVectorPtr result = new ObjectVector();
+			result->members().resize( tileBatchNumElements );
+
+			ObjectVectorPtr resultChannels = result;
+
+			std::vector< int > deepTileSizes;
+
+			if( m_imageSpec.deep )
+			{
+				result = new ObjectVector();
+				result->members().resize( 2 );
+				result->members()[1] = resultChannels;
+
+				ObjectVectorPtr resultOffsets = new ObjectVector();
+				resultOffsets->members().resize( m_tileBatchSize.y * m_tileBatchSize.x );
+				result->members()[0] = resultOffsets;
+
+				deepTileSizes.resize( m_tileBatchSize.y * m_tileBatchSize.x );
+
+				for( int ty = batchFirstTile.y; ty < batchFirstTile.y + m_tileBatchSize.y; ty++ )
+				{
+					for( int tx = batchFirstTile.x; tx < batchFirstTile.x + m_tileBatchSize.x; tx++ )
+					{
+						V2i tileOffset = ImagePlug::tileSize() * V2i( tx, ty );
+						int subIndex = tileBatchSubIndex( 0, tileOffset );
+
+						Box2i tileRelativeFileRegion( fileDataRegion.min - tileOffset, fileDataRegion.max - tileOffset );
+						Box2i tileRegion = BufferAlgo::intersection(
+							Box2i( V2i( 0 ), V2i( ImagePlug::tileSize() ) ), tileRelativeFileRegion
+						);
+
+						if( BufferAlgo::empty( tileRegion ) )
+						{
+							// Result will be treated as const as soon as we set it on the plug, and we're not
+							// going to modify any elements after setting them, so it's safe to store a const
+							// value in one of the elements
+							resultOffsets->members()[ subIndex ] = const_cast<IntVectorData*>( ImagePlug::emptyTileSampleOffsets() );
+
+							continue;
+						}
+
+						IntVectorDataPtr tileData = new IECore::IntVectorData(
+							std::vector<int>( ImagePlug::tilePixels(), 0 )
+						);
+						vector<int> &tile = tileData->writable();
+						int curOffset = 0;
+
+						int *tileIndex = &tile[ tileRegion.min.y * ImagePlug::tileSize() + tileRegion.min.x];
+						for( int y = tileRegion.min.y; y < tileRegion.max.y; ++y )
+						{
+							int *newTileIndex = &tile[ y * ImagePlug::tileSize() + tileRegion.min.x ];
+
+							// Any empty pixels we're skipping should get filled with an offset that
+							// hasn't changed
+							while( tileIndex < newTileIndex )
+							{
+								*tileIndex = curOffset;
+								tileIndex++;
+							}
+							tileIndex = newTileIndex;
+
+							int scanline = fileDataRegion.size().y - 1 - (y - tileRelativeFileRegion.min.y);
+							int dataIndex = scanline * fileDataRegion.size().x +
+								tileRegion.min.x - tileRelativeFileRegion.min.x;
+
+							for( int x = tileRegion.min.x; x < tileRegion.max.x; x++ )
+							{
+								curOffset += fileDeepData.samples( dataIndex );
+								*tileIndex = curOffset;
+								tileIndex++;
+								dataIndex++;
+							}
+						}
+						// Any empty pixels at the end should get filled with an offset that hasn't changed
+						while( tileIndex <= &tile.back() )
+						{
+							*tileIndex = curOffset;
+							tileIndex++;
+						}
+						resultOffsets->members()[ subIndex ] = tileData;
+
+						deepTileSizes[ ( ty - batchFirstTile.y ) * m_tileBatchSize.x  + tx - batchFirstTile.x ] = curOffset;
+					}
+				}
+			}
+
+			for( int c = 0; c < nchannels; c++ )
+			{
+				for( int ty = batchFirstTile.y; ty < batchFirstTile.y + m_tileBatchSize.y; ty++ )
+				{
+					for( int tx = batchFirstTile.x; tx < batchFirstTile.x + m_tileBatchSize.x; tx++ )
+					{
+						V2i tileOffset = ImagePlug::tileSize() * V2i( tx, ty );
+						int subIndex = tileBatchSubIndex( c, tileOffset );
+
+						Box2i tileRelativeFileRegion( fileDataRegion.min - tileOffset, fileDataRegion.max - tileOffset );
+						Box2i tileRegion = BufferAlgo::intersection(
+							Box2i( V2i( 0 ), V2i( ImagePlug::tileSize() ) ), tileRelativeFileRegion
+						);
+
+						if( BufferAlgo::empty( tileRegion ) )
+						{
+							const FloatVectorData* emptyResult;
+							if( !m_imageSpec.deep )
+							{
+								emptyResult = ImagePlug::blackTile();
+							}
+							else
+							{
+								emptyResult = ImagePlug::emptyTile();
+							}
+
+							// Result will be treated as const as soon as we set it on the plug, and we're not
+							// going to modify any elements after setting them, so it's safe to store a const
+							// value in one of the elements
+							resultChannels->members()[ subIndex ] = const_cast<FloatVectorData*>( emptyResult );
+
+							continue;
+						}
+
+						if( !m_imageSpec.deep )
+						{
+							FloatVectorDataPtr tileData = new IECore::FloatVectorData(
+								std::vector<float>( ImagePlug::tilePixels() )
+							);
+							vector<float> &tile = tileData->writable();
+
+							for( int y = tileRegion.min.y; y < tileRegion.max.y; ++y )
+							{
+
+								float *tileIndex = &tile[ y * ImagePlug::tileSize() + tileRegion.min.x ];
+								int scanline = fileDataRegion.size().y - 1 - (y - tileRelativeFileRegion.min.y);
+								float *dataIndex = &fileData[
+									( scanline * fileDataRegion.size().x + tileRegion.min.x - tileRelativeFileRegion.min.x
+									) * nchannels + c
+								];
+								for( int x = tileRegion.min.x; x < tileRegion.max.x; x++ )
+								{
+									*tileIndex = *dataIndex;
+									tileIndex++;
+									dataIndex += nchannels;
+								}
+							}
+							resultChannels->members()[ subIndex ] = tileData;
+						}
+						else
+						{
+							int curSize = deepTileSizes[ ( ty - batchFirstTile.y ) * m_tileBatchSize.x  + tx - batchFirstTile.x ];
+							FloatVectorDataPtr tileData = new IECore::FloatVectorData(
+								std::vector<float>( curSize )
+							);
+							vector<float> &tile = tileData->writable();
+
+							float *tileIndex = &tile[0];
+
+							for( int y = tileRegion.min.y; y < tileRegion.max.y; ++y )
+							{
+								int scanline = fileDataRegion.size().y - 1 - (y - tileRelativeFileRegion.min.y);
+								int dataIndex = scanline * fileDataRegion.size().x +
+									tileRegion.min.x - tileRelativeFileRegion.min.x;
+
+								for( int x = tileRegion.min.x; x < tileRegion.max.x; x++ )
+								{
+									int s = fileDeepData.samples( dataIndex );
+									for( int i = 0; i < s; i++ )
+									{
+										*tileIndex = fileDeepData.deep_value( dataIndex, c, i );
+										tileIndex++;
+									}
+									dataIndex++;
+								}
+							}
+							assert( tileIndex - &tile[0] == curSize );
+							resultChannels->members()[ subIndex ] = tileData;
+						}
+					}
+				}
+			}
+
+			return result;
+		}
+
+		// Given a channelName and tileOrigin, return the information necessary to look up the data for this tile.
+		// The tileBatchIndex is used to find a tileBatch, and then the tileBatchSubIndex tells you the index
+		// within that tile to use
+		void findTile( const std::string &channelName, const Imath::V2i &tileOrigin, V3i &batchIndex, int &batchSubIndex ) const
+		{
+			if( !channelName.size() )
+			{
+				// For computing sample offsets
+				// This is a bit of a weird interface, I should probably fix it
+				batchIndex = tileBatchIndex( 0, tileOrigin );
+				batchSubIndex = tileBatchSubIndex( 0, tileOrigin );
+			}
+			else
+			{
+				ChannelMapEntry channelMapEntry = m_channelMap.at( channelName );
+				batchIndex = tileBatchIndex( channelMapEntry.subImage, tileOrigin );
+				batchSubIndex = tileBatchSubIndex( channelMapEntry.channelIndex, tileOrigin );
+			}
+		}
+
+		const ImageSpec &imageSpec() const
+		{
+			return m_imageSpec;
+		}
+
+		std::string formatName() const
+		{
+			return m_imageInput->format_name();
+		}
+
+		ConstStringVectorDataPtr channelNamesData()
+		{
+			return m_channelNamesData;
+		}
+
+	private:
+		// Fill the data vector ( for a flat image ) or the deepData object ( for a deep image )
+		// with all data for the specified subImage and target region,
+		// setting the dataRegion to represent the actual bounds of the data read ( which may have had to
+		// be enlarged to match tile boundaries ), and returning the number of channels read
+		//
+		// This is currenly only used by readTileBatch below - we always cache to tile batches when reading
+		// channel data.
+		int readRegion( int subImage, const Box2i &targetRegion, std::vector<float> &data, DeepData &deepData, Box2i &dataRegion )
+		{
+			/// \todo OIIO 2.0 introduces thread-safe `read_*()` methods that
+			/// are passed the subimage directly. Upgrade to use those and remove
+			/// this lock entirely.
+			tbb::mutex::scoped_lock lock( m_mutex );
+
+			ImageSpec subImageSpec;
+			m_imageInput->seek_subimage( subImage, 0, subImageSpec );
+
+			const V2i fileDataOrigin( m_imageSpec.x, m_imageSpec.y );
+			const Box2i fileDataWindow( fileDataOrigin,
+				fileDataOrigin + V2i( m_imageSpec.width, m_imageSpec.height )
+			);
+
+			// Convert target region in Gaffer into a region of the file that we are trying to read
+			const Box2i fileTargetRegion = BufferAlgo::intersection(
+				flopDisplayWindow( targetRegion, m_imageSpec.full_y, m_imageSpec.full_height ), fileDataWindow
+			);
+
+			Box2i fileDataRegion;
+
+			if( !m_tiled )
+			{
+				fileDataRegion = fileTargetRegion;
+
+
+				bool success;
+				if( !m_imageSpec.deep )
+				{
+					data.resize( subImageSpec.nchannels * fileDataRegion.size().x * fileDataRegion.size().y );
+					success = m_imageInput->read_scanlines(
+						fileDataRegion.min.y, fileDataRegion.max.y, 0, TypeDesc::FLOAT, &data[0]
+					);
+				}
+				else
+				{
+					success = m_imageInput->read_native_deep_scanlines(
+						fileDataRegion.min.y, fileDataRegion.max.y, 0, 0, subImageSpec.nchannels, deepData
+					);
+				}
+
+				if( !success )
+				{
+					throw IECore::Exception( boost::str (
+						boost::format( "OpenImageIOReader : Failed to read scanlines %i to %i.  Error: %s" ) %
+						fileDataRegion.min.y % fileDataRegion.max.y %
+						m_imageInput->geterror()
+					) );
+				}
+			}
+			else
+			{
+				V2i tileSize( m_imageSpec.tile_width, m_imageSpec.tile_height );
+
+				// Round the target region coordinates outwards to the tile boundaries in the file
+				// ( these are sized based on m_imageSpec.tile_(width/height), and spaced relative to
+				// the data window origin ).
+				//
+				// Then clamp them back to the data window.
+				// ( read_tiles requires that the coordinates lie on either a tile boundary OR the image boundary )
+
+				fileDataRegion = BufferAlgo::intersection( fileDataWindow, Box2i(
+					coordinateDivide( fileTargetRegion.min - fileDataOrigin, tileSize ) * tileSize + fileDataOrigin,
+					coordinateDivide( fileTargetRegion.max - fileDataOrigin + tileSize - V2i(1), tileSize ) * tileSize + fileDataOrigin
+				) );
+
+
+				bool success;
+				if( !m_imageSpec.deep )
+				{
+					data.resize( subImageSpec.nchannels * fileDataRegion.size().x * fileDataRegion.size().y );
+					success = m_imageInput->read_tiles (
+						fileDataRegion.min.x, fileDataRegion.max.x,
+						fileDataRegion.min.y, fileDataRegion.max.y, 0, 1, TypeDesc::FLOAT, &data[0]
+					);
+				}
+				else
+				{
+					success = m_imageInput->read_native_deep_tiles (
+						fileDataRegion.min.x, fileDataRegion.max.x,
+						fileDataRegion.min.y, fileDataRegion.max.y, 0, 1, 0, subImageSpec.nchannels, deepData
+					);
+				}
+
+
+				if( !success )
+				{
+					throw IECore::Exception( boost::str (
+						boost::format( "OpenImageIOReader : Failed to read tiles %i,%i to %i,%i.  Error: %s" ) %
+						fileDataRegion.min.x % fileDataRegion.min.y %
+						fileDataRegion.max.x % fileDataRegion.max.y %
+						m_imageInput->geterror()
+					) );
+				}
+			}
+
+			dataRegion = flopDisplayWindow( fileDataRegion, m_imageSpec.full_y, m_imageSpec.full_height );
+
+			return subImageSpec.nchannels;
+		}
+
+		// Given a subImage index, and a tile origin, return an index to identify the tile batch which
+		// where this channel data will be found
+		V3i tileBatchIndex( int subImage, V2i tileOrigin ) const
+		{
+			V2i tileBatchOrigin = coordinateDivide( ImagePlug::tileIndex( tileOrigin ), m_tileBatchSize );
+			if( !m_tiled )
+			{
+				tileBatchOrigin.x = 0;
+			}
+			return V3i( tileBatchOrigin.x, tileBatchOrigin.y, subImage );
+		}
+
+		// Given a channel index, and a tile origin, return the index within a tile batch where the correct
+		// tile will be found.
+		int tileBatchSubIndex( int channelIndex, V2i tileOrigin ) const
+		{
+			int tilePlaneSize = m_tileBatchSize.x * m_tileBatchSize.y;
+
+			V2i tileIndex = ImagePlug::tileIndex( tileOrigin );
+			V2i subIndex = tileIndex - coordinateDivide( tileIndex, m_tileBatchSize ) * m_tileBatchSize;
+			if( !m_tiled )
+			{
+				// For scanline images, horizontal index relative to data window
+				subIndex.x = tileIndex.x - ImagePlug::tileIndex( V2i( m_imageSpec.x, m_imageSpec.y ) ).x;
+			}
+
+			return channelIndex * tilePlaneSize + subIndex.y * m_tileBatchSize.x + subIndex.x;
+		}
+
+		std::unique_ptr<ImageInput> m_imageInput;
+		ImageSpec m_imageSpec;
+		ConstStringVectorDataPtr m_channelNamesData;
+		std::map<std::string, ChannelMapEntry> m_channelMap;
+		Imath::V2i m_tileBatchSize;
+		tbb::mutex m_mutex;
+		bool m_tiled;
+};
+
+
+
+typedef std::shared_ptr<File> FilePtr;
+
+// For success, file should be set, and error left null
+// For failure, file should be left null, and error should be set
+struct CacheEntry
+{
+	FilePtr file;
+	std::shared_ptr<std::string> error;
+};
+
+
+CacheEntry fileCacheGetter( const std::string &fileName, size_t &cost )
+{
+	cost = 1;
+
+	CacheEntry result;
+
+	ImageSpec imageSpec;
+	std::unique_ptr<ImageInput> imageInput( ImageInput::create( fileName ) );
+	if( !imageInput )
+	{
+		result.error.reset( new std::string( "OpenImageIOReader : Could not create ImageInput : " + OIIO::geterror() ) );
+		return result;
+	}
+
+	if( !imageInput->open( fileName, imageSpec ) )
+	{
+		result.error.reset( new std::string( "OpenImageIOReader : Could not open ImageInput : " + imageInput->geterror() ) );
+		return result;
+	}
+
+	if( imageSpec.depth != 1 )
+	{
+		throw IECore::Exception( "OpenImageIOReader : " + fileName + " : GafferImage does not support 3D pixel arrays " );
+	}
+
+	result.file.reset( new File( std::move( imageInput ), imageSpec, fileName ) );
+
+	return result;
+}
+
+typedef IECorePreview::LRUCache<std::string, CacheEntry> FileHandleCache;
+
+FileHandleCache *fileCache()
+{
+	static FileHandleCache *c = new FileHandleCache( fileCacheGetter, 200 );
+	return c;
+}
+
+// Returns the file handle container for the given filename in the current
+// context. Throws if the file is invalid, and returns null if
 // the filename is empty.
-const ImageSpec *imageSpec( std::string &fileName, OpenImageIOReader::MissingFrameMode mode, const OpenImageIOReader *node, const Context *context )
+FilePtr retrieveFile( std::string &fileName, OpenImageIOReader::MissingFrameMode mode, const OpenImageIOReader *node, const Context *context )
 {
 	if( fileName.empty() )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	const std::string resolvedFileName = context->substitute( fileName );
 
-	ImageCache *cache = imageCache();
-	const ImageSpec *spec = cache->imagespec( ustring( resolvedFileName ) );
-	if( !spec )
+	FileHandleCache *cache = fileCache();
+	CacheEntry cacheEntry = cache->get( resolvedFileName );
+	if( !cacheEntry.file )
 	{
 		if( mode == OpenImageIOReader::Black )
 		{
-			// we can simply return the null spec and rely on the
+			// we can simply return nullptr and rely on the
 			// compute methods to return default plug values.
-			return spec;
+			return nullptr;
 		}
 		else if( mode == OpenImageIOReader::Hold )
 		{
@@ -136,212 +727,23 @@ const ImageSpec *imageSpec( std::string &fileName, OpenImageIOReader::MissingFra
 					fIt--;
 				}
 
-				// clear any error from the original fileName
-				cache->geterror();
-
 				// setup a context with the new frame
 				ContextPtr holdContext = new Context( *context, Context::Shared );
 				holdContext->setFrame( *fIt );
 
-				return imageSpec( fileName, OpenImageIOReader::Error, node, holdContext.get() );
+				return retrieveFile( fileName, OpenImageIOReader::Error, node, holdContext.get() );
 			}
 
 			// if we got here, there was no suitable file sequence
-			throw( IECore::Exception( cache->geterror() ) );
+			throw IECore::Exception( *(cacheEntry.error) );
 		}
 		else
 		{
-			throw( IECore::Exception( cache->geterror() ) );
+			throw IECore::Exception( *(cacheEntry.error) );
 		}
 	}
 
-	// we overwrite the incoming fileName with
-	// the final successful fileName because
-	// computeChannelData needs to know the real
-	// file in order to fetch the pixels, and it
-	// isn't available from the ImageSpec directly.
-	fileName = resolvedFileName;
-
-	return spec;
-}
-
-} // namespace
-
-//////////////////////////////////////////////////////////////////////////
-// Utility for converting OIIO::TypeDesc types to IECore::Data types.
-//////////////////////////////////////////////////////////////////////////
-
-namespace
-{
-
-void oiioParameterListToMetadata( const ImageIOParameterList &paramList, CompoundData *metadata )
-{
-	CompoundData::ValueType &members = metadata->writable();
-	for ( ImageIOParameterList::const_iterator it = paramList.begin(); it != paramList.end(); ++it )
-	{
-		DataPtr value = NULL;
-
-		const TypeDesc &type = it->type();
-		switch ( type.basetype )
-		{
-			case TypeDesc::CHAR :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new CharData( *static_cast<const char *>( it->data() ) );
-				}
-				break;
-			}
-			case TypeDesc::UCHAR :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new UCharData( *static_cast<const unsigned char *>( it->data() ) );
-				}
-				break;
-			}
-			case TypeDesc::STRING :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new StringData( static_cast<const ustring *>( it->data() )->c_str() );
-				}
-				break;
-			}
-			case TypeDesc::USHORT :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new UShortData( *static_cast<const unsigned short *>( it->data() ) );
-				}
-				break;
-			}
-			case TypeDesc::SHORT :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new ShortData( *static_cast<const short *>( it->data() ) );
-				}
-				break;
-			}
-			case TypeDesc::UINT :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new UIntData( *static_cast<const unsigned *>( it->data() ) );
-				}
-				break;
-			}
-			case TypeDesc::INT :
-			{
-				const int *data = static_cast<const int *>( it->data() );
-				switch ( type.aggregate )
-				{
-					case TypeDesc::SCALAR :
-					{
-						value = new IntData( *data );
-						break;
-					}
-					case TypeDesc::VEC2 :
-					{
-						value = new V2iData( Imath::V2i( data[0], data[1] ) );
-						break;
-					}
-					case TypeDesc::VEC3 :
-					{
-						value = new V3iData( Imath::V3i( data[0], data[1], data[2] ) );
-						break;
-					}
-					default :
-					{
-						break;
-					}
-				}
-				break;
-			}
-			case TypeDesc::HALF :
-			{
-				if ( type.aggregate == TypeDesc::SCALAR )
-				{
-					value = new HalfData( *static_cast<const half *>( it->data() ) );
-				}
-				break;
-			}
-			case TypeDesc::FLOAT :
-			{
-				const float *data = static_cast<const float *>( it->data() );
-				switch ( type.aggregate )
-				{
-					case TypeDesc::SCALAR :
-					{
-						value = new FloatData( *data );
-						break;
-					}
-					case TypeDesc::VEC2 :
-					{
-						value = new V2fData( Imath::V2f( data[0], data[1] ) );
-						break;
-					}
-					case TypeDesc::VEC3 :
-					{
-						value = new V3fData( Imath::V3f( data[0], data[1], data[2] ) );
-						break;
-					}
-					case TypeDesc::MATRIX44 :
-					{
-						value = new M44fData( Imath::M44f( data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15] ) );
-						break;
-					}
-					default :
-					{
-						break;
-					}
-				}
-				break;
-			}
-			case TypeDesc::DOUBLE :
-			{
-				const double *data = static_cast<const double *>( it->data() );
-				switch ( type.aggregate )
-				{
-					case TypeDesc::SCALAR :
-					{
-						value = new DoubleData( *data );
-						break;
-					}
-					case TypeDesc::VEC2 :
-					{
-						value = new V2dData( Imath::V2d( data[0], data[1] ) );
-						break;
-					}
-					case TypeDesc::VEC3 :
-					{
-						value = new V3dData( Imath::V3d( data[0], data[1], data[2] ) );
-						break;
-					}
-					case TypeDesc::MATRIX44 :
-					{
-						value = new M44dData( Imath::M44d( data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15] ) );
-						break;
-					}
-					default :
-					{
-						break;
-					}
-				}
-				break;
-			}
-			default :
-			{
-				break;
-			}
-		}
-
-		if ( value )
-		{
-			members[ it->name().string() ] = value;
-		}
-	}
+	return cacheEntry.file;
 }
 
 } // namespace
@@ -350,7 +752,7 @@ void oiioParameterListToMetadata( const ImageIOParameterList &paramList, Compoun
 // OpenImageIOReader implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( OpenImageIOReader );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OpenImageIOReader );
 
 size_t OpenImageIOReader::g_firstPlugIndex = 0;
 
@@ -362,18 +764,13 @@ OpenImageIOReader::OpenImageIOReader( const std::string &name )
 		new StringPlug(
 			"fileName", Plug::In, "",
 			/* flags */ Plug::Default,
-			/* substitutions */ Context::AllSubstitutions & ~Context::FrameSubstitutions
+			/* substitutions */ IECore::StringAlgo::AllSubstitutions & ~IECore::StringAlgo::FrameSubstitutions
 		)
 	);
 	addChild( new IntPlug( "refreshCount" ) );
 	addChild( new IntPlug( "missingFrameMode", Plug::In, Error, /* min */ Error, /* max */ Hold ) );
 	addChild( new IntVectorDataPlug( "availableFrames", Plug::Out, new IntVectorData ) );
-
-	// disable caching on our outputs, as OIIO is already doing caching for us.
-	for( OutputPlugIterator it( outPlug() ); !it.done(); ++it )
-	{
-		(*it)->setFlags( Plug::Cacheable, false );
-	}
+	addChild( new ObjectVectorPlug( "__tileBatch", Plug::Out, new ObjectVector ) );
 
 	plugSetSignal().connect( boost::bind( &OpenImageIOReader::plugSet, this, ::_1 ) );
 }
@@ -420,6 +817,16 @@ Gaffer::IntVectorDataPlug *OpenImageIOReader::availableFramesPlug()
 const Gaffer::IntVectorDataPlug *OpenImageIOReader::availableFramesPlug() const
 {
 	return getChild<IntVectorDataPlug>( g_firstPlugIndex + 3 );
+}
+
+Gaffer::ObjectVectorPlug *OpenImageIOReader::tileBatchPlug()
+{
+	return getChild<ObjectVectorPlug>( g_firstPlugIndex + 4 );
+}
+
+const Gaffer::ObjectVectorPlug *OpenImageIOReader::tileBatchPlug() const
+{
+	return getChild<ObjectVectorPlug>( g_firstPlugIndex + 4 );
 }
 
 size_t OpenImageIOReader::supportedExtensions( std::vector<std::string> &extensions )
@@ -473,13 +880,23 @@ void OpenImageIOReader::hash( const ValuePlug *output, const Context *context, I
 		fileNamePlug()->hash( h );
 		refreshCountPlug()->hash( h );
 	}
+	else if( output == tileBatchPlug() )
+	{
+		h.append( context->get<V3i>( g_tileBatchIndexContextName ) );
+		{
+			ImagePlug::GlobalScope c( context );
+			hashFileName( context, h );
+			refreshCountPlug()->hash( h );
+			missingFrameModePlug()->hash( h );
+		}
+	}
 }
 
 void OpenImageIOReader::compute( ValuePlug *output, const Context *context ) const
 {
 	if( output == availableFramesPlug() )
 	{
-		FileSequencePtr fileSequence = NULL;
+		FileSequencePtr fileSequence = nullptr;
 		IECore::ls( fileNamePlug()->getValue(), fileSequence, /* minSequenceSize */ 1 );
 
 		if( fileSequence )
@@ -497,10 +914,42 @@ void OpenImageIOReader::compute( ValuePlug *output, const Context *context ) con
 			static_cast<IntVectorDataPlug *>( output )->setToDefault();
 		}
 	}
+	else if( output == tileBatchPlug() )
+	{
+		V3i tileBatchIndex = context->get<V3i>( g_tileBatchIndexContextName );
+
+		std::string fileName = fileNamePlug()->getValue();
+		FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
+		if( !file )
+		{
+			throw IECore::Exception( "OpenImageIOReader - trying to evaluate tileBatchPlug() with invalid file, this should never happen." );
+		}
+
+		static_cast<ObjectVectorPlug *>( output )->setValue(
+			file->readTileBatch( tileBatchIndex )
+		);
+	}
 	else
 	{
 		ImageNode::compute( output, context );
 	}
+}
+
+Gaffer::ValuePlug::CachePolicy OpenImageIOReader::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == tileBatchPlug() )
+	{
+		// Request blocking compute for tile batches, to avoid concurrent threads loading
+		// the same batch redundantly.
+		return ValuePlug::CachePolicy::Standard;
+	}
+	else if( output == outPlug()->channelDataPlug() )
+	{
+		// Disable caching on channelDataPlug, since it is just a redirect to the correct tile of
+		// the private tileBatchPlug, which is already being cached.
+		return ValuePlug::CachePolicy::Uncached;
+	}
+	return ImageNode::computeCachePolicy( output );
 }
 
 void OpenImageIOReader::hashFileName( const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -511,7 +960,7 @@ void OpenImageIOReader::hashFileName( const Gaffer::Context *context, IECore::Mu
 	// when the value contains FrameSubstitutions.
 	const std::string fileName = fileNamePlug()->getValue();
 	h.append( fileName );
-	if( Context::substitutions( fileName ) & Context::FrameSubstitutions )
+	if( IECore::StringAlgo::substitutions( fileName ) & IECore::StringAlgo::FrameSubstitutions )
 	{
 		h.append( context->getFrame() );
 	}
@@ -523,6 +972,9 @@ void OpenImageIOReader::hashFormat( const GafferImage::ImagePlug *output, const 
 	hashFileName( context, h );
 	refreshCountPlug()->hash( h );
 	missingFrameModePlug()->hash( h );
+	GafferImage::Format format = FormatPlug::getDefaultFormat( context );
+	h.append( format.getDisplayWindow() );
+	h.append( format.getPixelAspect() );
 }
 
 GafferImage::Format OpenImageIOReader::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -532,18 +984,19 @@ GafferImage::Format OpenImageIOReader::computeFormat( const Gaffer::Context *con
 	// match the format of the Hold frame.
 	MissingFrameMode mode = (MissingFrameMode)missingFrameModePlug()->getValue();
 	mode = ( mode == Black ) ? Hold : mode;
-	const ImageSpec *spec = imageSpec( fileName, mode, this, context );
-	if( !spec )
+	FilePtr file = retrieveFile( fileName, mode, this, context );
+	if( !file )
 	{
 		return FormatPlug::getDefaultFormat( context );
 	}
 
+	const ImageSpec &spec = file->imageSpec();
 	return GafferImage::Format(
 		Imath::Box2i(
-			Imath::V2i( spec->full_x, spec->full_y ),
-			Imath::V2i( spec->full_x + spec->full_width, spec->full_y + spec->full_height )
+			Imath::V2i( spec.full_x, spec.full_y ),
+			Imath::V2i( spec.full_x + spec.full_width, spec.full_y + spec.full_height )
 		),
-		spec->get_float_attribute( "PixelAspectRatio", 1.0f )
+		spec.get_float_attribute( "PixelAspectRatio", 1.0f )
 	);
 }
 
@@ -558,16 +1011,16 @@ void OpenImageIOReader::hashDataWindow( const GafferImage::ImagePlug *output, co
 Imath::Box2i OpenImageIOReader::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	std::string fileName = fileNamePlug()->getValue();
-	const ImageSpec *spec = imageSpec( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
-	if( !spec )
+	FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
+	if( !file )
 	{
 		return parent->dataWindowPlug()->defaultValue();
 	}
 
-	Format format( Imath::Box2i( Imath::V2i( spec->full_x, spec->full_y ), Imath::V2i( spec->full_width + spec->full_x, spec->full_height + spec->full_y ) ) );
-	Imath::Box2i dataWindow( Imath::V2i( spec->x, spec->y ), Imath::V2i( spec->width + spec->x - 1, spec->height + spec->y - 1 ) );
+	const ImageSpec &spec = file->imageSpec();
 
-	return format.fromEXRSpace( dataWindow );
+	Imath::Box2i dataWindow( Imath::V2i( spec.x, spec.y ), Imath::V2i( spec.width + spec.x, spec.height + spec.y ) );
+	return flopDisplayWindow( dataWindow, spec.full_y, spec.full_height );
 }
 
 void OpenImageIOReader::hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -581,26 +1034,27 @@ void OpenImageIOReader::hashMetadata( const GafferImage::ImagePlug *output, cons
 IECore::ConstCompoundDataPtr OpenImageIOReader::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	std::string fileName = fileNamePlug()->getValue();
-	const ImageSpec *spec = imageSpec( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
-	if( !spec )
+	FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
+	if( !file )
 	{
 		return parent->metadataPlug()->defaultValue();
 	}
+	const ImageSpec &spec = file->imageSpec();
 
 	CompoundDataPtr result = new CompoundData;
 
 	// Add data type
 
-	std::string dataType = spec->format.c_str();
+	std::string dataType = spec.format.c_str();
 	if( dataType == "uint16")
 	{
 		// DPX supports uint10/uint12 storage, which is loaded as uint16 by OIIO.
 		// Here we use the "oiio:BitsPerSample" metadata that tells us how many
 		// bits were actually stored in the file.
-		const int bitsPerSample = spec->get_int_attribute( "oiio:BitsPerSample", 0 );
+		const int bitsPerSample = spec.get_int_attribute( "oiio:BitsPerSample", 0 );
 		if( bitsPerSample )
 		{
-			dataType = boost::str( boost::format( "uint%d"  ) % bitsPerSample );
+			dataType = boost::str( boost::format( "uint%d" ) % bitsPerSample );
 		}
 	}
 	else if( dataType == "uint" )
@@ -610,16 +1064,17 @@ IECore::ConstCompoundDataPtr OpenImageIOReader::computeMetadata( const Gaffer::C
 	result->writable()["dataType"] = new StringData( dataType );
 
 	// Add file format
-
-	const char *fileFormat = NULL;
-	if( imageCache()->get_image_info( ustring( fileName ), 0, 0, ustring( "fileformat" ), TypeDesc::TypeString, &fileFormat ) )
-	{
-		result->writable()["fileFormat"] = new StringData( fileFormat );
-	}
+	result->writable()["fileFormat"] = new StringData( file->formatName() );
 
 	// Add on any custom metadata provided by the file format
 
-	oiioParameterListToMetadata( spec->extra_attribs, result.get() );
+	for( const auto &attrib : spec.extra_attribs )
+	{
+		if( DataPtr data = IECoreImage::OpenImageIOAlgo::data( attrib ) )
+		{
+			result->writable()[attrib.name().string()] = data;
+		}
+	}
 
 	return result;
 }
@@ -635,15 +1090,83 @@ void OpenImageIOReader::hashChannelNames( const GafferImage::ImagePlug *output, 
 IECore::ConstStringVectorDataPtr OpenImageIOReader::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	std::string fileName = fileNamePlug()->getValue();
-	const ImageSpec *spec = imageSpec( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
-	if( !spec )
+	FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
+	if( !file )
 	{
 		return parent->channelNamesPlug()->defaultValue();
 	}
+	return file->channelNamesData();
+}
 
-	StringVectorDataPtr result = new StringVectorData();
-	result->writable() = spec->channelnames;
-	return result;
+void OpenImageIOReader::hashDeep( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashDeep( output, context, h );
+	hashFileName( context, h );
+	refreshCountPlug()->hash( h );
+	missingFrameModePlug()->hash( h );
+}
+
+bool OpenImageIOReader::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	std::string fileName = fileNamePlug()->getValue();
+	FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
+	if( !file )
+	{
+		return false;
+	}
+	return file->imageSpec().deep;
+}
+
+void OpenImageIOReader::hashSampleOffsets( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashSampleOffsets( output, context, h );
+
+	h.append( context->get<V2i>( ImagePlug::tileOriginContextName ) );
+
+	{
+		ImagePlug::GlobalScope c( context );
+		hashFileName( context, h );
+		refreshCountPlug()->hash( h );
+		missingFrameModePlug()->hash( h );
+	}
+}
+
+IECore::ConstIntVectorDataPtr OpenImageIOReader::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	ImagePlug::GlobalScope c( context );
+	std::string fileName = fileNamePlug()->getValue();
+	FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
+
+	if( !file || !file->imageSpec().deep )
+	{
+		return ImagePlug::flatTileSampleOffsets();
+	}
+	else
+	{
+
+		Box2i dataWindow = outPlug()->dataWindowPlug()->getValue();
+		const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
+		if( !BufferAlgo::intersects( dataWindow, tileBound ) )
+		{
+			throw IECore::Exception( boost::str(
+				boost::format( "OpenImageIOReader : Invalid tile (%i,%i) -> (%i,%i) not within data window (%i,%i) -> (%i,%i)." ) %
+				tileBound.min.x % tileBound.min.y % tileBound.max.x % tileBound.max.y %
+				dataWindow.min.x % dataWindow.min.y % dataWindow.max.x % dataWindow.max.y
+			) );
+		}
+
+		V3i tileBatchIndex;
+		int subIndex;
+		std::string channelName(""); // TODO - should have better interface for selecting sampleOffsets
+		file->findTile( channelName, tileOrigin, tileBatchIndex, subIndex );
+
+		c.set( g_tileBatchIndexContextName, tileBatchIndex );
+
+		ConstObjectVectorPtr tileBatch = tileBatchPlug()->getValue();
+
+		ConstObjectPtr curTileSampleOffsets = IECore::runTimeCast< const ObjectVector >( tileBatch->members()[0] )->members()[ subIndex ];
+		return IECore::runTimeCast< const IntVectorData >( curTileSampleOffsets );
+	}
 }
 
 void OpenImageIOReader::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -662,74 +1185,43 @@ void OpenImageIOReader::hashChannelData( const GafferImage::ImagePlug *output, c
 
 IECore::ConstFloatVectorDataPtr OpenImageIOReader::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	std::string fileName;
-	const ImageSpec *spec;
-	{
-		ImagePlug::GlobalScope c( context );
-		fileName = fileNamePlug()->getValue();
-		spec = imageSpec( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
-	}
+	ImagePlug::GlobalScope c( context );
+	std::string fileName = fileNamePlug()->getValue();
+	FilePtr file = retrieveFile( fileName, (MissingFrameMode)missingFrameModePlug()->getValue(), this, context );
 
-	if( !spec )
+	if( !file )
 	{
 		return parent->channelDataPlug()->defaultValue();
 	}
 
-	vector<string>::const_iterator channelIt = find( spec->channelnames.begin(), spec->channelnames.end(), channelName );
-	if( channelIt == spec->channelnames.end() )
+	Box2i dataWindow = outPlug()->dataWindowPlug()->getValue();
+	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
+	if( !BufferAlgo::intersects( dataWindow, tileBound ) )
 	{
-		{
-			return parent->channelDataPlug()->defaultValue();
-		}
+		throw IECore::Exception( boost::str(
+			boost::format( "OpenImageIOReader : Invalid tile (%i,%i) -> (%i,%i) not within data window (%i,%i) -> (%i,%i)." ) %
+			tileBound.min.x % tileBound.min.y % tileBound.max.x % tileBound.max.y %
+			dataWindow.min.x % dataWindow.min.y % dataWindow.max.x % dataWindow.max.y
+		) );
 	}
 
-	Format format( Imath::Box2i( Imath::V2i( spec->full_x, spec->full_y ), Imath::V2i( spec->full_width + spec->full_x, spec->full_height + spec->full_y ) ) );
-	const int newY = format.toEXRSpace( tileOrigin.y + ImagePlug::tileSize() - 1 );
+	V3i tileBatchIndex;
+	int subIndex;
+	file->findTile( channelName, tileOrigin, tileBatchIndex, subIndex );
 
-	std::vector<float> channelData( ImagePlug::tileSize() * ImagePlug::tileSize() );
-	size_t channelIndex = channelIt - spec->channelnames.begin();
-	imageCache()->get_pixels(
-		ustring( fileName ),
-		0, 0, // subimage, miplevel
-		tileOrigin.x, tileOrigin.x + ImagePlug::tileSize(),
-		newY, newY + ImagePlug::tileSize(),
-		0, 1,
-		channelIndex, channelIndex + 1,
-		TypeDesc::FLOAT,
-		&(channelData[0])
-	);
+	c.set( g_tileBatchIndexContextName, tileBatchIndex );
 
-	// Create the output data buffer.
-	FloatVectorDataPtr resultData = new FloatVectorData;
-	vector<float> &result = resultData->writable();
-	result.resize( ImagePlug::tileSize() * ImagePlug::tileSize() );
-
-	// Flip the tile in the Y axis to convert it to our internal image data representation.
-	for( int y = 0; y < ImagePlug::tileSize(); ++y )
+	ConstObjectVectorPtr tileBatch = tileBatchPlug()->getValue();
+	ConstObjectPtr curTileChannel;
+	if( !file->imageSpec().deep )
 	{
-		memcpy( &(result[ ( ImagePlug::tileSize() - y - 1 ) * ImagePlug::tileSize() ]), &(channelData[ y * ImagePlug::tileSize() ]), sizeof(float)*ImagePlug::tileSize()  );
+		curTileChannel = tileBatch->members()[ subIndex ];
 	}
-
-	return resultData;
-}
-
-size_t OpenImageIOReader::getCacheMemoryLimit()
-{
-	float memoryLimit;
-	imageCache()->getattribute( "max_memory_MB", memoryLimit );
-	return (size_t)(memoryLimit * 1024 * 1024);
-}
-
-void OpenImageIOReader::setCacheMemoryLimit( size_t bytes )
-{
-	imageCache()->attribute( "max_memory_MB", ((float)bytes) / (1024.0f * 1024.0f) );
-}
-
-size_t OpenImageIOReader::cacheMemoryUsage()
-{
-	long long v = 0;
-	imageCache()->getattribute( "stat:cache_memory_used", BaseTypeFromC<long long>::value, &v );
-	return v;
+	else
+	{
+		curTileChannel = IECore::runTimeCast< const ObjectVector >( tileBatch->members()[1] )->members()[ subIndex ];
+	}
+	return IECore::runTimeCast< const FloatVectorData >( curTileChannel );
 }
 
 void OpenImageIOReader::plugSet( Gaffer::Plug *plug )
@@ -738,6 +1230,6 @@ void OpenImageIOReader::plugSet( Gaffer::Plug *plug )
 	// from old files hanging around.
 	if( plug == refreshCountPlug() )
 	{
-		imageCache()->invalidate_all( true );
+		fileCache()->clear();
 	}
 }

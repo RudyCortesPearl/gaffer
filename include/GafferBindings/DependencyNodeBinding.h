@@ -39,28 +39,27 @@
 #define GAFFERBINDINGS_DEPENDENCYNODEBINDING_H
 
 #include "boost/python.hpp"
-#include "boost/python/suite/indexing/container_utils.hpp"
-
-#include "IECorePython/ScopedGILLock.h"
-
-#include "Gaffer/DependencyNode.h"
-#include "Gaffer/Context.h"
-#include "Gaffer/ValuePlug.h"
 
 #include "GafferBindings/NodeBinding.h"
-#include "GafferBindings/ExceptionAlgo.h"
+
+#include "Gaffer/Context.h"
+#include "Gaffer/DependencyNode.h"
+#include "Gaffer/ValuePlug.h"
+
+#include "IECorePython/ExceptionAlgo.h"
+#include "IECorePython/ScopedGILLock.h"
+
+#include "boost/python/suite/indexing/container_utils.hpp"
 
 namespace GafferBindings
 {
-
-void bindDependencyNode();
 
 template<typename T, typename TWrapper=T>
 class DependencyNodeClass : public NodeClass<T, TWrapper>
 {
 	public :
 
-		DependencyNodeClass( const char *docString = 0 );
+		DependencyNodeClass( const char *docString = nullptr );
 		DependencyNodeClass( const char *docString, boost::python::no_init_t );
 
 };
@@ -70,24 +69,13 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 {
 	public :
 
-		DependencyNodeWrapper( PyObject *self, const std::string &name )
-			:	NodeWrapper<WrappedType>( self, name )
+		template<typename... Args>
+		DependencyNodeWrapper( PyObject *self, Args&&... args )
+			:	NodeWrapper<WrappedType>( self, std::forward<Args>( args )... )
 		{
 		}
 
-		template<typename Arg1, typename Arg2>
-		DependencyNodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2 )
-			:	NodeWrapper<WrappedType>( self, arg1, arg2 )
-		{
-		}
-
-		template<typename Arg1, typename Arg2, typename Arg3>
-		DependencyNodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2, Arg3 arg3 )
-			:	NodeWrapper<WrappedType>( self, arg1, arg2, arg3 )
-		{
-		}
-
-		virtual bool isInstanceOf( IECore::TypeId typeId ) const
+		bool isInstanceOf( IECore::TypeId typeId ) const override
 		{
 			if( typeId == (IECore::TypeId)Gaffer::DependencyNodeTypeId )
 			{
@@ -98,7 +86,7 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 			return NodeWrapper<WrappedType>::isInstanceOf( typeId );
 		}
 
-		virtual void affects( const Gaffer::Plug *input, Gaffer::DependencyNode::AffectedPlugsContainer &outputs ) const
+		void affects( const Gaffer::Plug *input, Gaffer::DependencyNode::AffectedPlugsContainer &outputs ) const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -110,19 +98,23 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 					{
 						boost::python::object r = f( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( input ) ) );
 						boost::python::list pythonOutputs = boost::python::extract<boost::python::list>( r );
-						boost::python::container_utils::extend_container( outputs, pythonOutputs );
+						for( boost::python::ssize_t i = 0, e = boost::python::len( pythonOutputs ); i < e; ++i )
+						{
+							const Gaffer::Plug &p = boost::python::extract<const Gaffer::Plug &>( pythonOutputs[i] );
+							outputs.push_back( &p );
+						}
 						return;
 					}
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::affects( input, outputs );
 		}
 
-		virtual Gaffer::BoolPlug *enabledPlug()
+		Gaffer::BoolPlug *enabledPlug() override
 		{
 			if( this->isSubclassed() )
 			{
@@ -137,19 +129,19 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::enabledPlug();
 		}
 
-		virtual const Gaffer::BoolPlug *enabledPlug() const
+		const Gaffer::BoolPlug *enabledPlug() const override
 		{
 			// Better to make an ugly cast than repeat the implementation of the non-const version.
 			return const_cast<DependencyNodeWrapper *>( this )->enabledPlug();
 		}
 
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output )
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override
 		{
 			if( this->isSubclassed() )
 			{
@@ -167,13 +159,13 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::correspondingInput( output );
 		}
 
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override
 		{
 			// Better to make an ugly cast than repeat the implementation of the non-const version.
 			return const_cast<DependencyNodeWrapper *>( this )->correspondingInput( output );

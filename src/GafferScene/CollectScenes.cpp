@@ -34,11 +34,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferScene/CollectScenes.h"
+
+#include "GafferScene/SceneAlgo.h"
+
 #include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
-#include "Gaffer/ArrayPlug.h"
-
-#include "GafferScene/CollectScenes.h"
 
 using namespace std;
 using namespace Imath;
@@ -63,10 +64,10 @@ class SceneScope : public Context::EditableScope
 		{
 		}
 
-		SceneScope( const Context *context, const InternedString &rootNameVariable, const ScenePlug::ScenePath &downstreamPath )
+		SceneScope( const Context *context, const InternedString &rootNameVariable, const ScenePlug::ScenePath &downstreamPath, const StringPlug *sourceRootPlug )
 			:	EditableScope( context ), m_rootNameVariable( rootNameVariable )
 		{
-			setScenePath( downstreamPath );
+			setScenePath( downstreamPath, sourceRootPlug );
 		}
 
 		void setRootName( const InternedString &name )
@@ -74,10 +75,15 @@ class SceneScope : public Context::EditableScope
 			set( m_rootNameVariable, name.string() );
 		}
 
-		void setScenePath( const ScenePlug::ScenePath &downstreamPath )
+		void setScenePath( const ScenePlug::ScenePath &downstreamPath, const StringPlug *sourceRootPlug )
 		{
 			setRootName( downstreamPath[0] );
-			ScenePlug::ScenePath upstreamPath( downstreamPath.begin() + 1, downstreamPath.end() );
+			ScenePlug::ScenePath upstreamPath;
+			// We evaluate the sourceRootPlug _after_ setting the root name,
+			// so that users can use the root name in expressions and
+			// substitutions.
+			ScenePlug::stringToPath( sourceRootPlug->getValue(), upstreamPath );
+			upstreamPath.insert( upstreamPath.end(), downstreamPath.begin() + 1, downstreamPath.end() );
 			set( ScenePlug::scenePathContextName, upstreamPath );
 		}
 
@@ -93,17 +99,18 @@ class SceneScope : public Context::EditableScope
 // CollectScenes
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( CollectScenes );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CollectScenes );
 
 size_t CollectScenes::g_firstPlugIndex = 0;
 
 CollectScenes::CollectScenes( const std::string &name )
-	:	SceneProcessor( name, 1 )
+	:	SceneProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
 	addChild( new StringVectorDataPlug( "rootNames", Plug::In, new StringVectorData() ) );
 	addChild( new StringPlug( "rootNameVariable", Plug::In, "collect:rootName" ) );
+	addChild( new StringPlug( "sourceRoot", Plug::In, "/" ) );
 }
 
 CollectScenes::~CollectScenes()
@@ -130,6 +137,16 @@ const Gaffer::StringPlug *CollectScenes::rootNameVariablePlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 1 );
 }
 
+Gaffer::StringPlug *CollectScenes::sourceRootPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 2 );
+}
+
+const Gaffer::StringPlug *CollectScenes::sourceRootPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 2 );
+}
+
 void CollectScenes::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneProcessor::affects( input, outputs );
@@ -138,7 +155,10 @@ void CollectScenes::affects( const Gaffer::Plug *input, AffectedPlugsContainer &
 	{
 		outputs.push_back( outPlug()->childNamesPlug() );
 	}
-	else if( input == rootNameVariablePlug() )
+	else if(
+		input == rootNameVariablePlug() ||
+		input == sourceRootPlug()
+	)
 	{
 		for( PlugIterator it( outPlug() ); !it.done(); ++it )
 		{
@@ -165,7 +185,7 @@ void CollectScenes::hashBound( const ScenePath &path, const Gaffer::Context *con
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		h = inPlug()->boundPlug()->hash();
 	}
 }
@@ -178,7 +198,7 @@ Imath::Box3f CollectScenes::computeBound( const ScenePath &path, const Gaffer::C
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		return inPlug()->boundPlug()->getValue();
 	}
 }
@@ -191,7 +211,7 @@ void CollectScenes::hashTransform( const ScenePath &path, const Gaffer::Context 
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		h = inPlug()->transformPlug()->hash();
 	}
 }
@@ -204,7 +224,7 @@ Imath::M44f CollectScenes::computeTransform( const ScenePath &path, const Gaffer
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		return inPlug()->transformPlug()->getValue();
 	}
 }
@@ -217,7 +237,7 @@ void CollectScenes::hashAttributes( const ScenePath &path, const Gaffer::Context
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		h = inPlug()->attributesPlug()->hash();
 	}
 }
@@ -230,7 +250,7 @@ IECore::ConstCompoundObjectPtr CollectScenes::computeAttributes( const ScenePath
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		return inPlug()->attributesPlug()->getValue();
 	}
 }
@@ -243,7 +263,7 @@ void CollectScenes::hashObject( const ScenePath &path, const Gaffer::Context *co
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		h = inPlug()->objectPlug()->hash();
 	}
 }
@@ -256,7 +276,7 @@ IECore::ConstObjectPtr CollectScenes::computeObject( const ScenePath &path, cons
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
 		return inPlug()->objectPlug()->getValue();
 	}
 }
@@ -270,7 +290,16 @@ void CollectScenes::hashChildNames( const ScenePath &path, const Gaffer::Context
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
+		if( path.size() == 1 )
+		{
+			const auto &upstreamPath = Context::current()->get<ScenePlug::ScenePath>( ScenePlug::scenePathContextName );
+			if( !inPlug()->exists( upstreamPath ) )
+			{
+				h = inPlug()->childNamesPlug()->defaultValue()->Object::hash();
+				return;
+			}
+		}
 		h = inPlug()->childNamesPlug()->hash();
 	}
 }
@@ -302,7 +331,15 @@ IECore::ConstInternedStringVectorDataPtr CollectScenes::computeChildNames( const
 	}
 	else
 	{
-		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path );
+		SceneScope sceneScope( context, rootNameVariablePlug()->getValue(), path, sourceRootPlug() );
+		if( path.size() == 1 )
+		{
+			const auto &upstreamPath = Context::current()->get<ScenePlug::ScenePath>( ScenePlug::scenePathContextName );
+			if( !inPlug()->exists( upstreamPath ) )
+			{
+				return inPlug()->childNamesPlug()->defaultValue();
+			}
+		}
 		return inPlug()->childNamesPlug()->getValue();
 	}
 }
@@ -392,16 +429,19 @@ void CollectScenes::hashSet( const IECore::InternedString &setName, const Gaffer
 	const vector<InternedString> &rootNames = rootNamesData->readable();
 
 	const PathMatcherDataPlug *inSetPlug = inPlug()->setPlug();
+	const StringPlug *sourceRootPlug = this->sourceRootPlug();
 
 	SceneScope sceneScope( context, rootNameVariablePlug()->getValue() );
 	for( vector<InternedString>::const_iterator it = rootNames.begin(), eIt = rootNames.end(); it != eIt; ++it )
 	{
 		sceneScope.setRootName( *it );
 		inSetPlug->hash( h );
+		sourceRootPlug->hash( h );
+		h.append( *it );
 	}
 }
 
-GafferScene::ConstPathMatcherDataPtr CollectScenes::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr CollectScenes::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	PathMatcherDataPtr setData = new PathMatcherData;
 	PathMatcher &set = setData->writable();
@@ -410,6 +450,7 @@ GafferScene::ConstPathMatcherDataPtr CollectScenes::computeSet( const IECore::In
 	const vector<InternedString> &rootNames = rootNamesData->readable();
 
 	const PathMatcherDataPlug *inSetPlug = inPlug()->setPlug();
+	const StringPlug *sourceRootPlug = this->sourceRootPlug();
 
 	SceneScope sceneScope( context, rootNameVariablePlug()->getValue() );
 	vector<InternedString> prefix( 1 );
@@ -421,7 +462,15 @@ GafferScene::ConstPathMatcherDataPtr CollectScenes::computeSet( const IECore::In
 		if( !inSet.isEmpty() )
 		{
 			prefix[0] = *it;
-			set.addPaths( inSet, prefix );
+			const string root = sourceRootPlug->getValue();
+			if( !root.empty() )
+			{
+				set.addPaths( inSet.subTree( root ), prefix );
+			}
+			else
+			{
+				set.addPaths( inSet, prefix );
+			}
 		}
 	}
 

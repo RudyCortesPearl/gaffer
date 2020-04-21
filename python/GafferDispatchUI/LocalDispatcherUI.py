@@ -207,7 +207,7 @@ class _LocalJobsWindow( GafferUI.Window ) :
 		GafferUI.Window.__init__( self, **kw )
 
 		with self :
-			with GafferUI.SplitContainer() :
+			with GafferUI.SplitContainer( borderWidth = 8 ) :
 
 				self.__jobListingWidget = GafferUI.PathListingWidget(
 					_LocalJobsPath( jobPool ),
@@ -221,7 +221,7 @@ class _LocalJobsWindow( GafferUI.Window ) :
 					allowMultipleSelection=True
 				)
 				self.__jobListingWidget._qtWidget().header().setSortIndicator( 1, QtCore.Qt.AscendingOrder )
-				self.__jobSelectionChangedConnection = self.__jobListingWidget.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__jobSelectionChanged ) )
+				self.__jobListingWidget.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__jobSelectionChanged ), scoped = False )
 
 				with GafferUI.TabbedContainer() as self.__tabs :
 
@@ -242,24 +242,24 @@ class _LocalJobsWindow( GafferUI.Window ) :
 					with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing=10, borderWidth=10, parenting = { "label"  : "Messages" } ) as self.__messagesTab :
 						self.__messageWidget = GafferUI.MessageWidget()
 
-				self.__tabChangedConnection = self.__tabs.currentChangedSignal().connect( Gaffer.WeakMethod( self.__tabChanged ) )
+				self.__tabs.currentChangedSignal().connect( Gaffer.WeakMethod( self.__tabChanged ), scoped = False )
 
 				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing=5 ) :
 					self.__killButton = GafferUI.Button( "Kill Selected Jobs" )
 					self.__killButton.setEnabled( False )
-					self.__killClickedConnection = self.__killButton.clickedSignal().connect( Gaffer.WeakMethod( self.__killClicked ) )
+					self.__killButton.clickedSignal().connect( Gaffer.WeakMethod( self.__killClicked ), scoped = False )
 					self.__removeButton = GafferUI.Button( "Remove Failed Jobs" )
 					self.__removeButton.setEnabled( False )
-					self.__removedClickedConnection = self.__removeButton.clickedSignal().connect( Gaffer.WeakMethod( self.__removeClicked ) )
+					self.__removeButton.clickedSignal().connect( Gaffer.WeakMethod( self.__removeClicked ), scoped = False )
 
 		self.setTitle( "Local Dispatcher Jobs" )
 
 		self.__updateTimer = QtCore.QTimer()
 		self.__updateTimer.timeout.connect( Gaffer.WeakMethod( self.__update ) )
-		self.__visibilityChangedConnection = self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
+		self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ), scoped = False )
 
-		self.__jobAddedConnection = jobPool.jobAddedSignal().connect( Gaffer.WeakMethod( self.__jobAdded ) )
-		self.__jobRemovedConnection = jobPool.jobRemovedSignal().connect( Gaffer.WeakMethod( self.__jobRemoved ) )
+		jobPool.jobAddedSignal().connect( Gaffer.WeakMethod( self.__jobAdded ), scoped = False )
+		jobPool.jobRemovedSignal().connect( Gaffer.WeakMethod( self.__jobRemoved ), scoped = False )
 
 	## Acquires the LocalJobsWindow for the specified application.
 	@staticmethod
@@ -297,48 +297,57 @@ class _LocalJobsWindow( GafferUI.Window ) :
 
 	def __updateDetails( self ) :
 
-		paths = self.__jobListingWidget.getSelectedPaths()
-		if not len(paths) :
+		jobs = self.__selectedJobs()
+		if len( jobs ) != 1 :
 			self.__detailsCurrentDescription.setText( "N/A" )
 			self.__detailsDirectory.setText( "N/A" )
 			return
 
-		job = paths[0].job()
-		self.__detailsCurrentDescription.setText( job.description() )
-		self.__detailsDirectory.setText( job.directory() )
+		self.__detailsCurrentDescription.setText( jobs[0].description() )
+		self.__detailsDirectory.setText( jobs[0].directory() )
 
 	def __updateMessages( self ) :
 
 		self.__messageWidget.clear()
 
-		paths = self.__jobListingWidget.getSelectedPaths()
-		if not len(paths) :
+		jobs = self.__selectedJobs()
+		if len( jobs ) != 1 :
 			return
 
-		for m in paths[0].job().messageHandler().messages :
+		for m in jobs[0].messageHandler().messages :
 			self.__messageWidget.appendMessage( m.level, m.context, m.message )
 
 	def __killClicked( self, button ) :
 
-		for path in self.__jobListingWidget.getSelectedPaths() :
-			path.job().kill()
+		for job in self.__selectedJobs() :
+			job.kill()
 
 		self.__update()
 
 	def __removeClicked( self, button ) :
 
-		for path in self.__jobListingWidget.getSelectedPaths() :
-			if path.job().failed() :
-				path.jobPool()._remove( path.job(), force = True )
+		jobPool = self.__jobListingWidget.getPath().jobPool()
+		for job in self.__selectedJobs() :
+			if job.failed() :
+				jobPool._remove( job, force = True )
 
 		self.__update()
 
+	def __selectedJobs( self ) :
+
+		rootPath = self.__jobListingWidget.getPath()
+		selection = self.__jobListingWidget.getSelection()
+		return [
+			path.job() for path in rootPath.children()
+			if selection.match( str( path ) ) & selection.Result.ExactMatch
+		]
+
 	def __jobSelectionChanged( self, widget ) :
 
-		paths = self.__jobListingWidget.getSelectedPaths()
-		numFailed = len([ x for x in paths if x.job().failed() ])
+		jobs = self.__selectedJobs()
+		numFailed = len( [ job for job in jobs if job.failed() ] )
 		self.__removeButton.setEnabled( numFailed )
-		self.__killButton.setEnabled( len(paths) - numFailed > 0 )
+		self.__killButton.setEnabled( len( jobs ) - numFailed > 0 )
 
 		currentTab = self.__tabs.getCurrent()
 		if currentTab is self.__detailsTab :

@@ -34,14 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/MessageHandler.h"
-#include "IECore/NullObject.h"
+#include "GafferImage/Warp.h"
+
+#include "GafferImage/FilterAlgo.h"
+#include "GafferImage/Sampler.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferImage/Warp.h"
-#include "GafferImage/Sampler.h"
-#include "GafferImage/FilterAlgo.h"
+#include "IECore/MessageHandler.h"
+#include "IECore/NullObject.h"
 
 using namespace std;
 using namespace boost;
@@ -80,7 +81,7 @@ namespace
 		}
 		else
 		{
-			return NULL;
+			return nullptr;
 		}
 	}
 }
@@ -95,7 +96,7 @@ float Warp::approximateDerivative( float upper, float center, float lower )
 	{
 		float high = upper - center;
 		float low = center - lower;
-		
+
 		// We have valid derivatives on both sides
 		// The accurate thing to do would be to average them, but here we take the minimum
 		// instead.  This may underfilter sometimes, but there are two arguments for it:
@@ -145,7 +146,7 @@ class Warp::EngineData : public Data
 		{
 		}
 
-		virtual ~EngineData()
+		~EngineData() override
 		{
 			delete engine;
 		}
@@ -154,19 +155,19 @@ class Warp::EngineData : public Data
 
 	protected :
 
-		virtual void copyFrom( const Object *other, CopyContext *context )
+		void copyFrom( const Object *other, CopyContext *context ) override
 		{
 			Data::copyFrom( other, context );
 			msg( Msg::Warning, "EngineData::copyFrom", "Not implemented" );
 		}
 
-		virtual void save( SaveContext *context ) const
+		void save( SaveContext *context ) const override
 		{
 			Data::save( context );
 			msg( Msg::Warning, "EngineData::save", "Not implemented" );
 		}
 
-		virtual void load( LoadContextPtr context )
+		void load( LoadContextPtr context ) override
 		{
 			Data::load( context );
 			msg( Msg::Warning, "EngineData::load", "Not implemented" );
@@ -178,12 +179,12 @@ class Warp::EngineData : public Data
 // Warp
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Warp );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Warp );
 
 size_t Warp::g_firstPlugIndex = 0;
 
 Warp::Warp( const std::string &name )
-	:	ImageProcessor( name )
+	:	FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -256,7 +257,7 @@ const CompoundObjectPlug *Warp::sampleRegionsPlug() const
 
 void Warp::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	// TypeId comparison is necessary to avoid calling pure virtual
 	// methods below if we're called before being fully constructed.
@@ -304,6 +305,7 @@ void Warp::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context
 		ImagePlug::ChannelDataScope tileScope( context );
 
 		V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
+		h.append( tileOrigin );
 		enginePlug()->hash( h );
 
 		bool useDerivatives = useDerivativesPlug()->getValue();
@@ -315,7 +317,7 @@ void Warp::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context
 				ImagePlug::GlobalScope c( context );
 				dataWindow = outPlug()->dataWindowPlug()->getValue();
 			}
-			
+
 			hashEngineIfTileValid( tileScope, enginePlug(), dataWindow,
 				tileOrigin + V2i( ImagePlug::tileSize(), 0 ), h );
 			hashEngineIfTileValid( tileScope, enginePlug(), dataWindow,
@@ -331,7 +333,7 @@ void Warp::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context
 		filterPlug()->hash( h );
 	}
 
-	ImageProcessor::hash( output, context, h );
+	FlatImageProcessor::hash( output, context, h );
 }
 
 void Warp::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const
@@ -422,7 +424,7 @@ void Warp::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) 
 			// dataWindow )
 			ImagePlug::ChannelDataScope tileScope( context );
 
-			ConstEngineDataPtr engineDataPlusX = static_pointer_cast<const EngineData>( 
+			ConstEngineDataPtr engineDataPlusX = static_pointer_cast<const EngineData>(
 				computeEngineIfTileValid( tileScope, enginePlug(), dataWindow,
 					tileOrigin + V2i( ImagePlug::tileSize(), 0 )
 				)
@@ -443,7 +445,7 @@ void Warp::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) 
 				)
 			);
 
-			const Engine *enginePlusX = NULL, *engineMinusX = NULL, *enginePlusY = NULL, *engineMinusY = NULL;
+			const Engine *enginePlusX = nullptr, *engineMinusX = nullptr, *enginePlusY = nullptr, *engineMinusY = nullptr;
 			if( engineDataPlusX ) enginePlusX = engineDataPlusX->engine;
 			if( engineDataMinusX ) engineMinusX = engineDataMinusX->engine;
 			if( engineDataPlusY ) enginePlusY = engineDataPlusY->engine;
@@ -587,7 +589,7 @@ void Warp::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) 
 		return;
 	}
 
-	ImageProcessor::compute( output, context );
+	FlatImageProcessor::compute( output, context );
 }
 
 void Warp::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -608,7 +610,7 @@ void Warp::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::
 		return;
 	}
 
-	ImageProcessor::hashChannelData( parent, context, h );
+	FlatImageProcessor::hashChannelData( parent, context, h );
 
 	h.append( sampleRegionsHash );
 
@@ -627,7 +629,6 @@ void Warp::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::
 		outPlug()->dataWindowPlug()->hash( h );
 	}
 }
-
 
 IECore::ConstFloatVectorDataPtr Warp::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
@@ -701,6 +702,6 @@ bool  Warp::affectsEngine( const Gaffer::Plug *input ) const
 
 void Warp::hashEngine( const Imath::V2i &tileOrigin, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hash( enginePlug(), context, h );
+	FlatImageProcessor::hash( enginePlug(), context, h );
 }
 

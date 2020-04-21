@@ -36,11 +36,12 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/ComputeNode.h"
+
 #include "Gaffer/ValuePlug.h"
 
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( ComputeNode );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ComputeNode );
 
 ComputeNode::ComputeNode( const std::string &name )
 	:	DependencyNode( name )
@@ -69,10 +70,26 @@ void ComputeNode::hash( const ValuePlug *output, const Context *context, IECore:
 	while( g && g != this )
 	{
 		h.append( g->getName() );
-		g = g->parent<GraphComponent>();
+		g = g->parent();
 	}
 }
 
 void ComputeNode::compute( ValuePlug *output, const Context *context ) const
 {
+}
+
+ValuePlug::CachePolicy ComputeNode::hashCachePolicy( const ValuePlug *output ) const
+{
+	return ValuePlug::CachePolicy::Standard;
+}
+
+ValuePlug::CachePolicy ComputeNode::computeCachePolicy( const ValuePlug *output ) const
+{
+	if( !output->getFlags( Plug::Cacheable ) )
+	{
+		return ValuePlug::CachePolicy::Uncached;
+	}
+	/// \todo Return `Standard` once all task-spawning computes are
+	/// known to be declaring an appropriate policy.
+	return ValuePlug::CachePolicy::Legacy;
 }

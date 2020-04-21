@@ -34,7 +34,7 @@
 #
 ##########################################################################
 
-import IECore
+import functools
 
 import Gaffer
 import GafferUI
@@ -63,8 +63,8 @@ class ConnectionPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__connections = [
 			self.__frame.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) ),
 			self.__inputLabel.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) ),
-			self.__frame.enterSignal().connect( IECore.curry( GafferUI.Frame.setHighlighted, highlighted=True ) ),
-			self.__frame.leaveSignal().connect( IECore.curry( GafferUI.Frame.setHighlighted, highlighted=False ) ),
+			self.__frame.enterSignal().connect( functools.partial( GafferUI.Frame.setHighlighted, highlighted=True ) ),
+			self.__frame.leaveSignal().connect( functools.partial( GafferUI.Frame.setHighlighted, highlighted=False ) ),
 		]
 
 		self._addPopupMenu( self.__frame )
@@ -87,10 +87,11 @@ class ConnectionPlugValueWidget( GafferUI.PlugValueWidget ) :
 				srcNode = input.node()
 
 		if srcNode is not None :
-			result += "<ul>"
-			result += "<li>Left drag to drag source plug.</li>"
-			result += "<li>Left click to edit source node.</li>"
-			result += "<ul>"
+			if result :
+				result += "\n"
+			result += "## Actions\n\n"
+			result += " - Left drag to drag source plug\n"
+			result += " - Left click to edit source node\n"
 
 		return result
 

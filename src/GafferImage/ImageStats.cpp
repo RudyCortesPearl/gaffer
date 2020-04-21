@@ -34,14 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/TypedPlug.h"
-#include "Gaffer/BoxPlug.h"
-#include "Gaffer/ScriptNode.h"
-
 #include "GafferImage/ImageStats.h"
-#include "GafferImage/Sampler.h"
+
 #include "GafferImage/FormatPlug.h"
 #include "GafferImage/ImageAlgo.h"
+#include "GafferImage/Sampler.h"
+
+#include "Gaffer/BoxPlug.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/TypedPlug.h"
 
 using namespace std;
 using namespace Gaffer;
@@ -77,7 +78,7 @@ int colorIndex( const ValuePlug *plug )
 // ImageStats
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( ImageStats );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ImageStats );
 
 size_t ImageStats::g_firstPlugIndex = 0;
 
@@ -99,6 +100,15 @@ ImageStats::ImageStats( const std::string &name )
 	addChild( new Color4fPlug( "average", Gaffer::Plug::Out, Imath::Color4f( 0, 0, 0, 1 ) ) );
 	addChild( new Color4fPlug( "min", Gaffer::Plug::Out, Imath::Color4f( 0, 0, 0, 1 ) ) );
 	addChild( new Color4fPlug( "max", Gaffer::Plug::Out, Imath::Color4f( 0, 0, 0, 1 ) ) );
+
+	addChild( new ImagePlug( "__flattenedIn", Plug::In, Plug::Default & ~Plug::Serialisable ) );
+
+	DeepStatePtr deepStateNode = new DeepState( "__deepState" );
+	addChild( deepStateNode );
+
+	deepStateNode->inPlug()->setInput( inPlug() );
+	deepStateNode->deepStatePlug()->setValue( int( DeepState::TargetState::Flat ) );
+	flattenedInPlug()->setInput( deepStateNode->outPlug() );
 }
 
 ImageStats::~ImageStats()
@@ -165,31 +175,33 @@ const Color4fPlug *ImageStats::maxPlug() const
 	return getChild<Color4fPlug>( g_firstPlugIndex + 5 );
 }
 
-void ImageStats::parentChanging( Gaffer::GraphComponent *newParent )
+ImagePlug *ImageStats::flattenedInPlug()
 {
-	ComputeNode::parentChanging( newParent );
+	return getChild<ImagePlug>( g_firstPlugIndex + 6 );
+}
 
-	// Set up the default format plug.
-	Node *parentNode = IECore::runTimeCast<Node>( newParent );
-	if( !parentNode )
-	{
-		return;
-	}
+const ImagePlug *ImageStats::flattenedInPlug() const
+{
+	return getChild<ImagePlug>( g_firstPlugIndex + 6 );
+}
 
-	ScriptNode *scriptNode = parentNode->scriptNode();
-	if( scriptNode )
-	{
-		FormatPlug::acquireDefaultFormatPlug( scriptNode );
-	}
+DeepState *ImageStats::deepState()
+{
+	return getChild<DeepState>( g_firstPlugIndex + 4 );
+}
+
+const DeepState *ImageStats::deepState() const
+{
+	return getChild<DeepState>( g_firstPlugIndex + 4 );
 }
 
 void ImageStats::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ComputeNode::affects( input, outputs );
 	if(
-		input == inPlug()->dataWindowPlug() ||
-		input == inPlug()->channelNamesPlug() ||
-		input == inPlug()->channelDataPlug() ||
+		input == flattenedInPlug()->dataWindowPlug() ||
+		input == flattenedInPlug()->channelNamesPlug() ||
+		input == flattenedInPlug()->channelDataPlug() ||
 		input == channelsPlug() ||
 		areaPlug()->isAncestorOf( input )
 	)
@@ -220,7 +232,7 @@ void ImageStats::hash( const ValuePlug *output, const Context *context, IECore::
 
 	if( channelName.empty() || BufferAlgo::empty( area ) )
 	{
-		h.append( static_cast<const FloatPlug *>( output )->defaultValue() );
+		h.append( 0.0f );
 		return;
 	}
 
@@ -243,7 +255,7 @@ void ImageStats::compute( ValuePlug *output, const Context *context ) const
 
 	if( channelName.empty() || BufferAlgo::empty( area ) )
 	{
-		output->setToDefault();
+		static_cast<FloatPlug *>( output )->setValue( 0.0f );
 		return;
 	}
 

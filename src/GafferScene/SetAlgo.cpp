@@ -38,19 +38,20 @@
 // uncomment to get additional debug output when parsing an expression
 // #define BOOST_SPIRIT_DEBUG
 
-#include <boost/variant/recursive_variant.hpp>
-#include <boost/variant/apply_visitor.hpp>
-#include <boost/algorithm/string/predicate.hpp>
-
-#include <boost/spirit/include/qi.hpp>
-#include <boost/spirit/include/phoenix_operator.hpp>
-#include "boost/spirit/include/classic_core.hpp"
-#include <boost/fusion/include/adapt_struct.hpp>
-
 #include "GafferScene/SetAlgo.h"
 
 #include "IECore/MessageHandler.h"
 
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/fusion/include/adapt_struct.hpp"
+#include "boost/spirit/include/classic_core.hpp"
+#include "boost/spirit/include/phoenix_operator.hpp"
+#include "boost/spirit/include/qi.hpp"
+#include "boost/spirit/repository/include/qi_distinct.hpp"
+#include "boost/variant/apply_visitor.hpp"
+#include "boost/variant/recursive_variant.hpp"
+
+using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
@@ -59,36 +60,28 @@ namespace ascii = boost::spirit::ascii;
 
 namespace
 {
+
 struct BinaryOp;
 struct Nil {};
 
-// Wrap a string into a SetName struct that gives it semantic meaning
-struct SetName
-{
-	std::string name;
-};
-
-
-// Wrap a string into an ObjectName struct that gives it semantic meaning
-struct ObjectName
-{
-	std::string name;
-};
-
 // Determine which Ops are supported in SetExpressions
 // and provide a way to print them for debugging.
-enum Op { And, Or, AndNot };
+enum Op { And, Or, AndNot, In, Containing };
 
 std::ostream & operator<<( std::ostream &out, const Op &op )
 {
 	switch( op )
 	{
-	case Or :
-		out << "|"; break;
-	case And :
-		out << "&"; break;
-	case AndNot :
-		out << "-"; break;
+		case Or :
+			out << "|"; break;
+		case And :
+			out << "&"; break;
+		case AndNot :
+			out << "-"; break;
+		case In :
+			out << "in"; break;
+		case Containing :
+			out << "containing"; break;
 	}
 	return out;
 }
@@ -98,8 +91,7 @@ struct ExpressionAst
 	typedef
 	boost::variant<
 		Nil,
-		SetName,
-		ObjectName,
+		std::string, // identifier
 		boost::recursive_wrapper<ExpressionAst>,
 		boost::recursive_wrapper<BinaryOp>
 		>
@@ -112,10 +104,6 @@ struct ExpressionAst
 	ExpressionAst( const Expr &expr )
 		: expr( expr ) {}
 
-	ExpressionAst& operator&=( const ExpressionAst &rhs );
-	ExpressionAst& operator-=( const ExpressionAst &rhs );
-	ExpressionAst& operator|=( const ExpressionAst &rhs );
-
 	type expr;
 };
 
@@ -124,31 +112,31 @@ struct BinaryOp
 	BinaryOp(
 		const ExpressionAst &left,
 		Op op,
-		const ExpressionAst &right )
-		: left( left ), op(op), right( right ) {}
+		const ExpressionAst &right
+	)
+		: left( left ), op( op ), right( right ) {}
 
 	ExpressionAst left;
 	Op op;
 	ExpressionAst right;
 };
 
-ExpressionAst& ExpressionAst::operator&=( const ExpressionAst &rhs )
+struct CreateBinaryOpImplementation
 {
-	expr = BinaryOp( expr, And, rhs );
-	return *this;
-}
 
-ExpressionAst& ExpressionAst::operator-=( const ExpressionAst &rhs )
-{
-	expr = BinaryOp( expr, AndNot , rhs );
-	return *this;
-}
+	typedef ExpressionAst & result_type;
 
-ExpressionAst& ExpressionAst::operator|=( const ExpressionAst &rhs )
-{
-	expr = BinaryOp( expr, Or , rhs );
-	return *this;
-}
+	ExpressionAst & operator()( ExpressionAst &lhs, Op op, ExpressionAst &rhs ) const
+	{
+		lhs.expr = BinaryOp( lhs.expr, op, rhs );
+		return lhs;
+	}
+
+};
+
+// Function that we can use as a semantic action in the parser, inserting
+// a BinaryOp into the current ExpressionAst.
+boost::phoenix::function<CreateBinaryOpImplementation> createBinaryOp;
 
 // Visiting the AST
 // ----------------
@@ -168,16 +156,6 @@ struct AstPrinter
 	void operator()( const std::string &n ) const
 	{
 		stream << n;
-	}
-
-	void operator()( const ObjectName &n ) const
-	{
-		stream << n.name;
-	}
-
-	void operator()( const SetName &n ) const
-	{
-		stream << n.name;
 	}
 
 	void operator()( const ExpressionAst &ast ) const
@@ -218,20 +196,55 @@ struct AstEvaluator
 	typedef PathMatcher result_type;
 
 	AstEvaluator( const ScenePlug *scene )
+		: m_scene( scene )
 	{
-		m_scene = scene;
 	}
 
-	result_type operator()( const SetName &set ) const
+	result_type operator()( const std::string &identifier ) const
 	{
-		return m_scene->set( set.name )->readable();
-	}
+		if( identifier[0] == '/' )
+		{
+			// Object name
+			PathMatcher result;
+			if( StringAlgo::hasWildcards( identifier ) )
+			{
+				throw IECore::Exception( boost::str( boost::format( "Object name \"%1%\" contains wildcards" ) % identifier ) );
+			}
+			result.addPath( identifier );
+			return result;
+		}
+		else
+		{
+			// Set name
 
-	result_type operator()( const ObjectName &object ) const
-	{
-		PathMatcher result;
-		result.addPath( object.name );
-		return result;
+			if( !StringAlgo::hasWildcards( identifier ) )
+			{
+				return m_scene->set( identifier )->readable();
+			}
+
+			result_type result;
+
+			IECore::ConstInternedStringVectorDataPtr setNamesData = m_scene->setNamesPlug()->getValue();
+			const std::vector<IECore::InternedString> &setNames = setNamesData->readable();
+			if( setNames.empty() )
+			{
+				return result;
+			}
+
+			ScenePlug::SetScope setScope( Context::current() );
+			for( const IECore::InternedString &setName : setNames )
+			{
+				if( !StringAlgo::match( setName.string(), identifier ) )
+				{
+					continue;
+				}
+
+				setScope.setSetName( setName );
+				ConstPathMatcherDataPtr setData = m_scene->setPlug()->getValue();
+				result.addPaths( setData->readable() );
+			}
+			return result;
+		}
 	}
 
 	result_type operator()( const ExpressionAst &ast ) const
@@ -268,7 +281,29 @@ struct AstEvaluator
 				result.removePaths( right );
 				return result;
 			}
-			default:
+			case In :
+			{
+				PathMatcher result;
+				for( PathMatcher::Iterator it = right.begin(), eIt = right.end(); it != eIt; ++it )
+				{
+					result.addPaths( left.subTree( *it ), *it );
+					it.prune();
+				}
+				return result;
+			}
+			case Containing :
+			{
+				PathMatcher result;
+				for( PathMatcher::Iterator it = left.begin(), eIt = left.end(); it != eIt; ++it )
+				{
+					if( right.match( *it ) & ( PathMatcher::ExactMatch | PathMatcher::DescendantMatch ) )
+					{
+						result.addPath( *it );
+					}
+				}
+				return result;
+			}
+			default :
 				return PathMatcher();
 		}
 	}
@@ -287,19 +322,46 @@ struct AstHasher
 	{
 	}
 
-	void operator()( const ObjectName &n )
+	void operator()( const std::string &identifier )
 	{
-		m_hash.append( n.name );
-	}
-
-	void operator()( const SetName &n )
-	{
-		if( !m_scene )
+		if( identifier[0] == '/' )
 		{
-			throw IECore::Exception( "SetAlgo: Invalid scene given. Can not hash set expression." );
+			// Object name
+			m_hash.append( identifier );
 		}
+		else
+		{
+			// Set name
+			if( !m_scene )
+			{
+				throw IECore::Exception( "SetAlgo: Invalid scene given. Can not hash set expression." );
+			}
 
-		m_hash.append( m_scene->setHash( n.name ) );
+			if( !StringAlgo::hasWildcards( identifier ) )
+			{
+				m_hash.append( m_scene->setHash( identifier ) );
+				return;
+			}
+
+			IECore::ConstInternedStringVectorDataPtr setNamesData = m_scene->setNamesPlug()->getValue();
+			const std::vector<IECore::InternedString> &setNames = setNamesData->readable();
+			if( setNames.empty() )
+			{
+				return;
+			}
+
+			ScenePlug::SetScope setScope( Context::current() );
+			for( const IECore::InternedString &setName : setNames )
+			{
+				if( !StringAlgo::match( setName.string(), identifier ) )
+				{
+					continue;
+				}
+
+				setScope.setSetName( setName );
+				m_hash.append( m_scene->setPlug()->hash() );
+			}
+		}
 	}
 
 	void operator()( const ExpressionAst &ast )
@@ -332,13 +394,14 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionAst(), ascii::space_t
 		using qi::_1;
 		using qi::char_;
 		using qi::lit;
+		using boost::spirit::repository::distinct;
 
 		/* Grammar Specification
 
 			 expression ->   andExpr  ( '|' andExpr | andExpr  )
 			 andExpr    ->   andNotExpr '&' andNotExpr
 			 andNotExpr ->   element    '-' element
-			 element    ->   set | object | '(' expression ')'
+			 element    ->   identifier | '(' expression ')'
 
 			 This gives us implicit operator precedence in this order: -, &, |
 			 It also supports space separated lists (implicit OR).
@@ -348,50 +411,58 @@ struct ExpressionGrammar : qi::grammar<Iterator, ExpressionAst(), ascii::space_t
 		// grammar                                                     bindings
 		// -----------------------------------------------------------------------
 		expression =
-			orExpression                                               [_val  = _1];
+			inExpression                                               [_val  = _1];
+
+		inExpression =
+			containingExpression                                       [_val  = _1]
+			>> *(     ( inKeyword >> containingExpression              [createBinaryOp( _val, In, _1 )] )
+			    );
+
+		containingExpression =
+			orExpression                                               [_val  = _1]
+			>> *(     ( containingKeyword >> orExpression              [createBinaryOp( _val, Containing, _1 )] )
+			    );
 
 		orExpression =
 			andExpression                                              [_val  = _1]
-			>> *(     ( '|' >> andExpression                           [_val |= _1] )
-			    |     ( andExpression                                  [_val |= _1] )
+			>> *(     ( '|' >> andExpression                           [createBinaryOp( _val, Or, _1 )] )
+			    |     ( andExpression                                  [createBinaryOp( _val, Or, _1 )] )
 			    );
 
 		andExpression =
 			andNotExpression                                           [_val  = _1]
-			>> *(     ( '&' >> andNotExpression                        [_val &= _1] )
+			>> *(     ( '&' >> andNotExpression                        [createBinaryOp( _val, And, _1 )] )
 			    );
 
 		andNotExpression =
 			element                                                    [_val  = _1]
-			>> *(     ( '-' >> element                                 [_val -= _1] )
+			>> *(     ( '-' >> element                                 [createBinaryOp( _val, AndNot, _1 )] )
 			    );
 
 		element =
-			  objectName                                               [_val  = _1]
-			| setName                                                  [_val  = _1]
+			  identifier                                               [_val  = _1]
 			| lit('(') >> expression                                   [_val  = _1] >> lit(')');
 
+		const char *identifierCharacters = "a-zA-Z_0-9/:.*?[]!\\";
+		identifier %= !reservedWords >> +char_( identifierCharacters );
 
-		setName %= setNameToken;
-		setNameToken %= char_( "a-zA-Z_" ) >> *char_( "a-zA-Z_0-9:" );
-
-		objectName %= objectNameToken;
-		objectNameToken %= char_( "/" ) >> *char_( "a-zA-Z_0-9/:" );
-
+		inKeyword = distinct( char_( identifierCharacters ) )["in"];
+		containingKeyword = distinct( char_( identifierCharacters ) )["containing"];
+		reservedWords = inKeyword | containingKeyword;
 
 		// these have no effect unless BOOST_SPIRIT_DEBUG is defined
 		BOOST_SPIRIT_DEBUG_NODE(expression);
+		BOOST_SPIRIT_DEBUG_NODE(inExpression);
+		BOOST_SPIRIT_DEBUG_NODE(containingExpression);
 		BOOST_SPIRIT_DEBUG_NODE(andNotExpression);
 		BOOST_SPIRIT_DEBUG_NODE(andExpression);
 		BOOST_SPIRIT_DEBUG_NODE(orExpression);
-		BOOST_SPIRIT_DEBUG_NODE(setName);
-		BOOST_SPIRIT_DEBUG_NODE(objectName);
+		BOOST_SPIRIT_DEBUG_NODE(identifier);
 	}
 
-	qi::rule<Iterator, SetName()> setName;
-	qi::rule<Iterator, ObjectName()> objectName;
-	qi::rule<Iterator, std::string()> setNameToken, objectNameToken;
-	qi::rule<Iterator, ExpressionAst(), ascii::space_type> expression, andNotExpression, andExpression, orExpression, element;
+	qi::rule<Iterator> inKeyword, containingKeyword, reservedWords;
+	qi::rule<Iterator, std::string()> identifier;
+	qi::rule<Iterator, ExpressionAst(), ascii::space_type> expression, inExpression, containingExpression, andNotExpression, andExpression, orExpression, element;
 };
 
 void expressionToAST( const std::string &setExpression, ExpressionAst &ast)
@@ -426,23 +497,21 @@ void expressionToAST( const std::string &setExpression, ExpressionAst &ast)
 	{
 		int offset = iter - setExpression.begin();
 		std::string errorIndication( offset, ' ' );
-		errorIndication += '|' + std::string(setExpression.end() - iter - 2, '-') + '|';
+		int indicationSize = setExpression.end() - iter;
+		if( indicationSize <= 2 )
+		{
+			errorIndication += std::string( indicationSize, '|');
+		}
+		else
+		{
+			errorIndication += '|' + std::string( indicationSize - 2, '-') + '|';
+		}
 
 		throw IECore::Exception( boost::str( boost::format( "Syntax error in indicated part of SetExpression.\n%s\n%i\n." ) % setExpression % errorIndication ) ) ;
 	}
 }
 
 } // namespace
-
-BOOST_FUSION_ADAPT_STRUCT(
-	ObjectName,
-	(std::string, name)
-)
-
-BOOST_FUSION_ADAPT_STRUCT(
-	SetName,
-	(std::string, name)
-)
 
 namespace GafferScene
 {

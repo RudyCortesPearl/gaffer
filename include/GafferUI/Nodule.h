@@ -38,11 +38,11 @@
 #ifndef GAFFERUI_NODULE_H
 #define GAFFERUI_NODULE_H
 
-#include "boost/regex.hpp"
+#include "GafferUI/ConnectionCreator.h"
 
 #include "Gaffer/FilteredRecursiveChildIterator.h"
 
-#include "GafferUI/Gadget.h"
+#include <functional>
 
 namespace Gaffer
 {
@@ -54,33 +54,37 @@ namespace GafferUI
 
 IE_CORE_FORWARDDECLARE( Nodule )
 
-class Nodule : public Gadget
+class GAFFERUI_API Nodule : public ConnectionCreator
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Nodule, NoduleTypeId, Gadget );
-		virtual ~Nodule();
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::Nodule, NoduleTypeId, ConnectionCreator );
+		~Nodule() override;
 
 		Gaffer::Plug *plug();
 		const Gaffer::Plug *plug() const;
 
-		/// May be called by the recipient of a drag to set a more appropriate position
-		/// and tangent for the connection as the drag progresses within the destination.
-		virtual void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent );
+		/// Returns a nodule for a child of the plug being represented.
+		/// Default implementation returns `nullptr`. Derived classes that
+		/// manage nodules for child plugs should reimplement appropriately.
+		virtual Nodule *nodule( const Gaffer::Plug *plug );
+		virtual const Nodule *nodule( const Gaffer::Plug *plug ) const;
+
+		void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent ) override;
 
 		/// Creates a Nodule for the specified plug. The type of nodule created can be
 		/// controlled by registering a "nodule:type" metadata value for the plug. Note
 		/// that registering a value of "" suppresses the creation of a Nodule, and in
-		/// this case NULL will be returned.
+		/// this case nullptr will be returned.
 		static NodulePtr create( Gaffer::PlugPtr plug );
 
-		typedef boost::function<NodulePtr ( Gaffer::PlugPtr )> NoduleCreator;
+		typedef std::function<NodulePtr ( Gaffer::PlugPtr )> NoduleCreator;
 		/// Registers a Nodule subclass, optionally registering it as the default
 		/// nodule type for a particular type of plug.
 		static void registerNodule( const std::string &noduleTypeName, NoduleCreator creator, IECore::TypeId plugType = IECore::InvalidTypeId );
 
-		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
+		std::string getToolTip( const IECore::LineSegment3f &line ) const override;
 
 	protected :
 

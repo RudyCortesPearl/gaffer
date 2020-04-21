@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import unittest
 
 import IECore
@@ -160,7 +158,7 @@ class PlugTest( GafferTest.TestCase ) :
 				if not Gaffer.Plug.acceptsParent( self, potentialParent ) :
 					return False
 
-				if isinstance( potentialParent, Gaffer.CompoundPlug ) :
+				if isinstance( potentialParent, Gaffer.ValuePlug ) :
 					return False
 
 				return True
@@ -201,7 +199,7 @@ class PlugTest( GafferTest.TestCase ) :
 		# check that acceptsParent can be overridden
 
 		p2 = TestPlug()
-		self.assertRaises( RuntimeError, Gaffer.CompoundPlug().addChild, p2 )
+		self.assertRaises( RuntimeError, Gaffer.ValuePlug().addChild, p2 )
 
 		# try making a counterpart
 
@@ -219,7 +217,7 @@ class PlugTest( GafferTest.TestCase ) :
 		s["n1"]["o"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
 
 		s["n2"]["i"] = Gaffer.IntPlug()
-		s["n2"]["c"] = Gaffer.CompoundPlug()
+		s["n2"]["c"] = Gaffer.Plug()
 		s["n2"]["c"]["i"] = Gaffer.IntPlug()
 
 		s["n2"]["i"].setInput( s["n1"]["o"] )
@@ -347,37 +345,6 @@ class PlugTest( GafferTest.TestCase ) :
 		self.assertEqual( pIn2.getFlags( Gaffer.Plug.Flags.AcceptsInputs ), True )
 		self.assertEqual( pIn2.acceptsInput( pOut ), True )
 
-	def testReadOnlyDefaultsToOff( self ) :
-
-		p = Gaffer.Plug()
-		self.failIf( p.getFlags( Gaffer.Plug.Flags.ReadOnly ) )
-
-	def testReadOnlyDisallowsInputs( self ) :
-
-		self.failUnless( Gaffer.Plug.Flags.All & Gaffer.Plug.Flags.ReadOnly )
-
-		p1 = Gaffer.Plug()
-		p2 = Gaffer.Plug()
-		self.failUnless( p1.acceptsInput( p2 ) )
-		# read-only plugs can still be used as connection sources
-		p2.setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		self.failUnless( p1.acceptsInput( p2 ) )
-		# but cannot be used as destinations
-		self.failIf( p2.acceptsInput( p1 ) )
-		self.assertRaises( RuntimeError, p2.setInput, p1 )
-
-	def testOutputPlugsDisallowReadOnly( self ) :
-
-		p = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
-		self.assertRaises( RuntimeError, p.setFlags, Gaffer.Plug.Flags.ReadOnly, True )
-
-		self.assertRaises(
-			RuntimeError,
-			Gaffer.Plug,
-			direction = Gaffer.Plug.Direction.Out,
-			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.ReadOnly
-		)
-
 	def testRepr( self ) :
 
 		p1 = Gaffer.Plug(
@@ -441,35 +408,6 @@ class PlugTest( GafferTest.TestCase ) :
 
 		p = Gaffer.Plug()
 		self.assertFalse( p.acceptsInput( p ) )
-
-	def testReadOnlySerialisation( self ) :
-
-		s = Gaffer.ScriptNode()
-		s["n"] = Gaffer.Node()
-		s["n"]["p"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		s["n"]["p2"] = Gaffer.Plug( direction=Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		s["n"]["p"].setInput( s["n"]["p2"] )
-		s["n"]["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		ss = s.serialise()
-
-		s2 = Gaffer.ScriptNode()
-		s2.execute( ss )
-
-		self.assertTrue( s2["n"]["p"].getInput().isSame( s2["n"]["p2"] ) )
-		self.assertEqual( s2["n"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ), True )
-
-	def testReadOnlyRepr( self ) :
-
-		p1 = Gaffer.Plug(
-			"p",
-			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.ReadOnly,
-		)
-
-		p2 = eval( repr( p1 ) )
-
-		self.assertEqual( p1.getName(), p2.getName() )
-		self.assertEqual( p1.direction(), p2.direction() )
-		self.assertEqual( p1.getFlags(), p2.getFlags() )
 
 	def testNoFlagsRepr( self ) :
 
@@ -707,20 +645,20 @@ class PlugTest( GafferTest.TestCase ) :
 		s["n"] = Gaffer.Node()
 		s["n"]["user"]["p"] = Gaffer.IntPlug()
 
-		self.assertFalse( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertFalse( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.Dynamic ) )
 
 		cs = GafferTest.CapturingSlot( s["n"].plugFlagsChangedSignal() )
 		with Gaffer.UndoScope( s["n"]["user"]["p"].ancestor( Gaffer.ScriptNode ) ) :
-			s["n"]["user"]["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-			self.assertTrue( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+			s["n"]["user"]["p"].setFlags( Gaffer.Plug.Flags.Dynamic, True )
+			self.assertTrue( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.Dynamic ) )
 			self.assertEqual( len( cs ), 1 )
 
 		s.undo()
-		self.assertFalse( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertFalse( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.Dynamic ) )
 		self.assertEqual( len( cs ), 2 )
 
 		s.redo()
-		self.assertTrue( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertTrue( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.Dynamic ) )
 		self.assertEqual( len( cs ), 3 )
 
 	def testParentConnectionIgnoresOutOfOrderChildConnections( self ) :
@@ -853,6 +791,205 @@ class PlugTest( GafferTest.TestCase ) :
 		s3 = Gaffer.ScriptNode()
 		s3.execute( s.serialise() )
 		self.assertFalse( "a" in s3["n"]["user"] )
+
+	def testNullInputPropagatesToChildren( self ) :
+
+		n = Gaffer.Node()
+		n["user"]["c"] = Gaffer.Plug()
+		n["user"]["c"]["o"] = Gaffer.IntPlug()
+		n["user"]["c"]["i"] = Gaffer.IntPlug()
+
+		n["user"]["c"]["i"].setInput( n["user"]["c"]["o"] )
+		self.assertTrue( n["user"]["c"]["i"].getInput().isSame( n["user"]["c"]["o"] ) )
+
+		n["user"]["c"].setInput( None )
+		self.assertTrue( n["user"]["c"]["i"].getInput() is None )
+
+	def testRemovePlugRemovesNestedInputs( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = Gaffer.Node()
+		s["n2"] = Gaffer.Node()
+
+		s["n1"]["o"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
+
+		s["n2"]["c"] = Gaffer.Plug()
+		s["n2"]["c"]["i"] = Gaffer.IntPlug()
+
+		s["n2"]["c"]["i"].setInput( s["n1"]["o"] )
+		self.failUnless( s["n2"]["c"]["i"].getInput().isSame(  s["n1"]["o"] ) )
+		self.failUnless( s["n2"]["c"].getInput() is None )
+		self.assertEqual( len( s["n1"]["o"].outputs() ), 1 )
+
+		with Gaffer.UndoScope( s ) :
+			del s["n2"]["c"]
+
+		self.assertEqual( len( s["n1"]["o"].outputs() ), 0 )
+
+		s.undo()
+
+		self.failUnless( s["n2"]["c"]["i"].getInput().isSame(  s["n1"]["o"] ) )
+		self.assertEqual( len( s["n1"]["o"].outputs() ), 1 )
+
+	def testSerialiseOmittingParentPlugMetadata( self ) :
+
+		n = Gaffer.Node()
+		n["p"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["a"] = GafferTest.AddNode()
+
+		Gaffer.Metadata.registerValue( n["p"], "test", 10 )
+		Gaffer.Metadata.registerValue( n["a"]["op1"], "test", 10 )
+
+		with Gaffer.Context() as c :
+			c["plugSerialiser:includeParentPlugMetadata"] = IECore.BoolData( False )
+			s = Gaffer.Serialisation( n ).result()
+
+		scope = { "parent" : Gaffer.Node() }
+		exec( s, scope, scope )
+
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"]["p"], "test" ), None )
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"]["a"]["op1"], "test" ), 10 )
+
+	def testRanges( self ) :
+
+		n = Gaffer.Node()
+		n["c1"] = Gaffer.Plug()
+		n["c2"] = Gaffer.Node()
+		n["c3"] = Gaffer.StringPlug()
+		n["c4"] = Gaffer.Plug()
+		n["c4"]["gc1"] = Gaffer.Plug()
+		n["c4"]["gc2"] = Gaffer.StringPlug()
+
+		self.assertEqual(
+			list( Gaffer.Plug.Range( n ) ),
+			[ n["user"], n["c1"], n["c3"], n["c4"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.StringPlug.Range( n ) ),
+			[ n["c3"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.RecursiveRange( n ) ),
+			[ n["user"], n["c1"], n["c3"], n["c4"], n["c4"]["gc1"], n["c4"]["gc2"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.StringPlug.RecursiveRange( n ) ),
+			[ n["c3"], n["c4"]["gc2"] ]
+		)
+
+	def testInputAndOutputRanges( self ) :
+
+		n = Gaffer.Node()
+
+		n["c1"] = Gaffer.Plug()
+		n["c2"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
+		n["c3"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default & ~Gaffer.Plug.Flags.AcceptsInputs )
+		n["c3"]["gc1"] = Gaffer.StringPlug()
+		n["c3"]["gc2"] = Gaffer.StringPlug( direction = Gaffer.Plug.Direction.Out )
+
+		self.assertEqual(
+			list( Gaffer.Plug.InputRange( n ) ),
+			[ n["user"], n["c1"], n["c3" ] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.OutputRange( n ) ),
+			[ n["c2"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.RecursiveInputRange( n ) ),
+			[ n["user"], n["c1"], n["c3" ], n["c3"]["gc1"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.RecursiveOutputRange( n ) ),
+			[ n["c2"], n["c3"]["gc2"] ]
+		)
+
+	def testRangesForPythonTypes( self ) :
+
+		class DerivedPlug( Gaffer.Plug ) :
+
+			def __init__( self, name = "DerivedPlug", direction = Gaffer.Plug.Direction.In, flags = Gaffer.Plug.Flags.Default ) :
+
+				Gaffer.Plug.__init__( self, name, direction, flags )
+
+		IECore.registerRunTimeTyped( DerivedPlug )
+
+		n = Gaffer.Node()
+
+		n["c1"] = Gaffer.Plug()
+		n["c1"]["gc1"] = DerivedPlug()
+		n["c2"] = DerivedPlug( direction = Gaffer.Plug.Direction.Out )
+		n["c3"] = DerivedPlug( flags = Gaffer.Plug.Flags.Default & ~Gaffer.Plug.Flags.AcceptsInputs )
+		n["c3"]["gc2"] = DerivedPlug()
+		n["c3"]["gc3"] = DerivedPlug( direction = Gaffer.Plug.Direction.Out )
+		n["c3"]["gc4"] = Gaffer.IntPlug()
+
+		self.assertEqual(
+			list( Gaffer.Plug.Range( n ) ),
+			[ n["user"], n["c1"], n["c2"], n["c3"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.InputRange( n ) ),
+			[ n["user"], n["c1"], n["c3"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.OutputRange( n ) ),
+			[ n["c2"] ],
+		)
+
+		self.assertEqual(
+			list( DerivedPlug.Range( n ) ),
+			[ n["c2"], n["c3"] ],
+		)
+
+		self.assertEqual(
+			list( DerivedPlug.InputRange( n ) ),
+			[ n["c3"] ],
+		)
+
+		self.assertEqual(
+			list( DerivedPlug.OutputRange( n ) ),
+			[ n["c2"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.RecursiveRange( n ) ),
+			[ n["user"], n["c1"], n["c1"]["gc1"], n["c2"], n["c3"], n["c3"]["gc2"], n["c3"]["gc3"], n["c3"]["gc4"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.RecursiveInputRange( n ) ),
+			[ n["user"], n["c1"], n["c1"]["gc1"], n["c3"], n["c3"]["gc2"], n["c3"]["gc4"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.Plug.RecursiveOutputRange( n ) ),
+			[ n["c2"], n["c3"]["gc3"] ],
+		)
+
+		self.assertEqual(
+			list( DerivedPlug.RecursiveRange( n ) ),
+			[ n["c1"]["gc1"], n["c2"], n["c3"], n["c3"]["gc2"], n["c3"]["gc3"] ],
+		)
+
+		self.assertEqual(
+			list( DerivedPlug.RecursiveInputRange( n ) ),
+			[ n["c1"]["gc1"], n["c3"], n["c3"]["gc2"] ],
+		)
+
+		self.assertEqual(
+			list( DerivedPlug.RecursiveOutputRange( n ) ),
+			[ n["c2"], n["c3"]["gc3"] ],
+		)
 
 if __name__ == "__main__":
 	unittest.main()

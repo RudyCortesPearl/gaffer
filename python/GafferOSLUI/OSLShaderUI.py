@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -52,6 +54,19 @@ def __nodeDescription( node ) :
 
 	description = node.shaderMetadata( "help" )
 	return description or __defaultDescription
+
+def __nodeIcon ( node ) :
+
+	if node["name"].getValue().startswith( "as_" ) :
+		# Appleseed advertises icons that it doesn't seem
+		# to provide.
+		return None
+
+	return node.shaderMetadata ( "icon" )
+
+def __nodeIconScale ( node ) :
+
+	return node.shaderMetadata ( "iconScale" )
 
 def __nodeUrl( node ) :
 
@@ -79,7 +94,7 @@ def __plugPresetNames( plug ) :
 	if not options :
 		return None
 
-	return IECore.StringVectorData( [ o.partition( ":" )[0] for o in options.split( "|" ) ] )
+	return IECore.StringVectorData( [ o.partition( ":" )[0] for o in options.split( "|" ) if o ] )
 
 def __plugPresetValues( plug ) :
 
@@ -87,7 +102,8 @@ def __plugPresetValues( plug ) :
 	if not options :
 		return None
 
-	values = [ o.rpartition( ":" )[2] for o in options.split( "|" ) ]
+	values = [ o.rpartition( ":" )[2] for o in options.split( "|" ) if o ]
+
 	if isinstance( plug, Gaffer.StringPlug ) :
 		return IECore.StringVectorData( values )
 	elif isinstance( plug, Gaffer.IntPlug ) :
@@ -96,13 +112,13 @@ def __plugPresetValues( plug ) :
 		return IECore.FloatVectorData( [ float( v ) for v in values ] )
 	elif isinstance( plug, Gaffer.Color3fPlug ) :
 		return IECore.Color3fVectorData( [
-			IECore.Color3f(
+			imath.Color3f(
 				*[ float( x ) for x in v.split( "," ) ]
 			) for v in values
 		] )
 	elif isinstance( plug, Gaffer.V3fPlug ) :
 		return IECore.V3fVectorData( [
-			IECore.V3f(
+			imath.V3f(
 				*[ float( x ) for x in v.split( "," ) ]
 			) for v in values
 		] )
@@ -128,7 +144,14 @@ def __plugWidgetType( plug ) :
 
 def __plugNoduleType( plug ) :
 
-	return "" if plug.node().parameterMetadata( plug, "connectable" ) == 0 else "GafferUI::StandardNodule"
+	if isinstance( plug, ( Gaffer.SplinefColor3fPlug, Gaffer.SplineffPlug ) ) :
+		return ""
+	elif plug.node().parameterMetadata( plug, "connectable" ) == 0 :
+		return ""
+	else :
+		# Causes `Nodule::create()` to choose nodule type
+		# based on plug type.
+		return None
 
 def __outPlugNoduleType( plug ) :
 
@@ -143,12 +166,35 @@ def __plugNoduleVisibility( plug ) :
 
 	return bool( visible ) if visible is not None else True
 
+def __plugNoduleLabel( plug ) :
+
+	label = __plugLabel( plug )
+	if label is None :
+		return None
+
+	page = __plugPage( plug )
+	if page is not None :
+		label = page + "." + label
+
+	return label
+
+def __plugComponentNoduleLabel( plug ) :
+
+	parameterPlug = plug.parent()
+	label = __plugNoduleLabel( parameterPlug )
+	if label is None :
+		label = parameterPlug.getName()
+
+	return label + "." + plug.getName()
+
 Gaffer.Metadata.registerNode(
 
 	GafferOSL.OSLShader,
 
 	"description", __nodeDescription,
 	"documentation:url", __nodeUrl,
+	"icon", __nodeIcon,
+	"iconScale", __nodeIconScale,
 
 	plugs = {
 
@@ -163,6 +209,13 @@ Gaffer.Metadata.registerNode(
 			"plugValueWidget:type", __plugWidgetType,
 			"nodule:type", __plugNoduleType,
 			"noduleLayout:visible", __plugNoduleVisibility,
+			"noduleLayout:label", __plugNoduleLabel,
+
+		],
+
+		"parameters.*.[rgbxyz]" : [
+
+			"noduleLayout:label", __plugComponentNoduleLabel,
 
 		],
 
@@ -172,6 +225,13 @@ Gaffer.Metadata.registerNode(
 			"noduleLayout:spacing", 0.2,
 
 		],
+
+		"out.*" : [
+
+			"noduleLayout:visible", __plugNoduleVisibility,
+			"noduleLayout:label", __plugNoduleLabel,
+
+		]
 
 	}
 

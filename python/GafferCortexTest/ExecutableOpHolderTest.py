@@ -81,13 +81,13 @@ class ExecutableOpHolderTest( GafferTest.TestCase ) :
 	def testSetOp( self ) :
 
 		n = GafferCortex.ExecutableOpHolder()
-		opSpec = GafferCortexTest.ParameterisedHolderTest.classSpecification( "primitive/renameVariables", "IECORE_OP_PATHS" )[:-1]
+		opSpec = GafferCortexTest.ParameterisedHolderTest.classSpecification( "files/sequenceRenumber", "IECORE_OP_PATHS" )[:-1]
 		n.setOp( *opSpec )
 
 	def testHash( self ) :
 
 		n = GafferCortex.ExecutableOpHolder()
-		opSpec = GafferCortexTest.ParameterisedHolderTest.classSpecification( "primitive/renameVariables", "IECORE_OP_PATHS" )[:-1]
+		opSpec = GafferCortexTest.ParameterisedHolderTest.classSpecification( "files/sequenceRenumber", "IECORE_OP_PATHS" )[:-1]
 		n.setOp( *opSpec )
 		c = Gaffer.Context()
 		h = n.hash(c)
@@ -145,41 +145,12 @@ class ExecutableOpHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( op.counter, 4 )
 		self.assertEqual( op.stringValue, "passed" )
 
-	def testPreTasks( self ) :
-
-		n1 = GafferCortex.ExecutableOpHolder()
-		n2 = GafferCortex.ExecutableOpHolder()
-		n2a = GafferCortex.ExecutableOpHolder()
-		n2b = GafferCortex.ExecutableOpHolder()
-
-		n1["preTasks"][0].setInput( n2["task"] )
-		n2["preTasks"][0].setInput( n2a["task"] )
-
-		r2 = Gaffer.Plug( name = "r2" )
-		n2["preTasks"][1].setInput( n2b["task"] )
-
-		with Gaffer.Context() as c :
-
-			self.assertEqual( n2a["task"].preTasks(), [] )
-			self.assertEqual( n2b["task"].preTasks(), [] )
-			n2PreTasks = n2["task"].preTasks()
-			self.assertEqual( n2PreTasks[0].node(), n2a )
-			self.assertEqual( n2PreTasks[0].context(), c )
-			self.assertEqual( n2PreTasks[1].node(), n2b )
-			self.assertEqual( n2PreTasks[1].context(), c )
-			t1 = GafferDispatch.TaskNode.Task(n2a,c)
-			t2 = GafferDispatch.TaskNode.Task(n2b,c)
-			self.assertEqual( n2PreTasks[0], t1 )
-			self.assertEqual( n2PreTasks[1], t2 )
-			self.assertEqual( len( set( n2["task"].preTasks() ).difference( [ t1, t2] ) ), 0 )
-			self.assertEqual( n1["task"].preTasks(), [ GafferDispatch.TaskNode.Task( n2, c ) ] )
-
 	def testSerialise( self ) :
 
 		s = Gaffer.ScriptNode()
 		s["n"] = GafferCortex.ExecutableOpHolder()
 
-		opSpec = GafferCortexTest.ParameterisedHolderTest.classSpecification( "primitive/renameVariables", "IECORE_OP_PATHS" )[:-1]
+		opSpec = GafferCortexTest.ParameterisedHolderTest.classSpecification( "files/sequenceRenumber", "IECORE_OP_PATHS" )[:-1]
 		s["n"].setOp( *opSpec )
 
 		s2 = Gaffer.ScriptNode()

@@ -37,24 +37,32 @@
 
 #include "GafferScene/ShaderAssignment.h"
 
+#include "Gaffer/Metadata.h"
+
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( ShaderAssignment );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ShaderAssignment );
+
+namespace
+{
+
+const InternedString g_oslShader( "osl:shader" );
+const InternedString g_oslSurface( "osl:surface" );
+
+const char *g_oslPrefix( getenv( "GAFFERSCENE_SHADERASSIGNMENT_OSL_PREFIX" ) );
+const InternedString g_oslTarget( g_oslPrefix ? std::string( g_oslPrefix ) + ":surface" : "osl:surface" );
+
+} // namespace
 
 size_t ShaderAssignment::g_firstPlugIndex = 0;
 
 ShaderAssignment::ShaderAssignment( const std::string &name )
-	:	SceneElementProcessor( name )
+	:	AttributeProcessor( name, PathMatcher::EveryMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new ShaderPlug( "shader" ) );
-
-	// Fast pass-throughs for the things we don't alter.
-	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
-	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
-	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
 }
 
 ShaderAssignment::~ShaderAssignment()
@@ -71,29 +79,23 @@ const GafferScene::ShaderPlug *ShaderAssignment::shaderPlug() const
 	return getChild<ShaderPlug>( g_firstPlugIndex );
 }
 
-void ShaderAssignment::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+bool ShaderAssignment::affectsProcessedAttributes( const Gaffer::Plug *input ) const
 {
-	SceneElementProcessor::affects( input, outputs );
-
-	if( input == shaderPlug() )
-	{
-		outputs.push_back( outPlug()->attributesPlug() );
-	}
-}
-
-bool ShaderAssignment::processesAttributes() const
-{
-	return true;
+	return AttributeProcessor::affectsProcessedAttributes( input ) || input == shaderPlug();
 }
 
 void ShaderAssignment::hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	AttributeProcessor::hashProcessedAttributes( path, context, h );
+	ScenePlug::GlobalScope globalScope( context );
 	h.append( shaderPlug()->attributesHash() );
 }
 
-IECore::ConstCompoundObjectPtr ShaderAssignment::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const
+IECore::ConstCompoundObjectPtr ShaderAssignment::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, const IECore::CompoundObject *inputAttributes ) const
 {
+	ScenePlug::GlobalScope globalScope( context );
 	ConstCompoundObjectPtr attributes = shaderPlug()->attributes();
+
 	if( attributes->members().empty() )
 	{
 		return inputAttributes;
@@ -105,9 +107,47 @@ IECore::ConstCompoundObjectPtr ShaderAssignment::computeProcessedAttributes( con
 	// the input members in our result without copying. Be careful not to modify
 	// them though!
 	result->members() = inputAttributes->members();
-	for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; ++it )
+	for( const auto &attribute : attributes->members() )
 	{
-		result->members()[it->first] = it->second;
+		InternedString name = attribute.first;
+		if( name == g_oslShader )
+		{
+			// We are given an "osl:shader" attribute when assigning a generic
+			// OSL shader rather than an OSL surface shader. In the absence
+			// of other information we assume that the user's intention is to
+			// assign it as a surface shader.
+			///
+			/// \todo Consider ways of making the purpose of the assignment
+			/// more explicit. Perhaps shaders need to be plugged into various
+			/// inputs of a Material node that groups surface/displacement etc?
+			/// This also seems a good time to consider that the mixing of
+			/// Arnold and OSL shader assignments has caused confusion
+			/// in some environments, because "ai:surface" is considered to take
+			/// priority over "osl:surface", even if the OSL assignment is lower
+			/// in the hierarchy.
+			///
+			/// Also bear in mind that OSL has deprecated shader types
+			/// entirely - more info at the following links :
+			///
+			/// - https://groups.google.com/d/msg/osl-dev/bVBZda-UsbI/EvByoI6sBQAJ
+			/// - https://github.com/imageworks/OpenShadingLanguage/pull/899
+			name = g_oslSurface;
+		}
+
+		// Another, bigger kludge for OSL surfaces.
+		// It can be unintuitive that OSL shaders are unable to override renderer
+		// specific shaders.  OSL shaders are always considered less specific,
+		// even when declared further down the hierarchy.  Artists using one only
+		// renderer are likely to ignore the distinction between renderer
+		// specific and OSL shaders.  To address this, the env var
+		// GAFFERSCENE_SHADERASSIGNMENT_OSL_PREFIX allows forcing all OSL shaders to be
+		// treated as if they are specific to your chosen renderer, so that they
+		// override other shaders for that renderer as expected.
+		if( name == g_oslSurface )
+		{
+			name = g_oslTarget;
+		}
+		result->members()[name] = attribute.second;
 	}
 
 	return result;

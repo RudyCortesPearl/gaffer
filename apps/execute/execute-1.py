@@ -37,6 +37,8 @@
 
 import os, sys, traceback
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -89,15 +91,16 @@ class execute( Gaffer.Application ) :
 
 				IECore.FrameListParameter(
 					name = "frames",
-					description = "The frames to execute.",
-					defaultValue = "1",
-					allowEmptyList = False,
+					description = "The frames to execute. The default value executes "
+						"the current frame as stored in the script.",
+					defaultValue = "",
+					allowEmptyList = True,
 				),
 
 				IECore.StringVectorParameter(
 					name = "context",
-					description = "The context used during execution. Note that the frames "
-						"parameter will be used to vary the context frame entry.",
+					description = "The Context used during execution. Note that the frames "
+						"parameter will be used to vary the Context frame entry.",
 					defaultValue = IECore.StringVectorData( [] ),
 					userData = {
 						"parser" : {
@@ -157,9 +160,16 @@ class execute( Gaffer.Application ) :
 			context[entry] = eval( args["context"][i+1] )
 
 		frames = self.parameters()["frames"].getFrameListValue().asList()
+		if not frames :
+			frames = [ scriptNode.context().getFrame() ]
+
+		# We want to use the frame set by executeSequence.   Remove any possibility of
+		# accidentally using the default frame set in the script
+		del context["frame"]
 
 		with context :
 			for node in nodes :
+				errorConnection = node.errorSignal().connect( Gaffer.WeakMethod( self.__error ) )
 				try :
 					node["task"].executeSequence( frames )
 				except Exception as exception :
@@ -171,10 +181,19 @@ class execute( Gaffer.Application ) :
 					IECore.msg(
 						IECore.Msg.Level.Error,
 						"gaffer execute : executing %s" % node.relativeName( scriptNode ),
-						"".join( traceback.format_exception_only( *sys.exc_info()[:2] ) ),
+						"See previous message for details",
 					)
 					return 1
 
 		return 0
 
+	def __error( self, plug, source, message ) :
+
+		IECore.msg(
+			IECore.Msg.Level.Error,
+			source.relativeName( source.ancestor( Gaffer.ScriptNode ) ),
+			message
+		)
+
 IECore.registerRunTimeTyped( execute )
+

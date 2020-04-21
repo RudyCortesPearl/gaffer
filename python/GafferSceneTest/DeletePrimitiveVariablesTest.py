@@ -37,6 +37,7 @@
 import unittest
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
@@ -53,17 +54,15 @@ class DeletePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertEqual( p["out"].object( "/plane" ), d["out"].object( "/plane" ) )
 		self.assertSceneHashesEqual( p["out"], d["out"] )
-		self.failUnless( "s" in d["out"].object( "/plane" ) )
-		self.failUnless( "t" in d["out"].object( "/plane" ) )
+		self.assertIn( "uv", d["out"].object( "/plane" ) )
 
-		d["names"].setValue( "s t e" )
+		d["names"].setValue( "uv e" )
 
 		self.assertNotEqual( p["out"].object( "/plane" ), d["out"].object( "/plane" ) )
-		self.assertSceneHashesEqual( p["out"], d["out"], childPlugNames = ( "attributes", "bound", "transform", "globals", "childNames" ) )
+		self.assertSceneHashesEqual( p["out"], d["out"], checks = self.allSceneChecks - { "object" } )
 		self.assertSceneHashesEqual( p["out"], d["out"], pathsToIgnore = ( "/plane" ) )
-		self.failUnless( "s" not in d["out"].object( "/plane" ) )
-		self.failUnless( "t" not in d["out"].object( "/plane" ) )
-		self.assertTrue( "P" in d["out"].object( "/plane" ) )
+		self.assertNotIn( "uv", d["out"].object( "/plane" ) )
+		self.assertIn( "P", d["out"].object( "/plane" ) )
 
 	def testNonPrimitiveObject( self ) :
 
@@ -73,7 +72,7 @@ class DeletePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		d["in"].setInput( c["out"] )
 
 		self.assertSceneValid( d["out"] )
-		self.failUnless( isinstance( d["out"].object( "/camera" ), IECore.Camera ) )
+		self.failUnless( isinstance( d["out"].object( "/camera" ), IECoreScene.Camera ) )
 
 	def testAffects( self ) :
 

@@ -36,30 +36,38 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
-#include "boost/format.hpp"
-
-#include "Gaffer/ValuePlug.h"
-#include "Gaffer/Node.h"
-#include "Gaffer/Context.h"
-#include "Gaffer/Reference.h"
-#include "Gaffer/Metadata.h"
 
 #include "GafferBindings/ValuePlugBinding.h"
+
 #include "GafferBindings/PlugBinding.h"
 #include "GafferBindings/Serialisation.h"
 
+#include "Gaffer/Context.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/Node.h"
+#include "Gaffer/Reference.h"
+#include "Gaffer/ValuePlug.h"
+
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/algorithm/string/replace.hpp"
+#include "boost/format.hpp"
+
+using namespace std;
 using namespace boost::python;
 using namespace GafferBindings;
 using namespace Gaffer;
 
-static bool shouldResetPlugDefault( const Gaffer::Plug *plug, const Serialisation *serialisation )
+namespace
+{
+
+bool shouldResetPlugDefault( const Gaffer::Plug *plug, const Serialisation *serialisation )
 {
 	if( !serialisation )
 	{
 		return false;
 	}
 
-	if( plug->node() != serialisation->parent() || plug->getInput<Plug>() )
+	if( plug->node() != serialisation->parent() || plug->getInput() )
 	{
 		return false;
 	}
@@ -67,12 +75,111 @@ static bool shouldResetPlugDefault( const Gaffer::Plug *plug, const Serialisatio
 	return Context::current()->get<bool>( "valuePlugSerialiser:resetParentPlugDefaults", false );
 }
 
-static std::string repr( const ValuePlug *plug )
+bool shouldOmitDefaultValue( const Gaffer::ValuePlug *plug )
 {
-	return ValuePlugSerialiser::repr( plug );
+	if( const Reference *reference = IECore::runTimeCast<const Reference>( plug->node() ) )
+	{
+		// Prior to version 0.9.0.0, `.grf` files created with `Box::exportForReference()`
+		// could contain setValue() calls for promoted plugs like this one. When such
+		// files have been loaded on a Reference node, we must always serialise the plug values
+		// from the Reference node, lest they should get clobbered by the setValue() calls
+		// in the `.grf` file.
+		int milestoneVersion = 0;
+		int majorVersion = 0;
+		if( IECore::ConstIntDataPtr v = Metadata::value<IECore::IntData>( reference, "serialiser:milestoneVersion" ) )
+		{
+			milestoneVersion = v->readable();
+		}
+		if( IECore::ConstIntDataPtr v = Metadata::value<IECore::IntData>( reference, "serialiser:majorVersion" ) )
+		{
+			majorVersion = v->readable();
+		}
+		return milestoneVersion > 0 || majorVersion > 8;
+	}
+	return true;
 }
 
-std::string ValuePlugSerialiser::repr( const Gaffer::ValuePlug *plug, unsigned flagsMask, const std::string &extraArguments, const Serialisation *serialisation )
+std::string valueRepr( boost::python::object &o )
+{
+	// We use IECore.repr() because it correctly prefixes the imath
+	// types with the module name, and also works around problems
+	// when round-tripping empty Box2fs.
+	object repr = boost::python::import( "IECore" ).attr( "repr" );
+	return extract<std::string>( repr( o ) );
+}
+
+std::string valueSerialisationWalk( const Gaffer::ValuePlug *plug, const std::string &identifier, const Serialisation &serialisation, bool &canCondense )
+{
+	// There's nothing to do if the plug isn't serialisable.
+	if( !plug->getFlags( Plug::Serialisable ) )
+	{
+		canCondense = false;
+		return "";
+	}
+
+	// Otherwise we need to get the individual value serialisations
+	// for each child.
+
+	string childSerialisations;
+	bool canCondenseChildren = true;
+	for( ValuePlugIterator childIt( plug ); !childIt.done(); ++childIt )
+	{
+		const std::string childIdentifier = serialisation.childIdentifier( identifier, childIt.base() );
+		childSerialisations += valueSerialisationWalk( childIt->get(), childIdentifier, serialisation, canCondenseChildren );
+	}
+
+	// The child results alone are sufficient for a complete
+	// serialisation, but we'd prefer to condense them into
+	// a single `setValue()` call at this level if we can, for
+	// greater readability. Return now if that's not possible.
+	if( !canCondenseChildren )
+	{
+		canCondense = false;
+		return childSerialisations;
+	}
+
+	object pythonPlug( ValuePlugPtr( const_cast<ValuePlug *>( plug ) ) );
+	if( !PyObject_HasAttrString( pythonPlug.ptr(), "getValue" ) )
+	{
+		// Can't condense, because can't get value at this level.
+		// We also disable condensing at outer levels in this case,
+		// because otherwise we hit problems trying to serialise
+		// SplinePlugs.
+		canCondense = false;
+		return childSerialisations;
+	}
+
+	// Alternatively, there may have been no children because we're
+	// visiting a leaf plug. In this case we may want to omit the
+	// value, in which case we should also return now.
+	if( plug->children().empty() )
+	{
+		if( plug->getInput() || plug->direction() == Plug::Out )
+		{
+			canCondense = false;
+			return "";
+		}
+	}
+
+	// Emit the `setValue()` call for this plug.
+
+	object pythonValue = pythonPlug.attr( "getValue" )();
+
+	if( shouldOmitDefaultValue( plug ) && PyObject_HasAttrString( pythonPlug.ptr(), "defaultValue" ) )
+	{
+		object pythonDefaultValue = pythonPlug.attr( "defaultValue" )();
+		if( pythonValue == pythonDefaultValue )
+		{
+			return "";
+		}
+	}
+
+	return identifier + ".setValue( " + valueRepr( pythonValue ) + " )\n";
+}
+
+} // namespace
+
+std::string ValuePlugSerialiser::repr( const Gaffer::ValuePlug *plug, const std::string &extraArguments, const Serialisation *serialisation )
 {
 	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
 
@@ -94,9 +201,7 @@ std::string ValuePlugSerialiser::repr( const Gaffer::ValuePlug *plug, unsigned f
 			pythonDefaultValue = pythonPlug.attr( "defaultValue" )();
 		}
 
-		object r = pythonDefaultValue.attr( "__repr__" )();
-		extract<std::string> defaultValueExtractor( r );
-		std::string defaultValue = defaultValueExtractor();
+		const std::string defaultValue = valueRepr( pythonDefaultValue );
 		if( defaultValue.size() && defaultValue[0] != '<' )
 		{
 			result += "defaultValue = " + defaultValue + ", ";
@@ -117,8 +222,7 @@ std::string ValuePlugSerialiser::repr( const Gaffer::ValuePlug *plug, unsigned f
 		if( hasMinValue )
 		{
 			object pythonMinValue = pythonPlug.attr( "minValue" )();
-			std::string minValue = extract<std::string>( pythonMinValue.attr( "__repr__" )() );
-			result += "minValue = " + minValue + ", ";
+			result += "minValue = " + valueRepr( pythonMinValue ) + ", ";
 		}
 	}
 
@@ -127,13 +231,12 @@ std::string ValuePlugSerialiser::repr( const Gaffer::ValuePlug *plug, unsigned f
 		const bool hasMinValue = pythonPlug.attr( "hasMaxValue" )();
 		if( hasMinValue )
 		{
-			object pythonMinValue = pythonPlug.attr( "maxValue" )();
-			std::string minValue = extract<std::string>( pythonMinValue.attr( "__repr__" )() );
-			result += "maxValue = " + minValue + ", ";
+			object pythonMaxValue = pythonPlug.attr( "maxValue" )();
+			result += "maxValue = " + valueRepr( pythonMaxValue ) + ", ";
 		}
 	}
 
-	const unsigned flags = plug->getFlags() & flagsMask;
+	const unsigned flags = plug->getFlags();
 	if( flags != Plug::Default )
 	{
 		result += "flags = " + PlugSerialiser::flagsRepr( flags ) + ", ";
@@ -169,131 +272,25 @@ void ValuePlugSerialiser::moduleDependencies( const Gaffer::GraphComponent *grap
 
 std::string ValuePlugSerialiser::constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const
 {
-	return repr( static_cast<const ValuePlug *>( graphComponent ), Plug::All & ~Plug::ReadOnly, "", &serialisation );
+	return repr( static_cast<const ValuePlug *>( graphComponent ), "", &serialisation );
 }
 
-std::string ValuePlugSerialiser::postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
+std::string ValuePlugSerialiser::postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
 {
+	std::string result = PlugSerialiser::postHierarchy( graphComponent, identifier, serialisation );
+
 	const ValuePlug *plug = static_cast<const ValuePlug *>( graphComponent );
-	if( !valueNeedsSerialisation( plug, serialisation ) )
+	if( plug == serialisation.parent() || !plug->parent<ValuePlug>() )
 	{
-		return "";
-	}
-
-	object pythonPlug( ValuePlugPtr( const_cast<ValuePlug *>( plug ) ) );
-	object pythonValue = pythonPlug.attr( "getValue" )();
-
-	bool omitDefaultValue = true;
-	if( const Reference *reference = IECore::runTimeCast<const Reference>( plug->node() ) )
-	{
-		// Prior to version 0.9.0.0, `.grf` files created with `Box::exportForReference()`
-		// could contain setValue() calls for promoted plugs like this one. When such
-		// files have been loaded on a Reference node, we must always serialise the plug values
-		// from the Reference node, lest they should get clobbered by the setValue() calls
-		// in the `.grf` file.
-		int milestoneVersion = 0;
-		int majorVersion = 0;
-		if( IECore::ConstIntDataPtr v = Metadata::value<IECore::IntData>( reference, "serialiser:milestoneVersion" ) )
+		// Top level ValuePlug. We are responsible for emitting the
+		// appropriate `setValue()` calls for this and all descendants.
+		if( !shouldResetPlugDefault( plug, &serialisation ) )
 		{
-			milestoneVersion = v->readable();
+			bool unused;
+			result = valueSerialisationWalk( plug, identifier, serialisation, unused ) + result;
 		}
-		if( IECore::ConstIntDataPtr v = Metadata::value<IECore::IntData>( reference, "serialiser:majorVersion" ) )
-		{
-			majorVersion = v->readable();
-		}
-		omitDefaultValue = milestoneVersion > 0 || majorVersion > 8;
-		/// \todo Consider whether or not we might like to have a plug flag
-		/// to control this behaviour, so that ValuePlugSerialiser doesn't
-		/// need explicit knowledge of Reference Nodes. On the one hand, reducing
-		/// coupling between this and the Reference node seems good, but on the other,
-		/// it'd be nice to keep the plug flags as simple as possible, and we don't have
-		/// another worthwhile use case.
+
 	}
 
-	if( omitDefaultValue && PyObject_HasAttrString( pythonPlug.ptr(), "defaultValue" ) )
-	{
-		object pythonDefaultValue = pythonPlug.attr( "defaultValue" )();
-		if( pythonValue == pythonDefaultValue )
-		{
-			return "";
-		}
-	}
-
-	std::string value = extract<std::string>( pythonValue.attr( "__repr__" )() );
-	return identifier + ".setValue( " + value + " )\n";
-}
-
-bool ValuePlugSerialiser::valueNeedsSerialisation( const Gaffer::ValuePlug *plug, const Serialisation &serialisation ) const
-{
-	if(
-		plug->direction() != Plug::In ||
-		!plug->getFlags( Plug::Serialisable ) ||
-		plug->getInput<Plug>()
-	)
-	{
-		return false;
-	}
-
-	if( shouldResetPlugDefault( plug, &serialisation ) )
-	{
-		// There's no point in serialising the value if we're
-		// turning it into the default value anyway.
-		return false;
-	}
-
-	object pythonPlug( ValuePlugPtr( const_cast<ValuePlug *>( plug ) ) );
-	if( !PyObject_HasAttrString( pythonPlug.ptr(), "getValue" ) )
-	{
-		return false;
-	}
-
-	if( const ValuePlug *parent = plug->parent<ValuePlug>() )
-	{
-		const Serialiser *parentSerialiser = Serialisation::acquireSerialiser( parent );
-		if( parentSerialiser )
-		{
-			if( const ValuePlugSerialiser *v = dynamic_cast<const ValuePlugSerialiser *>( parentSerialiser ) )
-			{
-				if( v->valueNeedsSerialisation( parent, serialisation ) )
-				{
-					// the parent will be serialising the value,
-					// so we don't need to.
-					return false;
-				}
-			}
-		}
-	}
-
-	return true;
-}
-
-void GafferBindings::bindValuePlug()
-{
-	PlugClass<ValuePlug, PlugWrapper<ValuePlug> >()
-		.def( boost::python::init<const std::string &, Plug::Direction, unsigned>(
-				(
-					boost::python::arg_( "name" ) = GraphComponent::defaultName<ValuePlug>(),
-					boost::python::arg_( "direction" ) = Plug::In,
-					boost::python::arg_( "flags" ) = Plug::Default
-				)
-			)
-		)
-		.def( "settable", &ValuePlug::settable )
-		.def( "setFrom", &ValuePlug::setFrom )
-		.def( "setToDefault", &ValuePlug::setToDefault )
-		.def( "isSetToDefault", &ValuePlug::isSetToDefault )
-		.def( "hash", (IECore::MurmurHash (ValuePlug::*)() const)&ValuePlug::hash )
-		.def( "hash", (void (ValuePlug::*)( IECore::MurmurHash & ) const)&ValuePlug::hash )
-		.def( "getCacheMemoryLimit", &ValuePlug::getCacheMemoryLimit )
-		.staticmethod( "getCacheMemoryLimit" )
-		.def( "setCacheMemoryLimit", &ValuePlug::setCacheMemoryLimit )
-		.staticmethod( "setCacheMemoryLimit" )
-		.def( "cacheMemoryUsage", &ValuePlug::cacheMemoryUsage )
-		.staticmethod( "cacheMemoryUsage" )
-		.def( "clearCache", &ValuePlug::clearCache )
-		.staticmethod( "clearCache" )
-		.def( "__repr__", &repr )
-	;
-
-	Serialisation::registerSerialiser( Gaffer::ValuePlug::staticTypeId(), new ValuePlugSerialiser );
+	return result;
 }

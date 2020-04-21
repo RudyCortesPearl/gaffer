@@ -38,18 +38,21 @@
 #ifndef GAFFER_COMPOUNDNUMERICPLUG_H
 #define GAFFER_COMPOUNDNUMERICPLUG_H
 
-#include "OpenEXR/ImathVec.h"
-#include "OpenEXR/ImathColor.h"
+#include "Gaffer/NumericPlug.h"
 
+#include "IECore/Export.h"
 #include "IECore/GeometricTypedData.h"
 
-#include "Gaffer/NumericPlug.h"
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathColor.h"
+#include "OpenEXR/ImathVec.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace Gaffer
 {
 
 template<typename T>
-class CompoundNumericPlug : public ValuePlug
+class GAFFER_API CompoundNumericPlug : public ValuePlug
 {
 
 	public :
@@ -57,7 +60,7 @@ class CompoundNumericPlug : public ValuePlug
 		typedef T ValueType;
 		typedef NumericPlug<typename T::BaseType> ChildType;
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( CompoundNumericPlug<T>, ValuePlug );
+		GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( CompoundNumericPlug<T>, ValuePlug );
 
 		CompoundNumericPlug(
 			const std::string &name = defaultName<CompoundNumericPlug>(),
@@ -68,10 +71,10 @@ class CompoundNumericPlug : public ValuePlug
 			unsigned flags = Default,
 			IECore::GeometricData::Interpretation interpretation = IECore::GeometricData::None
 		);
-		virtual ~CompoundNumericPlug();
+		~CompoundNumericPlug() override;
 		/// Accepts no children following construction.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		using GraphComponent::getChild;
 		ChildType *getChild( size_t index );
@@ -95,7 +98,7 @@ class CompoundNumericPlug : public ValuePlug
 
 		/// Returns a hash to represent the value of this plug
 		/// in the current context.
-		virtual IECore::MurmurHash hash() const;
+		IECore::MurmurHash hash() const override;
 		/// Convenience function to append the hash to h.
 		void hash( IECore::MurmurHash &h ) const;
 
@@ -118,8 +121,6 @@ class CompoundNumericPlug : public ValuePlug
 		//@}
 
 	private :
-
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( CompoundNumericPlug<T> );
 
 		static const char **childNames();
 		const IECore::GeometricData::Interpretation m_interpretation;

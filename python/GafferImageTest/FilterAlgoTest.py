@@ -36,8 +36,10 @@
 
 import os
 import unittest
+import imath
 
 import IECore
+import IECoreImage
 
 import Gaffer
 import GafferImage
@@ -49,7 +51,7 @@ class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 	derivativesReferenceParallelFileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/filterDerivativesTest.parallel.exr" )
 	derivativesReferenceBoxFileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/filterDerivativesTest.box.exr" )
 
-	# Artificial test of several filters passing in different derivatives, including a bunch of 15 degree rotations 
+	# Artificial test of several filters passing in different derivatives, including a bunch of 15 degree rotations
 	def testFilterDerivatives( self ):
 		# Size of one grid cell
 		subSize = 35
@@ -57,71 +59,65 @@ class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 		# Each grid cell gets a dot in the middle
 		redDot = GafferImage.Constant()
 		redDot["format"].setValue( GafferImage.Format( 1, 1, 1.000 ) )
-		redDot["color"].setValue( IECore.Color4f( 10, 0, 0, 1 ) )
+		redDot["color"].setValue( imath.Color4f( 10, 0, 0, 1 ) )
 		redDotCentered = GafferImage.Crop( "Crop" )
 		redDotCentered["in"].setInput( redDot["out"] )
-		redDotCentered["area"].setValue( IECore.Box2i( IECore.V2i( -(subSize-1)/2 ), IECore.V2i( (subSize-1)/2 + 1 ) ) )
+		redDotCentered["area"].setValue( imath.Box2i( imath.V2i( -(subSize-1)/2 ), imath.V2i( (subSize-1)/2 + 1 ) ) )
 
 		borderForFilterWidth = 40
 		sampleRegion = redDotCentered["out"]["dataWindow"].getValue()
-		sampleRegion.min -= IECore.V2i( borderForFilterWidth )
-		sampleRegion.max += IECore.V2i( borderForFilterWidth )
+		sampleRegion.setMin( sampleRegion.min() - imath.V2i( borderForFilterWidth ) )
+		sampleRegion.setMax( sampleRegion.max() + imath.V2i( borderForFilterWidth ) )
 
 		s = GafferImage.Sampler( redDotCentered["out"], "R", sampleRegion, GafferImage.Sampler.BoundingMode.Black )
-	
+
 		filters = GafferImage.FilterAlgo.filterNames()
 		dirs = [
-			(IECore.V2f(1,0), IECore.V2f(0,1)),
-			(IECore.V2f(5,0), IECore.V2f(0,1)),
-			(IECore.V2f(1,0), IECore.V2f(0,5)),
-			(IECore.V2f(5,0), IECore.V2f(0,5)) ]
+			(imath.V2f(1,0), imath.V2f(0,1)),
+			(imath.V2f(5,0), imath.V2f(0,1)),
+			(imath.V2f(1,0), imath.V2f(0,5)),
+			(imath.V2f(5,0), imath.V2f(0,5)) ]
 
 		for angle in range( 0, 91, 15 ):
 			sa = math.sin( angle / 180.0 * math.pi )
 			ca = math.cos( angle / 180.0 * math.pi )
-			dirs.append( ( IECore.V2f(ca * 5, sa * 5 ), IECore.V2f(-sa * 3, ca * 3 ) ) )
+			dirs.append( ( imath.V2f(ca * 5, sa * 5 ), imath.V2f(-sa * 3, ca * 3 ) ) )
 
-		size = subSize * IECore.V2i( len( dirs ), len( filters ) )
-		w = IECore.Box2i( IECore.V2i( 0 ), size - IECore.V2i( 1 ) )
-		parallelogramImage = IECore.ImagePrimitive( w, w )
-		boxImage = IECore.ImagePrimitive( w, w )
+		size = subSize * imath.V2i( len( dirs ), len( filters ) )
+		w = imath.Box2i( imath.V2i( 0 ), size - imath.V2i( 1 ) )
+		parallelogramImage = IECoreImage.ImagePrimitive( w, w )
+		boxImage = IECoreImage.ImagePrimitive( w, w )
 
 		parallelogramR = IECore.FloatVectorData( size[0] * size[1] )
 		boxR = IECore.FloatVectorData( size[0] * size[1] )
-		
+
 		for x_sub, d in enumerate( dirs ):
 			for y_sub, f in enumerate( filters ):
 				for y in range( subSize ):
 					for x in range( subSize ):
-						p = IECore.V2f( x + 0.5, y + 0.5 )
+						p = imath.V2f( x + 0.5, y + 0.5 )
 						inputDerivatives = GafferImage.FilterAlgo.derivativesToAxisAligned( p, d[0], d[1] )
-					
-							
+
+
 						boxR[ ( y_sub * subSize + y ) * size[0] + x_sub * subSize + x ] = GafferImage.FilterAlgo.sampleBox(
 							s, p, inputDerivatives[0], inputDerivatives[1], f )
 						parallelogramR[ ( y_sub * subSize + y ) * size[0] + x_sub * subSize + x ] = GafferImage.FilterAlgo.sampleParallelogram(
 							s, p, d[0], d[1], f )
 
-		parallelogramImage["R"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex, parallelogramR )
-		boxImage["R"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex, boxR )
+		parallelogramImage["R"] = parallelogramR
+		boxImage["R"] = boxR
 
 		# Enable to write out images for visual comparison
 		if False:
-			IECore.Writer.create( parallelogramImage, "/tmp/filterDerivativesTestResult.parallelogram.exr" ).write()	
-			IECore.Writer.create( boxImage, "/tmp/filterDerivativesTestResult.box.exr" ).write()	
+			IECore.Writer.create( parallelogramImage, "/tmp/filterDerivativesTestResult.parallelogram.exr" ).write()
+			IECore.Writer.create( boxImage, "/tmp/filterDerivativesTestResult.box.exr" ).write()
 
-		imageNode = GafferImage.ObjectToImage()
-		imageNode["object"].setValue( parallelogramImage )
+		parallelogramReference = IECore.Reader.create( self.derivativesReferenceParallelFileName ).read()
+		boxReference = IECore.Reader.create( self.derivativesReferenceBoxFileName ).read()
 
-		expectedImage = GafferImage.ImageReader()
-		expectedImage["fileName"].setValue( self.derivativesReferenceParallelFileName )
-
-		self.assertImagesEqual( imageNode["out"], expectedImage["out"], ignoreMetadata = True, maxDifference = 0.000005 )
-
-		imageNode["object"].setValue( boxImage )
-		expectedImage["fileName"].setValue( self.derivativesReferenceBoxFileName )
-
-		self.assertImagesEqual( imageNode["out"], expectedImage["out"], ignoreMetadata = True, maxDifference = 0.000005 )
+		for i in range( len( parallelogramImage["R"] ) ):
+			self.assertAlmostEqual( parallelogramReference["R"][i], parallelogramImage["R"][i], places = 5 )
+			self.assertAlmostEqual( boxReference["R"][i], boxImage["R"][i], places = 5 )
 
 	def testMatchesResample( self ):
 		def __test( fileName, size, filter ) :
@@ -132,87 +128,60 @@ class FilterAlgoTest( GafferImageTest.ImageTestCase ) :
 			reader["fileName"].setValue( inputFileName )
 
 			inSize = reader["out"]["format"].getValue().getDisplayWindow().size()
-			inSize = IECore.V2f( inSize.x, inSize.y )
-			
+			inSize = imath.V2f( inSize.x, inSize.y )
+
 			deleteChannels = GafferImage.DeleteChannels()
 			deleteChannels["mode"].setValue( 1 )
 			deleteChannels["channels"].setValue( IECore.StringVectorData( [ 'R' ] ) )
 			deleteChannels["in"].setInput( reader["out"] )
 
 
-			scale = IECore.V2f( size.x, size.y ) / inSize
+			scale = imath.V2f( size.x, size.y ) / inSize
 
 			resample = GafferImage.Resample()
 			resample["in"].setInput( deleteChannels["out"] )
 			resample["matrix"].setValue(
-				IECore.M33f().scale( scale )
+				imath.M33f().scale( scale )
 			)
 			resample["filter"].setValue( filter )
 			resample["boundingMode"].setValue( GafferImage.Sampler.BoundingMode.Clamp )
 
 			crop = GafferImage.Crop()
 			crop["in"].setInput( resample["out"] )
-			crop["area"].setValue( IECore.Box2i( IECore.V2i( 0 ), size ) )
+			crop["area"].setValue( imath.Box2i( imath.V2i( 0 ), size ) )
 
 			borderForFilterWidth = 60
 			sampleRegion = reader["out"]["dataWindow"].getValue()
-			sampleRegion.min -= IECore.V2i( borderForFilterWidth )
-			sampleRegion.max += IECore.V2i( borderForFilterWidth )
+			sampleRegion.setMin( sampleRegion.min() - imath.V2i( borderForFilterWidth ) )
+			sampleRegion.setMax( sampleRegion.max() + imath.V2i( borderForFilterWidth ) )
 
 			s = GafferImage.Sampler( reader["out"], "R", sampleRegion, GafferImage.Sampler.BoundingMode.Clamp )
+			resampledS = GafferImage.Sampler( resample["out"], "R", resample["out"]["dataWindow"].getValue() )
 
-			w = IECore.Box2i( IECore.V2i( 0 ), size - IECore.V2i( 1 ) )
-			boxImage = IECore.ImagePrimitive( w, w )
-			parallelImage = IECore.ImagePrimitive( w, w )
-
-			boxR = IECore.FloatVectorData( size.x * size.y )
-			parallelR = IECore.FloatVectorData( size.x * size.y )
-		
 			for y in range( size.y ):
 				for x in range( size.x ):
-						boxR[ ( size.y - 1 - y ) * size.x + x ] = GafferImage.FilterAlgo.sampleBox(
-							s,
-							IECore.V2f( x + 0.5, y + 0.5 ) / scale,
-							max( 1.0 / scale[0], 1.0 ),
-							max( 1.0 / scale[1], 1.0 ),
-							filter )
-						parallelR[ ( size.y - 1 - y ) * size.x + x ] = GafferImage.FilterAlgo.sampleParallelogram(
-							s,
-							IECore.V2f( x + 0.5, y + 0.5 ) / scale,
-							IECore.V2f( 1.0 / scale[0], 0),
-							IECore.V2f( 0, 1.0 / scale[1]),
-							filter )
-
-			boxImage["R"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex, boxR )
-			parallelImage["R"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex, parallelR )
-
-			# Enable to write out images for visual comparison
-			if False:
-				tempDirectory = "/tmp"
-				expectedFileName = tempDirectory + "/%s_%dx%d_%s_expected.exr" % ( os.path.splitext( fileName )[0], size.x, size.y, filter )
-				expectedWriter = GafferImage.ImageWriter()
-				expectedWriter["in"].setInput( crop["out"] )
-				expectedWriter["fileName"].setValue( expectedFileName )
-				expectedWriter["task"].execute()
-
-				outputFileName = tempDirectory + "/%s_%dx%d_%s.box.exr" % ( os.path.splitext( fileName )[0], size.x, size.y, filter )
-				IECore.Writer.create( boxImage, outputFileName ).write()	
-				outputFileName = tempDirectory + "/%s_%dx%d_%s.parallel.exr" % ( os.path.splitext( fileName )[0], size.x, size.y, filter )
-				IECore.Writer.create( parallelImage, outputFileName ).write()	
-
-			imageNode = GafferImage.ObjectToImage()
-			imageNode["object"].setValue( boxImage )
-			self.assertImagesEqual( crop["out"], imageNode["out"], maxDifference = 0.000011, ignoreMetadata = True )
-
-			imageNode["object"].setValue( parallelImage )
-			self.assertImagesEqual( crop["out"], imageNode["out"], maxDifference = 0.000011, ignoreMetadata = True )
+					resampled = resampledS.sample( x, y )
+					self.assertAlmostEqual( resampled, GafferImage.FilterAlgo.sampleBox(
+						s,
+						imath.V2f( x + 0.5, y + 0.5 ) / scale,
+						max( 1.0 / scale[0], 1.0 ),
+						max( 1.0 / scale[1], 1.0 ),
+						filter
+					), places = 5 )
+					self.assertAlmostEqual( resampled, GafferImage.FilterAlgo.sampleParallelogram(
+						s,
+						imath.V2f( x + 0.5, y + 0.5 ) / scale,
+						imath.V2f( 1.0 / scale[0], 0),
+						imath.V2f( 0, 1.0 / scale[1]),
+						filter
+					), places = 5 )
 
 		tests = [
-			( "resamplePatterns.exr", IECore.V2i( 4 ), "lanczos3" ),
-			( "resamplePatterns.exr", IECore.V2i( 40 ), "box" ),
-			( "resamplePatterns.exr", IECore.V2i( 101 ), "gaussian" ),
-			( "resamplePatterns.exr", IECore.V2i( 119 ), "mitchell" ),
-			( "resamplePatterns.exr", IECore.V2i( 300 ), "sinc" ),
+			( "resamplePatterns.exr", imath.V2i( 4 ), "lanczos3" ),
+			( "resamplePatterns.exr", imath.V2i( 40 ), "box" ),
+			( "resamplePatterns.exr", imath.V2i( 101 ), "gaussian" ),
+			( "resamplePatterns.exr", imath.V2i( 119 ), "mitchell" ),
+			( "resamplePatterns.exr", imath.V2i( 300 ), "sinc" ),
 		]
 
 		for args in tests :

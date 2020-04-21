@@ -37,9 +37,9 @@
 #ifndef GAFFERIMAGE_GRADE_H
 #define GAFFERIMAGE_GRADE_H
 
-#include "Gaffer/CompoundNumericPlug.h"
-
 #include "GafferImage/ChannelDataProcessor.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
 
 namespace GafferImage
 {
@@ -50,15 +50,15 @@ namespace GafferImage
 /// B = offset + lift - A * blackPoint
 /// output = pow( A * input + B, 1/gamma )
 //
-class Grade : public ChannelDataProcessor
+class GAFFERIMAGE_API Grade : public ChannelDataProcessor
 {
 
 	public :
 
 		Grade( const std::string &name=defaultName<Grade>() );
-		virtual ~Grade();
+		~Grade() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Grade, GradeTypeId, ChannelDataProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Grade, GradeTypeId, ChannelDataProcessor );
 
         //! @name Plug Accessors
         /// Returns a pointer to the node's plugs.
@@ -84,14 +84,14 @@ class Grade : public ChannelDataProcessor
 		const Gaffer::BoolPlug *whiteClampPlug() const;
         //@}
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual bool channelEnabled( const std::string &channel ) const;
+		bool channelEnabled( const std::string &channel ) const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channelIndex, IECore::FloatVectorDataPtr outData ) const;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channelIndex, IECore::FloatVectorDataPtr outData ) const override;
 
 	private :
 

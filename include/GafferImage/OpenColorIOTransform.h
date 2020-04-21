@@ -37,33 +37,36 @@
 #ifndef GAFFERIMAGE_OPENCOLORIOTRANSFORM_H
 #define GAFFERIMAGE_OPENCOLORIOTRANSFORM_H
 
-#include "OpenColorIO/OpenColorIO.h"
+#include "GafferImage/ColorProcessor.h"
 
 #include "Gaffer/CompoundDataPlug.h"
 
-#include "GafferImage/ColorProcessor.h"
+#include "OpenColorIO/OpenColorIO.h"
 
 namespace GafferImage
 {
 
 /// Abstract base class for nodes which apply an OpenColorIO Transform
-class OpenColorIOTransform : public ColorProcessor
+class GAFFERIMAGE_API OpenColorIOTransform : public ColorProcessor
 {
 
 	public :
 
-		virtual ~OpenColorIOTransform();
+		~OpenColorIOTransform() override;
 
 		/// Fills the vector will the available color spaces,
 		/// as defined by the current OpenColorIO config.
 		static void availableColorSpaces( std::vector<std::string> &colorSpaces );
+		/// Fills the vector will the available roles,
+		/// as defined by the current OpenColorIO config.
+		static void availableRoles( std::vector<std::string> &Roles );
 
-		/// May return NULL if the derived class does not
+		/// May return null if the derived class does not
 		/// request OCIO context variable support.
 		Gaffer::CompoundDataPlug *contextPlug();
 		const Gaffer::CompoundDataPlug *contextPlug() const;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::OpenColorIOTransform, OpenColorIOTransformTypeId, ColorProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::OpenColorIOTransform, OpenColorIOTransformTypeId, ColorProcessor );
 
 	protected :
 
@@ -73,20 +76,20 @@ class OpenColorIOTransform : public ColorProcessor
 		/// hashTransform() to return a default hash if the
 		/// node should be in a disabled state.
 		/// \todo: rework ColorProcessor so we can remove this.
-		virtual bool enabled() const;
+		bool enabled() const override;
 
 		/// Implemented to call affectsTransform() if the base class
 		/// does not affect the color data for this input. Derived
 		/// classes should implement affectsTransform() instead.
-		virtual bool affectsColorData( const Gaffer::Plug *input ) const;
+		bool affectsColorData( const Gaffer::Plug *input ) const override;
 		/// Implemented to call hashTransform() after hashing the
 		/// affect of the base class. Derived classes should
 		/// implement hashTransform() instead.
-		virtual void hashColorData( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hashColorData( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		/// Implemented to fetch an OpenColorIO Processor from the
 		/// OpenColorIO Config and apply it to the output channels.
 		/// Derived classes should implement transform() instead.
-		virtual void processColorData( const Gaffer::Context *context, IECore::FloatVectorData *r, IECore::FloatVectorData *g, IECore::FloatVectorData *b ) const;
+		void processColorData( const Gaffer::Context *context, IECore::FloatVectorData *r, IECore::FloatVectorData *g, IECore::FloatVectorData *b ) const override;
 
 		/// Derived classes must implement this to return true if the specified input
 		/// is used in transform().

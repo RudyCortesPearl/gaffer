@@ -35,6 +35,7 @@
 #
 ##########################################################################
 
+import sys
 import logging
 import collections
 
@@ -42,6 +43,7 @@ import collections
 # when running in maya 2012 the default log level allows info messages through.
 # so we set a specific log level on the OpenGL logger to keep it quiet.
 logging.getLogger( "OpenGL" ).setLevel( logging.WARNING )
+import imath
 
 import IECore
 import IECoreGL
@@ -52,6 +54,7 @@ import _GafferUI
 
 import OpenGL.GL as GL
 
+import Qt
 from Qt import QtCore
 from Qt import QtGui
 from Qt import QtWidgets
@@ -66,7 +69,8 @@ class GLWidget( GafferUI.Widget ) :
 	BufferOptions = IECore.Enum.create(
 		"Alpha",
 		"Depth",
-		"Double"
+		"Double",
+		"AntiAlias"
 	)
 
 	## Note that you won't always get the buffer options you ask for - a best fit is found
@@ -80,6 +84,11 @@ class GLWidget( GafferUI.Widget ) :
 		format.setAlpha( self.BufferOptions.Alpha in bufferOptions )
 		format.setDepth( self.BufferOptions.Depth in bufferOptions )
 		format.setDoubleBuffer( self.BufferOptions.Double in bufferOptions )
+
+		self.__multisample = self.BufferOptions.AntiAlias in bufferOptions
+		if self.__multisample:
+			format.setSampleBuffers( True )
+			format.setSamples( 8 )
 
 		if hasattr( format, "setVersion" ) : # setVersion doesn't exist in qt prior to 4.7.
 			format.setVersion( 2, 1 )
@@ -105,6 +114,20 @@ class GLWidget( GafferUI.Widget ) :
 
 		self.__overlays.add( overlay )
 		overlay._setStyleSheet()
+		if Qt.__binding__ in ( "PySide2", "PyQt5" ) :
+			# Force Qt to use a raster drawing path for the overlays.
+			#
+			# - On Mac, this avoids "QMacCGContext:: Unsupported painter devtype type 1"
+			#   errors. See https://bugreports.qt.io/browse/QTBUG-32639 for
+			#   further details.
+			# - On Linux, this avoids an unknown problem which manifests as
+			#   a GL error that appears to occur inside Qt's code, and which
+			#   is accompanied by text drawing being scrambled in the overlay.
+			#
+			## \todo When we no longer need to support Qt4, we should be
+			# able to stop using a QGLWidget for the viewport, and this
+			# should no longer be needed.
+			overlay._qtWidget().setWindowOpacity( 0.9999 )
 
 		self.__graphicsScene.addOverlay( overlay )
 
@@ -165,12 +188,6 @@ class GLWidget( GafferUI.Widget ) :
 
 	def __draw( self ) :
 
-		# Qt sometimes enters our GraphicsScene.drawBackground() method
-		# with a GL error flag still set. We unset it here so it won't
-		# trigger our own error checking.
-		while GL.glGetError() :
-			pass
-
 		if not self.__framebufferValid() :
 			return
 
@@ -182,6 +199,9 @@ class GLWidget( GafferUI.Widget ) :
 		# is always called first.
 		IECoreGL.init( True )
 
+		if self.__multisample:
+			GL.glEnable( GL.GL_MULTISAMPLE )
+
 		self._draw()
 
 class _GLGraphicsView( QtWidgets.QGraphicsView ) :
@@ -190,7 +210,6 @@ class _GLGraphicsView( QtWidgets.QGraphicsView ) :
 
 		QtWidgets.QGraphicsView.__init__( self )
 
-		self.setObjectName( "gafferGLWidget" )
 		self.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
 		self.setVerticalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
 
@@ -249,7 +268,7 @@ class _GLGraphicsView( QtWidgets.QGraphicsView ) :
 			# but it's safe.
 			IECoreGL.init( True )
 
-			owner._resize( IECore.V2i( event.size().width(), event.size().height() ) )
+			owner._resize( imath.V2i( event.size().width(), event.size().height() ) )
 
 	def keyPressEvent( self, event ) :
 
@@ -333,17 +352,16 @@ class _GLGraphicsView( QtWidgets.QGraphicsView ) :
 
 		import IECoreHoudini
 
-		# Prior to Houdini 14 we are running embedded on the hou.ui idle loop,
-		# so we needed to force the Houdini GL context to be current, and share
-		# it, similar to how we do this in Maya.
-		if hou.applicationVersion()[0] < 14 :
-			IECoreHoudini.makeMainGLContextCurrent()
-			return cls.__createHostedQGLWidget( format )
+		if hasattr( IECoreHoudini, "sharedGLWidget" ) :
+			# In Houdini 14 and 15, Qt is the native UI, and we can access
+			# Houdini's shared QGLWidget directly.
+			return QtOpenGL.QGLWidget( format, shareWidget = GafferUI._qtObject( IECoreHoudini.sharedGLWidget(), QtOpenGL.QGLWidget ) )
 
-		# In Houdini 14 and beyond, Qt is the native UI, and we can access
-		# Houdini's shared QGLWidget directly, provided we are using a recent
-		# Cortex version.
-		return QtOpenGL.QGLWidget( format, shareWidget = GafferUI._qtObject( IECoreHoudini.sharedGLWidget(), QtOpenGL.QGLWidget ) )
+		# While Qt is the native UI in Houdini 16.0, they have moved away
+		# from QGLWidgets for their Qt5 builds, so we need to force the
+		# Houdini GL context to be current, and share it.
+		IECoreHoudini.makeMainGLContextCurrent()
+		return cls.__createHostedQGLWidget( format )
 
 class _GLGraphicsScene( QtWidgets.QGraphicsScene ) :
 
@@ -383,6 +401,11 @@ class _GLGraphicsScene( QtWidgets.QGraphicsScene ) :
 
 		painter.beginNativePainting()
 
+		# Qt sometimes enters this method with a GL error flag still set.
+		# We unset it here so it won't trigger our own error checking.
+		while GL.glGetError() :
+			pass
+
 		GL.glPushAttrib( GL.GL_ALL_ATTRIB_BITS )
 		GL.glPushClientAttrib( GL.GL_CLIENT_ALL_ATTRIB_BITS )
 
@@ -392,6 +415,12 @@ class _GLGraphicsScene( QtWidgets.QGraphicsScene ) :
 		GL.glPopAttrib()
 
 		painter.endNativePainting()
+
+	## QGraphicsScene consumes all drag events by default, which is unhelpful
+	# for us as it breaks any Qt based drag-drop we may be attempting.
+	def dragEnterEvent( self, event ) :
+
+		event.ignore()
 
 	def __sceneRectChanged( self, sceneRect ) :
 

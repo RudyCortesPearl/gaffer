@@ -35,21 +35,22 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/algorithm/string/predicate.hpp"
-
-#include "Gaffer/Context.h"
-#include "Gaffer/PathFilter.h"
-#include "Gaffer/Node.h"
-#include "Gaffer/ArrayPlug.h"
-#include "Gaffer/StringPlug.h"
-
-#include "GafferScene/ScenePlug.h"
 #include "GafferScene/ScenePath.h"
+
 #include "GafferScene/SceneAlgo.h"
+#include "GafferScene/SceneFilterPathFilter.h"
+#include "GafferScene/ScenePlug.h"
 #include "GafferScene/SetFilter.h"
 #include "GafferScene/UnionFilter.h"
-#include "GafferScene/SceneFilterPathFilter.h"
+
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/Node.h"
+#include "Gaffer/PathFilter.h"
+#include "Gaffer/StringPlug.h"
+
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -152,7 +153,7 @@ bool ScenePath::isValid() const
 	}
 
 	Context::Scope scopedContext( m_context.get() );
-	return SceneAlgo::exists( m_scene.get(), names() );
+	return m_scene->exists( names() );
 }
 
 bool ScenePath::isLeaf() const
@@ -211,7 +212,7 @@ Gaffer::PathFilterPtr ScenePath::createStandardFilter( const std::vector<std::st
 {
 	if( !setNames.size() )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	UnionFilterPtr unionFilter = new UnionFilter;

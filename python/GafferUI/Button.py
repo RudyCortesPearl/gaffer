@@ -74,8 +74,8 @@ class Button( GafferUI.Widget ) :
 		self._qtWidget().setPalette( Button.__palette )
 
 		if highlightOnOver :
-			self.__enterConnection = self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ) )
-			self.__leaveConnection = self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ) )
+			self.enterSignal().connect( Gaffer.WeakMethod( self.__enter ), scoped = False )
+			self.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
 
 	def setHighlighted( self, highlighted ) :
 
@@ -110,7 +110,7 @@ class Button( GafferUI.Widget ) :
 
 	def setHasFrame( self, hasFrame ) :
 
-		self._qtWidget().setObjectName( "gafferWithFrame" if hasFrame else "gafferWithoutFrame" )
+		self._qtWidget().setProperty( "gafferWithFrame", hasFrame )
 		self._qtWidget().setSizePolicy(
 			QtWidgets.QSizePolicy.Minimum if hasFrame else QtWidgets.QSizePolicy.Fixed,
 			QtWidgets.QSizePolicy.Fixed
@@ -119,7 +119,7 @@ class Button( GafferUI.Widget ) :
 
 	def getHasFrame( self ) :
 
-		return self._qtWidget().objectName() == "gafferWithFrame"
+		return self._qtWidget().property( "gafferWithFrame" )
 
 	def clickedSignal( self ) :
 

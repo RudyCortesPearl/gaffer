@@ -34,12 +34,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/ClippingPlane.h"
+#include "GafferScene/ClippingPlane.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/ClippingPlane.h"
-#include "GafferScene/PathMatcherData.h"
+#include "IECoreScene/ClippingPlane.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
@@ -47,7 +46,7 @@ using namespace Imath;
 
 static IECore::InternedString g_clippingPlanesSetName( "__clippingPlanes" );
 
-IE_CORE_DEFINERUNTIMETYPED( ClippingPlane );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ClippingPlane );
 
 ClippingPlane::ClippingPlane( const std::string &name )
 	:	ObjectSource( name, "clippingPlane" )
@@ -64,7 +63,7 @@ void ClippingPlane::hashSource( const Gaffer::Context *context, IECore::MurmurHa
 
 IECore::ConstObjectPtr ClippingPlane::computeSource( const Context *context ) const
 {
-	return new IECore::ClippingPlane();
+	return new IECoreScene::ClippingPlane();
 }
 
 IECore::ConstInternedStringVectorDataPtr ClippingPlane::computeStandardSetNames() const

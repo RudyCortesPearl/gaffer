@@ -37,7 +37,7 @@
 #ifndef GAFFERSCENE_IMAGETRANSFORM_H
 #define GAFFERSCENE_IMAGETRANSFORM_H
 
-#include "GafferImage/ImageProcessor.h"
+#include "GafferImage/FlatImageProcessor.h"
 
 namespace Gaffer
 {
@@ -52,16 +52,16 @@ namespace GafferImage
 
 IE_CORE_FORWARDDECLARE( Resample )
 
-class ImageTransform : public ImageProcessor
+class GAFFERIMAGE_API ImageTransform : public FlatImageProcessor
 {
 	public :
 
 		ImageTransform( const std::string &name=defaultName<ImageTransform>() );
-		virtual ~ImageTransform();
+		~ImageTransform() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageTransform, ImageTransformTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::ImageTransform, ImageTransformTypeId, FlatImageProcessor );
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 		Gaffer::Transform2DPlug *transformPlug();
 		const Gaffer::Transform2DPlug *transformPlug() const;
@@ -69,16 +69,25 @@ class ImageTransform : public ImageProcessor
 		Gaffer::StringPlug *filterPlug();
 		const Gaffer::StringPlug *filterPlug() const;
 
+		Gaffer::BoolPlug *invertPlug();
+		const Gaffer::BoolPlug *invertPlug() const;
+
+		Gaffer::BoolPlug *concatenatePlug();
+		const Gaffer::BoolPlug *concatenatePlug() const;
+
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
-		virtual void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		bool computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const override;
+
+		void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 	private :
 
@@ -96,6 +105,16 @@ class ImageTransform : public ImageProcessor
 		Resample *resample();
 		const Resample *resample() const;
 
+		// Plugs used to concatenate transforms through a
+		// chain of connected ImageTransforms.
+		Gaffer::M33fPlug *inTransformPlug();
+		const Gaffer::M33fPlug *inTransformPlug() const;
+		Gaffer::M33fPlug *outTransformPlug();
+		const Gaffer::M33fPlug *outTransformPlug() const;
+
+		class ChainingScope;
+		class CleanScope;
+
 		enum Operation
 		{
 			Identity = 0,
@@ -105,7 +124,7 @@ class ImageTransform : public ImageProcessor
 		};
 
 		unsigned operation( Imath::M33f &matrix, Imath::M33f &resampleMatrix ) const;
-		Imath::Box2i sampler( unsigned op, const Imath::M33f &matrix, const Imath::M33f &resampleMatrix, const Imath::V2i &tileOrigin, const ImagePlug *&samplerImage, Imath::M33f &samplerMatrix ) const;
+		void plugInputChanged( Gaffer::Plug *plug );
 
 		static size_t g_firstPlugIndex;
 

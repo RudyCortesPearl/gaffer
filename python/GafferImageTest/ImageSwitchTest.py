@@ -36,6 +36,7 @@
 
 import inspect
 import unittest
+import imath
 
 import IECore
 
@@ -46,14 +47,10 @@ import GafferImageTest
 
 class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 
-	def testDefaultName( self ) :
-
-		s = GafferImage.ImageSwitch()
-		self.assertEqual( s.getName(), "ImageSwitch" )
-
 	def testEnabledPlug( self ) :
 
-		s = GafferImage.ImageSwitch()
+		s = Gaffer.Switch()
+		s.setup( GafferImage.ImagePlug() )
 		self.assertTrue( isinstance( s["enabled"], Gaffer.BoolPlug ) )
 		self.assertTrue( s["enabled"].isSame( s.enabledPlug() ) )
 		self.assertFalse( "enabled1" in s )
@@ -63,12 +60,16 @@ class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 		in0 = GafferImage.Constant()
 		in1 = GafferImage.Constant()
 
-		switch = GafferImage.ImageSwitch()
+		switch = Gaffer.Switch()
+		switch.setup( GafferImage.ImagePlug() )
 		switch["in"][0].setInput( in0["out"] )
 		switch["in"][1].setInput( in1["out"] )
 
+		add = GafferTest.AddNode()
+		switch["index"].setInput( add["sum"] )
+
 		for p in [ switch["in"][0], switch["in"][1] ] :
-			for n in [ "format", "dataWindow", "metadata", "channelNames", "channelData" ] :
+			for n in [ "format", "dataWindow", "metadata", "deep", "sampleOffsets", "channelNames", "channelData" ] :
 				a = switch.affects( p[n] )
 				self.assertEqual( len( a ), 1 )
 				self.assertTrue( a[0].isSame( switch["out"][n] ) )
@@ -77,7 +78,7 @@ class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual(
 			a,
 			set( [
-				"out.format", "out.dataWindow", "out.metadata", "out.channelNames", "out.channelData",
+				"out.format", "out.dataWindow", "out.metadata", "out.deep", "out.sampleOffsets", "out.channelNames", "out.channelData",
 			] ),
 		)
 
@@ -85,7 +86,7 @@ class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual(
 			a,
 			set( [
-				"out.format", "out.dataWindow", "out.metadata", "out.channelNames", "out.channelData",
+				"out.format", "out.dataWindow", "out.metadata", "out.deep", "out.sampleOffsets", "out.channelNames", "out.channelData",
 			] ),
 		)
 
@@ -93,33 +94,35 @@ class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 
 		in0 = GafferImage.Constant()
 		in0["format"].setValue( GafferImage.Format( 100, 100, 1.0 ) )
-		in0["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		in0["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 		in1 = GafferImage.Constant()
 		in1["format"].setValue( GafferImage.Format( 100, 100, 1.0 ) )
-		in0["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		in0["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
-		switch = GafferImage.ImageSwitch()
+		switch = Gaffer.Switch()
+		switch.setup( GafferImage.ImagePlug() )
 		switch["in"][0].setInput( in0["out"] )
 		switch["in"][1].setInput( in1["out"] )
 
-		self.assertEqual( switch["out"].imageHash(), in0["out"].imageHash() )
-		self.assertEqual( switch["out"].image(), in0["out"].image() )
+		self.assertImageHashesEqual( switch["out"], in0["out"] )
+		self.assertImagesEqual( switch["out"], in0["out"] )
 
 		switch["index"].setValue( 1 )
 
-		self.assertEqual( switch["out"].imageHash(), in1["out"].imageHash() )
-		self.assertEqual( switch["out"].image(), in1["out"].image() )
+		self.assertImageHashesEqual( switch["out"], in1["out"] )
+		self.assertImagesEqual( switch["out"], in1["out"] )
 
 		switch["enabled"].setValue( False )
 
-		self.assertEqual( switch["out"].imageHash(), in0["out"].imageHash() )
-		self.assertEqual( switch["out"].image(), in0["out"].image() )
+		self.assertImageHashesEqual( switch["out"], in0["out"] )
+		self.assertImagesEqual( switch["out"], in0["out"] )
 
 	def testSerialisation( self ) :
 
 		script = Gaffer.ScriptNode()
 
-		script["switch"] = GafferImage.ImageSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferImage.ImagePlug() )
 		script["in0"] = GafferImage.Constant()
 		script["in1"] = GafferImage.Constant()
 
@@ -142,11 +145,12 @@ class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 
 		script = Gaffer.ScriptNode()
 
-		script["switch"] = GafferImage.ImageSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferImage.ImagePlug() )
 		script["in0"] = GafferImage.Constant()
-		script["in0"]["color"].setValue( IECore.Color4f( 1, 1, 1, 1 ) )
+		script["in0"]["color"].setValue( imath.Color4f( 1, 1, 1, 1 ) )
 		script["in1"] = GafferImage.Constant()
-		script["in0"]["color"].setValue( IECore.Color4f( 0, 0, 0, 0 ) )
+		script["in0"]["color"].setValue( imath.Color4f( 0, 0, 0, 0 ) )
 
 		script["switch"]["in"][0].setInput( script["in0"]["out"] )
 		script["switch"]["in"][1].setInput( script["in1"]["out"] )
@@ -160,7 +164,7 @@ class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 			"""
 		) )
 
-		self.assertEqual( script["switch"]["out"].channelData( "R", IECore.V2i( 0 ) )[0], 0 )
+		self.assertEqual( script["switch"]["out"].channelData( "R", imath.V2i( 0 ) )[0], 0 )
 
 if __name__ == "__main__":
 	unittest.main()

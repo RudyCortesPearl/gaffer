@@ -37,27 +37,31 @@
 #ifndef GAFFERSCENEUI_TRANSFORMTOOL_H
 #define GAFFERSCENEUI_TRANSFORMTOOL_H
 
-#include "Gaffer/TransformPlug.h"
-#include "Gaffer/StringAlgo.h"
+#include "GafferSceneUI/SelectionTool.h"
+#include "GafferSceneUI/TypeIds.h"
 
+#include "GafferScene/EditScopeAlgo.h"
+#include "GafferScene/SceneAlgo.h"
 #include "GafferScene/ScenePlug.h"
 
-#include "GafferSceneUI/TypeIds.h"
-#include "GafferSceneUI/SelectionTool.h"
+#include "GafferUI/KeyEvent.h"
+
+#include "Gaffer/EditScope.h"
+#include "Gaffer/TransformPlug.h"
 
 namespace GafferSceneUI
 {
 
 IE_CORE_FORWARDDECLARE( SceneView )
 
-class TransformTool : public GafferSceneUI::SelectionTool
+class GAFFERSCENEUI_API TransformTool : public GafferSceneUI::SelectionTool
 {
 
 	public :
 
-		virtual ~TransformTool();
+		~TransformTool() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::TransformTool, TransformToolTypeId, SelectionTool );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::TransformTool, TransformToolTypeId, SelectionTool );
 
 		enum Orientation
 		{
@@ -66,52 +70,139 @@ class TransformTool : public GafferSceneUI::SelectionTool
 			World
 		};
 
+		Gaffer::FloatPlug *sizePlug();
+		const Gaffer::FloatPlug *sizePlug() const;
+
 		struct Selection
 		{
+
+			// Constructs an empty selection.
+			Selection();
+
+			// Constructs a selection for the specified
+			// viewed scene.
+			Selection(
+				const GafferScene::ConstScenePlugPtr scene,
+				const GafferScene::ScenePlug::ScenePath &path,
+				const Gaffer::ConstContextPtr &context,
+				const Gaffer::EditScopePtr &editScope
+			);
+
 			/// Viewed scene
 			/// ============
 			///
 			/// The scene being viewed.
-			GafferScene::ConstScenePlugPtr scene;
-			/// The location within the viewed scene that has been
-			/// selected for editing.
-			GafferScene::ScenePlug::ScenePath path;
+			const GafferScene::ScenePlug *scene() const;
+			/// The location within the viewed scene that is being
+			/// edited.
+			const GafferScene::ScenePlug::ScenePath &path() const;
 			/// The context the scene is being viewed in.
-			Gaffer::ConstContextPtr context;
+			const Gaffer::Context *context() const;
 
 			/// Upstream scene
 			/// ==============
 			///
 			/// Often, the scene being viewed isn't actually the
-			/// scene that is being edited. Instead, an upstream
-			/// node is being edited, and the user is viewing a
-			/// downstream node to see the edits in the context of later
-			/// changes. The `upstreamScene` is the output from the node
-			/// actually being edited.
-			GafferScene::ConstScenePlugPtr upstreamScene;
+			/// scene where the transform originates. Instead, the
+			/// transform originates with an upstream node, and the
+			/// user is viewing a downstream node to see the transform
+			/// in the context of later changes. The `upstreamScene`
+			/// is the output from the node where the transform
+			/// originates.
+			const GafferScene::ScenePlug *upstreamScene() const;
 			/// The hierarchies of the upstream and viewed scenes may
 			/// differ. The upstreamPath is the equivalent of
 			/// the viewed path but in the upstream scene.
-			GafferScene::ScenePlug::ScenePath upstreamPath;
+			const GafferScene::ScenePlug::ScenePath &upstreamPath() const;
 			/// The upstream context is the equivalent of the
 			/// viewed context, but for the upstream scene.
-			Gaffer::ConstContextPtr upstreamContext;
+			const Gaffer::Context *upstreamContext() const;
 
-			/// Transform to edit
-			/// =================
+			/// Status and editing
+			/// ==================
 
-			/// The plug to edit. This will be a child of
-			/// the node generating the upstream scene.
-			Gaffer::TransformPlugPtr transformPlug;
-			/// The coordinate system within which the
+			/// Returns true if the selected transform may be edited
+			/// using `acquireTransformEdit()` and `transformSpace()`.
+			bool editable() const;
+			/// Returns a warning message, or "" if there are no
+			/// warnings.
+			const std::string &warning() const;
+
+			using TransformEdit = GafferScene::EditScopeAlgo::TransformEdit;
+			/// Returns the plugs to edit. Throws if `status() != Editable`.
+			/// > Caution : When using EditScopes, this may edit the graph
+			/// > to create the plug unless `createIfNecessary == false`.
+			boost::optional<TransformEdit> acquireTransformEdit( bool createIfNecessary = true ) const;
+			/// The EditScope passed to the constructor.
+			const Gaffer::EditScope *editScope() const;
+			/// Returns the GraphComponent that will be edited.
+			/// Unlike `acquireTransformEdit()`, this never edits the graph,
+			/// instead returning an `EditScope *` if an EditScope
+			/// is in use but no TransformEdit has been created yet.
+			/// Throws if `status() != Editable`.
+			Gaffer::GraphComponent *editTarget() const;
+			/// Returns the coordinate system within which the
 			/// transform is applied by the upstream node.
 			/// This is relative to the world space of the
-			/// upstream scene.
-			Imath::M44f transformSpace;
+			/// upstream scene. Throws if `!editable()`.
+			const Imath::M44f &transformSpace() const;
+
+			/// Utilities
+			/// =========
+			///
+			/// Returns the equivalent of `acquireTransformEdit()->matrix()` and
+			/// fills `translate`, `rotate`, `scale` and `pivot` with values
+			/// for each component of the edit.
+			/// Throws if `status() != Editable`.
+			/// > Note : Where a TransformEdit has not yet been created for
+			/// > an EditScope, this will return the values that it will
+			/// > be given upon creation. It will never modify the graph.
+			Imath::M44f transform( Imath::V3f &translate, Imath::V3f &rotate, Imath::V3f &scale, Imath::V3f &pivot ) const;
+			/// Returns a matrix which converts from world
+			/// space in `scene` to `transformSpace`.
+			/// Throws if `!editable()`.
+			Imath::M44f sceneToTransformSpace() const;
+			/// Returns a matrix suitable for positioning
+			/// transform handles in `scene's` world space.
+			/// Throws if `!editable()`.
+			Imath::M44f orientedTransform( Orientation orientation ) const;
+
+			private :
+
+				void initFromSceneNode( const GafferScene::SceneAlgo::History *history );
+				void initWalk( const GafferScene::SceneAlgo::History *history, bool &editScopeFound );
+				void throwIfNotEditable() const;
+
+				GafferScene::ConstScenePlugPtr m_scene;
+				GafferScene::ScenePlug::ScenePath m_path;
+				Gaffer::ConstContextPtr m_context;
+
+				GafferScene::ConstScenePlugPtr m_upstreamScene;
+				GafferScene::ScenePlug::ScenePath m_upstreamPath;
+				Gaffer::ConstContextPtr m_upstreamContext;
+
+				bool m_editable;
+				std::string m_warning;
+				Gaffer::EditScopePtr m_editScope;
+				mutable boost::optional<TransformEdit> m_transformEdit;
+				Imath::M44f m_transformSpace;
 
 		};
 
-		const Selection &selection() const;
+		/// Returns the current selection.
+		const std::vector<Selection> &selection() const;
+		/// Returns true only if the selection is non-empty
+		/// and every item is editable.
+		bool selectionEditable() const;
+
+		using SelectionChangedSignal = boost::signal<void (TransformTool &)>;
+		SelectionChangedSignal &selectionChangedSignal();
+
+		/// Returns the transform of the handles. Throws
+		/// if the selection is invalid because then the
+		/// transform would be meaningless. This is
+		/// exposed primarily for the unit tests.
+		Imath::M44f handlesTransform();
 
 	protected :
 
@@ -135,10 +226,7 @@ class TransformTool : public GafferSceneUI::SelectionTool
 		/// handles appropriately. Typically this means setting their
 		/// transform and matching their enabled state to the editability
 		/// of the selection.
-		virtual void updateHandles() = 0;
-
-		/// Utility that may be used from updateHandles().
-		Imath::M44f orientedTransform( Orientation orientation );
+		virtual void updateHandles( float rasterScale ) = 0;
 
 		/// Must be called by derived classes when they begin
 		/// a drag.
@@ -150,21 +238,30 @@ class TransformTool : public GafferSceneUI::SelectionTool
 		/// derived classes.
 		std::string undoMergeGroup() const;
 
+		/// Utilities to help derived classes update plug values.
+		static bool canSetValueOrAddKey( const Gaffer::FloatPlug *plug );
+		static void setValueOrAddKey( Gaffer::FloatPlug *plug, float time, float value );
+
 	private :
 
 		void connectToViewContext();
 		void contextChanged( const IECore::InternedString &name );
 		void plugDirtied( const Gaffer::Plug *plug );
-		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
+		void metadataChanged( IECore::InternedString key );
 		void updateSelection() const;
 		void preRender();
+		bool keyPress( const GafferUI::KeyEvent &event );
 
 		boost::signals::scoped_connection m_contextChangedConnection;
+		boost::signals::scoped_connection m_preRenderConnection;
 
 		GafferUI::GadgetPtr m_handles;
-		mutable Selection m_selection;
-		mutable bool m_selectionDirty;
 		bool m_handlesDirty;
+
+		mutable std::vector<Selection> m_selection;
+		mutable bool m_selectionDirty;
+		bool m_priorityPathsDirty;
+		SelectionChangedSignal m_selectionChangedSignal;
 
 		bool m_dragging;
 		int m_mergeGroupId;
@@ -172,6 +269,8 @@ class TransformTool : public GafferSceneUI::SelectionTool
 		static size_t g_firstPlugIndex;
 
 };
+
+IE_CORE_DECLAREPTR( TransformTool )
 
 } // namespace GafferSceneUI
 

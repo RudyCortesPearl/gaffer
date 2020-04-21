@@ -37,9 +37,9 @@
 #ifndef GAFFERUI_DOTNODEGADGET_H
 #define GAFFERUI_DOTNODEGADGET_H
 
-#include "Gaffer/Dot.h"
-
 #include "GafferUI/StandardNodeGadget.h"
+
+#include "Gaffer/Dot.h"
 
 namespace Gaffer
 {
@@ -51,19 +51,19 @@ IE_CORE_FORWARDDECLARE( Plug )
 namespace GafferUI
 {
 
-class DotNodeGadget : public StandardNodeGadget
+class GAFFERUI_API DotNodeGadget : public StandardNodeGadget
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::DotNodeGadget, DotNodeGadgetTypeId, StandardNodeGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::DotNodeGadget, DotNodeGadgetTypeId, StandardNodeGadget );
 
 		DotNodeGadget( Gaffer::NodePtr node );
-		virtual ~DotNodeGadget();
+		~DotNodeGadget() override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 	private :
 

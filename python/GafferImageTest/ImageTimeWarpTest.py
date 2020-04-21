@@ -36,6 +36,7 @@
 
 import unittest
 import inspect
+import imath
 
 import IECore
 
@@ -46,23 +47,20 @@ import GafferImageTest
 
 class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 
-	def testDefaultName( self ) :
-
-		t = GafferImage.ImageTimeWarp()
-		self.assertEqual( t.getName(), "ImageTimeWarp" )
-
 	def testEnabledPlug( self ) :
 
-		t = GafferImage.ImageTimeWarp()
+		t = Gaffer.TimeWarp()
+		t.setup( GafferImage.ImagePlug() )
 		self.assertTrue( isinstance( t["enabled"], Gaffer.BoolPlug ) )
 		self.assertTrue( t["enabled"].isSame( t.enabledPlug() ) )
 		self.assertFalse( "enabled1" in t )
 
 	def testAffects( self ) :
 
-		timeWarp = GafferImage.ImageTimeWarp()
+		timeWarp = Gaffer.TimeWarp()
+		timeWarp.setup( GafferImage.ImagePlug() )
 
-		for n in [ "format", "dataWindow", "metadata", "channelNames", "channelData" ] :
+		for n in [ "format", "dataWindow", "metadata", "deep", "sampleOffsets", "channelNames", "channelData" ] :
 			a = timeWarp.affects( timeWarp["in"][n] )
 			self.assertEqual( len( a ), 1 )
 			self.assertTrue( a[0].isSame( timeWarp["out"][n] ) )
@@ -72,7 +70,7 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 			self.assertEqual(
 				a,
 				set( [
-					"out.format", "out.dataWindow", "out.metadata", "out.channelNames", "out.channelData",
+					"out.format", "out.dataWindow", "out.metadata", "out.deep", "out.sampleOffsets", "out.channelNames", "out.channelData",
 				] ),
 			)
 
@@ -85,7 +83,8 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 		script["expression"] = Gaffer.Expression()
 		script["expression"].setExpression( 'parent["constant"]["color"]["r"] = context["frame"]' )
 
-		script["timeWarp"] = GafferImage.ImageTimeWarp()
+		script["timeWarp"] = Gaffer.TimeWarp()
+		script["timeWarp"].setup( GafferImage.ImagePlug() )
 		script["timeWarp"]["offset"].setValue( 1 )
 		script["timeWarp"]["in"].setInput( script["constant"]["out"] )
 
@@ -93,14 +92,14 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 			with script.context() :
 
 				script.context().setFrame( f )
-				c0 = script["constant"]["out"].image()
-				c0Hash = script["constant"]["out"].imageHash()
-				t = script["timeWarp"]["out"].image()
-				tHash = script["timeWarp"]["out"].imageHash()
+				c0 = GafferImage.ImageAlgo.image( script["constant"]["out"] )
+				c0Hash = GafferImage.ImageAlgo.imageHash( script["constant"]["out"] )
+				t = GafferImage.ImageAlgo.image( script["timeWarp"]["out"] )
+				tHash = GafferImage.ImageAlgo.imageHash( script["timeWarp"]["out"] )
 
 				script.context().setFrame( f + 1 )
-				c1 = script["constant"]["out"].image()
-				c1Hash = script["constant"]["out"].imageHash()
+				c1 = GafferImage.ImageAlgo.image( script["constant"]["out"] )
+				c1Hash = GafferImage.ImageAlgo.imageHash( script["constant"]["out"] )
 
 			self.assertEqual( c1, t )
 			self.assertEqual( c1Hash, tHash )
@@ -108,23 +107,25 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 			self.assertNotEqual( c0Hash, c1Hash )
 
 	def testTimeContext( self ) :
+
 		script = Gaffer.ScriptNode()
 		script["constant"] = GafferImage.Constant()
 		script["constant"]["format"].setValue( GafferImage.Format( 1, 1, 1.0 ) )
-		
-		script["e"] = Gaffer.Expression()
-		script["e"].setExpression( 'parent["constant"]["color"] = IECore.Color4f( context["frame"] )' )
 
-		script["timeWarp"] = GafferImage.ImageTimeWarp()
+		script["e"] = Gaffer.Expression()
+		script["e"].setExpression( 'parent["constant"]["color"] = imath.Color4f( context["frame"] )' )
+
+		script["timeWarp"] = Gaffer.TimeWarp()
+		script["timeWarp"].setup( GafferImage.ImagePlug() )
 		script["timeWarp"]["in"].setInput( script["constant"]["out"] )
 		script["timeWarp"]["speed"].setValue( 0 )
 		script["timeWarp"]["offset"].setValue( 3 )
 
 		script["sampler"] = GafferImage.ImageSampler()
-		script["sampler"]["pixel"].setValue( IECore.V2f( 0.5, 0.5 ) )
+		script["sampler"]["pixel"].setValue( imath.V2f( 0.5, 0.5 ) )
 		script["sampler"]["image"].setInput( script["timeWarp"]["out"] )
 
-		self.assertEqual( script["sampler"]["color"].getValue(), IECore.Color4f( 3 ) )
+		self.assertEqual( script["sampler"]["color"].getValue(), imath.Color4f( 3 ) )
 
 		script["e2"] = Gaffer.Expression()
 		script["e2"].setExpression( inspect.cleandoc(
@@ -135,7 +136,7 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 			"""
 		) )
 
-		self.assertEqual( script["sampler"]["color"].getValue(), IECore.Color4f( 5 ) )
+		self.assertEqual( script["sampler"]["color"].getValue(), imath.Color4f( 5 ) )
 
 	def testDisabling( self ) :
 
@@ -146,16 +147,18 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 		script["expression"] = Gaffer.Expression()
 		script["expression"].setExpression( 'parent["constant"]["color"]["r"] = context["frame"]' )
 
-		script["timeWarp"] = GafferImage.ImageTimeWarp()
+		script["timeWarp"] = Gaffer.TimeWarp()
+		script["timeWarp"].setup( GafferImage.ImagePlug() )
+
 		script["timeWarp"]["offset"].setValue( 1 )
 		script["timeWarp"]["in"].setInput( script["constant"]["out"] )
 
 		with script.context() :
 
-			c = script["constant"]["out"].image()
-			cHash = script["constant"]["out"].imageHash()
-			t = script["timeWarp"]["out"].image()
-			tHash = script["timeWarp"]["out"].imageHash()
+			c = GafferImage.ImageAlgo.image( script["constant"]["out"] )
+			cHash = GafferImage.ImageAlgo.imageHash( script["constant"]["out"] )
+			t = GafferImage.ImageAlgo.image( script["timeWarp"]["out"] )
+			tHash = GafferImage.ImageAlgo.imageHash( script["timeWarp"]["out"] )
 
 		self.assertNotEqual( c, t )
 		self.assertNotEqual( cHash, tHash )
@@ -164,10 +167,10 @@ class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 
 		with script.context() :
 
-			c = script["constant"]["out"].image()
-			cHash = script["constant"]["out"].imageHash()
-			t = script["timeWarp"]["out"].image()
-			tHash = script["timeWarp"]["out"].imageHash()
+			c = GafferImage.ImageAlgo.image( script["constant"]["out"] )
+			cHash = GafferImage.ImageAlgo.imageHash( script["constant"]["out"] )
+			t = GafferImage.ImageAlgo.image( script["timeWarp"]["out"] )
+			tHash = GafferImage.ImageAlgo.imageHash( script["timeWarp"]["out"] )
 
 		self.assertEqual( c, t )
 		self.assertEqual( cHash, tHash )

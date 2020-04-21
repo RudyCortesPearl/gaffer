@@ -38,9 +38,10 @@
 #ifndef GAFFERSCENE_SCENEPATH_H
 #define GAFFERSCENE_SCENEPATH_H
 
-#include "Gaffer/Path.h"
-
+#include "GafferScene/Export.h"
 #include "GafferScene/TypeIds.h"
+
+#include "Gaffer/Path.h"
 
 namespace Gaffer
 {
@@ -56,18 +57,18 @@ namespace GafferScene
 
 IE_CORE_FORWARDDECLARE( ScenePlug )
 
-class ScenePath : public Gaffer::Path
+class GAFFERSCENE_API ScenePath : public Gaffer::Path
 {
 
 	public :
 
-		ScenePath( ScenePlugPtr scene, Gaffer::ContextPtr context, Gaffer::PathFilterPtr filter = NULL );
-		ScenePath( ScenePlugPtr scene, Gaffer::ContextPtr context, const std::string &path, Gaffer::PathFilterPtr filter = NULL );
-		ScenePath( ScenePlugPtr scene, Gaffer::ContextPtr context, const Names &names, const IECore::InternedString &root = "/", Gaffer::PathFilterPtr filter = NULL );
+		ScenePath( ScenePlugPtr scene, Gaffer::ContextPtr context, Gaffer::PathFilterPtr filter = nullptr );
+		ScenePath( ScenePlugPtr scene, Gaffer::ContextPtr context, const std::string &path, Gaffer::PathFilterPtr filter = nullptr );
+		ScenePath( ScenePlugPtr scene, Gaffer::ContextPtr context, const Names &names, const IECore::InternedString &root = "/", Gaffer::PathFilterPtr filter = nullptr );
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ScenePath, ScenePathTypeId, Gaffer::Path );
 
-		virtual ~ScenePath();
+		~ScenePath() override;
 
 		void setScene( ScenePlugPtr scene );
 		ScenePlug *getScene();
@@ -77,16 +78,16 @@ class ScenePath : public Gaffer::Path
 		Gaffer::Context *getContext();
 		const Gaffer::Context *getContext() const;
 
-		virtual bool isValid() const;
-		virtual bool isLeaf() const;
-		virtual Gaffer::PathPtr copy() const;
+		bool isValid() const override;
+		bool isLeaf() const override;
+		Gaffer::PathPtr copy() const override;
 
 		static Gaffer::PathFilterPtr createStandardFilter( const std::vector<std::string> &setNames = std::vector<std::string>(), const std::string &setsLabel = "" );
 
 	protected :
 
-		virtual void doChildren( std::vector<Gaffer::PathPtr> &children ) const;
-		virtual void pathChangedSignalCreated();
+		void doChildren( std::vector<Gaffer::PathPtr> &children ) const override;
+		void pathChangedSignalCreated() override;
 
 	private :
 
@@ -98,6 +99,8 @@ class ScenePath : public Gaffer::Path
 		Gaffer::ContextPtr m_context;
 
 };
+
+IE_CORE_DECLAREPTR( ScenePath )
 
 } // namespace GafferScene
 

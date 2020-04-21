@@ -38,20 +38,26 @@
 #ifndef GAFFER_TYPEDOBJECTPLUG_H
 #define GAFFER_TYPEDOBJECTPLUG_H
 
-#include "IECore/Object.h"
+// Include must come first to avoid symbol visibility problems with Clang.
+// It would appear that if any inline code involving `std::vector` appears
+// before the definitions of VectorTypedData, Clang will hide the symbols
+// for `TypedObjectPlug<*VectorData>`.
 #include "IECore/VectorTypedData.h"
-#include "IECore/ObjectVector.h"
-#include "IECore/CompoundObject.h"
-#include "IECore/CompoundData.h"
 
 #include "Gaffer/ValuePlug.h"
+
+#include "IECore/CompoundData.h"
+#include "IECore/CompoundObject.h"
+#include "IECore/Object.h"
+#include "IECore/ObjectVector.h"
+#include "IECore/PathMatcherData.h"
 
 namespace Gaffer
 {
 
 /// A Plug type which can store values derived from IECore::Object.
 template<typename T>
-class TypedObjectPlug : public ValuePlug
+class IECORE_EXPORT TypedObjectPlug : public ValuePlug
 {
 
 	public :
@@ -60,7 +66,7 @@ class TypedObjectPlug : public ValuePlug
 		typedef typename ValueType::Ptr ValuePtr;
 		typedef typename ValueType::ConstPtr ConstValuePtr;
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( TypedObjectPlug<T>, ValuePlug );
+		GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( TypedObjectPlug<T>, ValuePlug );
 
 		/// A copy of defaultValue is taken - it must not be null.
 		TypedObjectPlug(
@@ -69,11 +75,11 @@ class TypedObjectPlug : public ValuePlug
 			ConstValuePtr defaultValue,
 			unsigned flags = Default
 		);
-		virtual ~TypedObjectPlug();
+		~TypedObjectPlug() override;
 
 		/// Accepts only instances of TypedObjectPlug<T>, or derived classes.
-		virtual bool acceptsInput( const Plug *input ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsInput( const Plug *input ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		const ValueType *defaultValue() const;
 
@@ -108,15 +114,30 @@ class TypedObjectPlug : public ValuePlug
 		/// This pattern is particularly effective because it not only
 		/// avoids unnecessary conversions, but it also avoids churn in
 		/// the ValuePlug cache.
-		ConstValuePtr getValue( const IECore::MurmurHash *precomputedHash = NULL ) const;
+		ConstValuePtr getValue( const IECore::MurmurHash *precomputedHash = nullptr ) const;
 
-		virtual void setFrom( const ValuePlug *other );
-
-	private :
-
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( TypedObjectPlug<T> );
+		void setFrom( const ValuePlug *other ) override;
 
 };
+
+#ifndef Gaffer_EXPORTS
+
+extern template class TypedObjectPlug<IECore::Object>;
+extern template class TypedObjectPlug<IECore::BoolVectorData>;
+extern template class TypedObjectPlug<IECore::IntVectorData>;
+extern template class TypedObjectPlug<IECore::FloatVectorData>;
+extern template class TypedObjectPlug<IECore::StringVectorData>;
+extern template class TypedObjectPlug<IECore::InternedStringVectorData>;
+extern template class TypedObjectPlug<IECore::V2iVectorData>;
+extern template class TypedObjectPlug<IECore::V3fVectorData>;
+extern template class TypedObjectPlug<IECore::Color3fVectorData>;
+extern template class TypedObjectPlug<IECore::M44fVectorData>;
+extern template class TypedObjectPlug<IECore::ObjectVector>;
+extern template class TypedObjectPlug<IECore::CompoundObject>;
+extern template class TypedObjectPlug<IECore::CompoundData>;
+extern template class TypedObjectPlug<IECore::PathMatcherData>;
+
+#endif
 
 typedef TypedObjectPlug<IECore::Object> ObjectPlug;
 typedef TypedObjectPlug<IECore::BoolVectorData> BoolVectorDataPlug;
@@ -131,6 +152,7 @@ typedef TypedObjectPlug<IECore::M44fVectorData> M44fVectorDataPlug;
 typedef TypedObjectPlug<IECore::ObjectVector> ObjectVectorPlug;
 typedef TypedObjectPlug<IECore::CompoundObject> CompoundObjectPlug;
 typedef TypedObjectPlug<IECore::CompoundData> AtomicCompoundDataPlug;
+typedef TypedObjectPlug<IECore::PathMatcherData> PathMatcherDataPlug;
 
 IE_CORE_DECLAREPTR( ObjectPlug );
 IE_CORE_DECLAREPTR( BoolVectorDataPlug );
@@ -145,6 +167,7 @@ IE_CORE_DECLAREPTR( M44fVectorDataPlug );
 IE_CORE_DECLAREPTR( ObjectVectorPlug );
 IE_CORE_DECLAREPTR( CompoundObjectPlug );
 IE_CORE_DECLAREPTR( AtomicCompoundDataPlug );
+IE_CORE_DECLAREPTR( PathMatcherDataPlug );
 
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, ObjectPlug> > ObjectPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, ObjectPlug> > InputObjectPlugIterator;
@@ -249,6 +272,10 @@ typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, CompoundObjectPl
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, AtomicCompoundDataPlug>, PlugPredicate<> > RecursiveAtomicCompoundDataPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, AtomicCompoundDataPlug>, PlugPredicate<> > RecursiveInputAtomicCompoundDataPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, AtomicCompoundDataPlug>, PlugPredicate<> > RecursiveOutputAtomicCompoundDataPlugIterator;
+
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, PathMatcherDataPlug>, PlugPredicate<> > RecursivePathMatcherDataPlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, PathMatcherDataPlug>, PlugPredicate<> > RecursiveInputPathMatcherDataPlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, PathMatcherDataPlug>, PlugPredicate<> > RecursiveOutputPathMatcherDataPlugIterator;
 
 } // namespace Gaffer
 

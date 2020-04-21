@@ -38,6 +38,8 @@
 import gc
 import weakref
 import unittest
+import threading
+import Queue
 
 import IECore
 
@@ -291,6 +293,34 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		self.assertEqual( c3.getName(), "b2" )
 		self.assertEqual( c4.getName(), "b3" )
 
+	def testParallelUniqueNaming( self ):
+		# At one point setName was using a non-threadsafe static formatter which would throw
+		# exceptions when used from multiple threads
+
+		def f( q ) :
+			try:
+				g = Gaffer.GraphComponent()
+				for i in range( 500 ):
+					g.addChild( Gaffer.GraphComponent( "a" ) )
+
+				self.assertEqual( set(g.keys()), set( [ "a" ] + [ "a%i" % i for i in range( 1, 500 ) ] ) )
+			except Exception as e:
+				q.put( e )
+
+		threads = []
+		q = Queue.Queue()
+		for i in range( 0, 500 ) :
+
+			t = threading.Thread( target = f, args = (q,) )
+			t.start()
+			threads.append( t )
+
+		for t in threads :
+			t.join()
+
+		if not q.empty():
+			raise q.get( False )
+
 	def testAncestor( self ) :
 
 		a = Gaffer.ApplicationRoot()
@@ -314,6 +344,18 @@ class GraphComponentTest( GafferTest.TestCase ) :
 
 		self.assert_( s["n1"].commonAncestor( s["n2"], Gaffer.ScriptNode ).isSame( s ) )
 		self.assert_( s["n2"].commonAncestor( s["n1"], Gaffer.ScriptNode ).isSame( s ) )
+
+	def testCommonAncestorType( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = Gaffer.Node()
+		s["n"]["user"]["p1"] = Gaffer.IntPlug()
+		s["n"]["user"]["p2"] = Gaffer.Color3fPlug()
+
+		self.assertEqual( s["n"]["user"]["p1"].commonAncestor( s["n"]["user"]["p2"]["r"] ), s["n"]["user"] )
+		self.assertEqual( s["n"]["user"]["p1"].commonAncestor( s["n"]["user"]["p2"]["r"], Gaffer.Plug ), s["n"]["user"] )
+		self.assertEqual( s["n"]["user"]["p1"].commonAncestor( s["n"]["user"]["p2"]["r"], Gaffer.Node ), s["n"] )
 
 	def testRenameThenRemove( self ) :
 
@@ -341,7 +383,8 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		n = Gaffer.GraphComponent()
 
 		for name in ( "0", "0a", "@A", "a.A", ".", "A:", "a|", "a(" ) :
-			self.assertRaises( Exception, n.setName, "0" )
+			self.assertRaises( Exception, n.setName, name )
+			self.assertRaises( Exception, Gaffer.GraphComponent, name )
 
 		for name in ( "hello", "_1", "brdf_0_degree_refl" ) :
 			n.setName( name )
@@ -667,7 +710,6 @@ class GraphComponentTest( GafferTest.TestCase ) :
 				"GafferCortex::ObjectReader",
 				"GafferCortex::ObjectWriter",
 				"GafferCortex::ExecutableOpHolder",
-				"GafferCortex::ProceduralHolder",
 				"GafferCortex::OpHolder",
 				"GafferCortex::ParameterisedHolderNode",
 				"GafferCortex::ParameterisedHolderDependencyNode",
@@ -687,6 +729,7 @@ class GraphComponentTest( GafferTest.TestCase ) :
 				"GafferDispatch::TaskList",
 				"GafferDispatch::TaskSwitch",
 				"GafferDispatch::Wedge",
+				"GafferDispatch::FrameMask",
 			] )
 		)
 		self.assertTypeNamesArePrefixed( GafferTest )
@@ -759,6 +802,224 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		g = Gaffer.GraphComponent()
 		self.assertRaisesRegexp( KeyError, "'a' is not a child of 'GraphComponent'", g.__getitem__, "a" )
 		self.assertRaisesRegexp( KeyError, "'a' is not a child of 'GraphComponent'", g.__delitem__, "a" )
+
+	def testNoneIsNotAString( self ) :
+
+		g = Gaffer.GraphComponent()
+		self.assertRaises( TypeError, g.getChild, None )
+		self.assertRaises( TypeError, g.__getitem__, None )
+		self.assertRaises( TypeError, g.__delitem__, None )
+		self.assertRaises( TypeError, g.descendant, None )
+		self.assertRaises( TypeError, g.__contains__, None )
+		self.assertRaises( TypeError, g.setName, None )
+
+	def testDelItemByIndex( self ) :
+
+		g = Gaffer.GraphComponent()
+		a = Gaffer.GraphComponent( "a" )
+		b = Gaffer.GraphComponent( "b" )
+		g["a"] = a
+		g["b"] = b
+		self.assertEqual( a.parent(), g )
+		self.assertEqual( b.parent(), g )
+
+		del g[0]
+		self.assertEqual( a.parent(), None )
+		self.assertEqual( b.parent(), g )
+
+	def testRemoveChildUndoIndices( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+
+		a = Gaffer.Plug( "a" )
+		b = Gaffer.Plug( "b" )
+		c = Gaffer.Plug( "c" )
+
+		s["n"]["user"].addChild( a )
+		s["n"]["user"].addChild( b )
+		s["n"]["user"].addChild( c )
+
+		def assertPreconditions() :
+
+			self.assertEqual( len( s["n"]["user"] ), 3 )
+			self.assertEqual( s["n"]["user"][0], a )
+			self.assertEqual( s["n"]["user"][1], b )
+			self.assertEqual( s["n"]["user"][2], c )
+
+		assertPreconditions()
+
+		with Gaffer.UndoScope( s ) :
+
+			del s["n"]["user"]["b"]
+
+		def assertPostConditions() :
+
+			self.assertEqual( len( s["n"]["user"] ), 2 )
+			self.assertEqual( s["n"]["user"][0], a )
+			self.assertEqual( s["n"]["user"][1], c )
+
+		assertPostConditions()
+
+		s.undo()
+		assertPreconditions()
+
+		s.redo()
+		assertPostConditions()
+
+		s.undo()
+		assertPreconditions()
+
+	def testMoveChildUndoIndices( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n1"] = Gaffer.Node()
+		s["n2"] = Gaffer.Node()
+
+		a = Gaffer.Plug( "a" )
+		b = Gaffer.Plug( "b" )
+		c = Gaffer.Plug( "c" )
+
+		s["n1"]["user"].addChild( a )
+		s["n1"]["user"].addChild( b )
+		s["n1"]["user"].addChild( c )
+
+		def assertPreconditions() :
+
+			self.assertEqual( len( s["n1"]["user"] ), 3 )
+			self.assertEqual( s["n1"]["user"][0], a )
+			self.assertEqual( s["n1"]["user"][1], b )
+			self.assertEqual( s["n1"]["user"][2], c )
+			self.assertEqual( len( s["n2"]["user"] ), 0 )
+
+		assertPreconditions()
+
+		with Gaffer.UndoScope( s ) :
+
+			s["n2"]["user"].addChild( s["n1"]["user"]["b"] )
+
+		def assertPostConditions() :
+
+			self.assertEqual( len( s["n1"]["user"] ), 2 )
+			self.assertEqual( s["n1"]["user"][0], a )
+			self.assertEqual( s["n1"]["user"][1], c )
+			self.assertEqual( len( s["n2"]["user"] ), 1 )
+			self.assertEqual( s["n2"]["user"][0], b )
+
+		assertPostConditions()
+
+		s.undo()
+		assertPreconditions()
+
+		s.redo()
+		assertPostConditions()
+
+		s.undo()
+		assertPreconditions()
+
+	def testParentChangedOverride( self ) :
+
+		class Child( Gaffer.GraphComponent ) :
+
+			def __init__( self, name = "Child" ) :
+
+				Gaffer.GraphComponent.__init__( self, name )
+
+				self.parentChanges = []
+
+			def _parentChanged( self, oldParent ) :
+
+				self.parentChanges.append( ( oldParent, self.parent() ) )
+
+		p1 = Gaffer.GraphComponent()
+		p2 = Gaffer.GraphComponent()
+
+		c = Child()
+		self.assertEqual( len( c.parentChanges ), 0 )
+
+		p1.addChild( c )
+		self.assertEqual( len( c.parentChanges ), 1 )
+		self.assertEqual( c.parentChanges[-1], ( None, p1 ) )
+
+		p1.removeChild( c )
+		self.assertEqual( len( c.parentChanges ), 2 )
+		self.assertEqual( c.parentChanges[-1], ( p1, None ) )
+
+		p1.addChild( c )
+		self.assertEqual( len( c.parentChanges ), 3 )
+		self.assertEqual( c.parentChanges[-1], ( None, p1 ) )
+
+		p2.addChild( c )
+		self.assertEqual( len( c.parentChanges ), 4 )
+		self.assertEqual( c.parentChanges[-1], ( p1, p2 ) )
+
+		# Cause a parent change by destroying the parent.
+		# We need to remove all references to the parent to do
+		# this, including those stored in the parentChanges list.
+		del p2
+		del c.parentChanges[:]
+
+		self.assertEqual( len( c.parentChanges ), 1 )
+		self.assertEqual( c.parentChanges[-1], ( None, None ) )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testMakeNamesUnique( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		for i in range( 0, 1000 ) :
+			n = GafferTest.AddNode()
+			s.addChild( n )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testGetChild( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		for i in range( 0, 1000 ) :
+			# explicitly setting the name to something unique
+			# avoids the overhead incurred by the example
+			# in testMakeNamesUnique
+			n = GafferTest.AddNode( "AddNode" + str( i ) )
+			s.addChild( n )
+
+		for i in range( 0, 1000 ) :
+			n = "AddNode" + str( i )
+			c = s[n]
+			self.assertEqual( c.getName(), n )
+
+	def testNoneIsNotAGraphComponent( self ) :
+
+		g = Gaffer.GraphComponent()
+
+		with self.assertRaisesRegexp( Exception, r"did not match C\+\+ signature" ) :
+			g.addChild( None )
+
+		with self.assertRaisesRegexp( Exception, r"did not match C\+\+ signature" ) :
+			g.setChild( "x", None )
+
+		with self.assertRaisesRegexp( Exception, r"did not match C\+\+ signature" ) :
+			g.removeChild( None )
+
+	def testRanges( self ) :
+
+		g = Gaffer.GraphComponent()
+		g["c1"] = Gaffer.GraphComponent()
+		g["c2"] = Gaffer.GraphComponent()
+		g["c2"]["gc1"] = Gaffer.GraphComponent()
+		g["c3"] = Gaffer.GraphComponent()
+		g["c3"]["gc2"] = Gaffer.GraphComponent()
+		g["c3"]["gc3"] = Gaffer.GraphComponent()
+
+		self.assertEqual(
+			list( Gaffer.GraphComponent.Range( g ) ),
+			[ g["c1"], g["c2"], g["c3"] ],
+		)
+
+		self.assertEqual(
+			list( Gaffer.GraphComponent.RecursiveRange( g ) ),
+			[ g["c1"], g["c2"], g["c2"]["gc1"], g["c3"], g["c3"]["gc2"], g["c3"]["gc3"] ],
+		)
 
 if __name__ == "__main__":
 	unittest.main()

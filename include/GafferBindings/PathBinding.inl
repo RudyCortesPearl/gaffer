@@ -37,9 +37,9 @@
 #ifndef GAFFERBINDINGS_PATHBINDING_INL
 #define GAFFERBINDINGS_PATHBINDING_INL
 
-#include "Gaffer/Path.h"
-
 #include "GafferBindings/DataBinding.h"
+
+#include "Gaffer/Path.h"
 
 namespace GafferBindings
 {
@@ -72,7 +72,7 @@ boost::python::list propertyNames( const T &p )
 	return result;
 }
 
-boost::python::object propertyToPython( IECore::ConstRunTimeTypedPtr a );
+GAFFERBINDINGS_API boost::python::object propertyToPython( IECore::ConstRunTimeTypedPtr a );
 
 template<typename T>
 boost::python::object property( const T &p, const IECore::InternedString &name )
@@ -143,7 +143,7 @@ boost::python::object info( boost::python::object o )
 		result[it->c_str()] = propertyToPython( a );
 	}
 
-	return result;
+	return std::move( result );
 }
 
 template<typename T>

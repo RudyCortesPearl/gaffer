@@ -37,8 +37,10 @@
 
 import unittest
 import threading
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
@@ -53,7 +55,7 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		# or attributes. if we did, then there wouldn't be a sensible way of merging
 		# them (particularly transforms) when a Group node has multiple inputs.
 		# it's also pretty confusing to have stuff go on at the root level,
-		# particularly as the root isn't well represented in the SceneHierarchy editor,
+		# particularly as the root isn't well represented in the HierarchyView editor,
 		# and applications like maya don't have stuff happening at the root
 		# level either. we achieve this by having the SceneNode simply not
 		# call the various processing functions for the root.
@@ -61,7 +63,7 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		node = GafferSceneTest.CompoundObjectSource()
 		node["in"].setValue(
 			IECore.CompoundObject( {
-				"object" : IECore.SpherePrimitive()
+				"object" : IECoreScene.SpherePrimitive()
 			} )
 		)
 
@@ -70,11 +72,11 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		node = GafferSceneTest.CompoundObjectSource()
 		node["in"].setValue(
 			IECore.CompoundObject( {
-				"transform" : IECore.M44fData( IECore.M44f.createTranslated( IECore.V3f( 1 ) ) )
+				"transform" : IECore.M44fData( imath.M44f().translate( imath.V3f( 1 ) ) )
 			} )
 		)
 
-		self.assertEqual( node["out"].transform( "/" ), IECore.M44f() )
+		self.assertEqual( node["out"].transform( "/" ), imath.M44f() )
 
 		node = GafferSceneTest.CompoundObjectSource()
 		node["in"].setValue(
@@ -87,17 +89,31 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 
 	def testTypeNamePrefixes( self ) :
 
-		self.assertTypeNamesArePrefixed( GafferScene, namesToIgnore = set( ( "IECore::PathMatcherData", ) ) )
+		self.assertTypeNamesArePrefixed(
+			GafferScene,
+			namesToIgnore = {
+				"PathMatcherData", "Gaffer::PathMatcherDataPlug", "Gaffer::Switch",
+				"Gaffer::ContextVariables", "Gaffer::DeleteContextVariables", "Gaffer::TimeWarp",
+				"Gaffer::Loop", "GafferScene::ShaderTweaks"
+			}
+		)
 
 	def testDefaultNames( self ) :
 
-		self.assertDefaultNamesAreCorrect( GafferScene )
+		self.assertDefaultNamesAreCorrect(
+			GafferScene,
+			namesToIgnore = {
+				"SceneSwitch", "ShaderSwitch", "FilterSwitch",
+				"DeleteSceneContextVariables", "SceneContextVariables", "SceneTimeWarp",
+				"SceneLoop", "LightTweaks"
+			}
+		)
 
 	def testRootAttributes( self ) :
 
 		# create node inheriting from SceneNode:
 		node = GafferScene.CustomAttributes()
-		node["attributes"].addOptionalMember( "user:foobar", True, enabled = True )
+		node["attributes"].addChild( Gaffer.NameValuePlug( "user:foobar", True, True ) )
 
 		# scene nodes always have passthrough behaviour for attributes at the root, so this particular one should return an empty compound object:
 		context = Gaffer.Context()
@@ -118,7 +134,7 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		context = Gaffer.Context()
 		context.set("scene:path", IECore.InternedStringVectorData(["sphere"]) )
 		with context:
-			self.assertEqual( sphere["out"]["object"].getValue().typeId(), IECore.MeshPrimitive.staticTypeId() )
+			self.assertEqual( sphere["out"]["object"].getValue().typeId(), IECoreScene.MeshPrimitive.staticTypeId() )
 
 		# right, now subtree it. If the cache is behaving itself, then there shouldn't be an object at the root of the
 		# resulting scene, cuz that aint allowed.
@@ -140,7 +156,7 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		context = Gaffer.Context()
 		context.set("scene:path", IECore.InternedStringVectorData(["sphere"]) )
 		with context:
-			self.assertEqual( sphere["out"]["transform"].getValue(), IECore.M44f.createTranslated( IECore.V3f( 1,2,3 ) ) )
+			self.assertEqual( sphere["out"]["transform"].getValue(), imath.M44f().translate( imath.V3f( 1,2,3 ) ) )
 
 		# right, now subtree it. If the cache is behaving itself, then the transform at the root of the
 		# resulting scene should be set to identity.
@@ -149,15 +165,15 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		subTree["root"].setValue("sphere")
 		context.set("scene:path", IECore.InternedStringVectorData([]) )
 		with context:
-			self.assertEqual( subTree["out"]["transform"].getValue(), IECore.M44f() )
+			self.assertEqual( subTree["out"]["transform"].getValue(), imath.M44f() )
 
 	def testCacheThreadSafety( self ) :
 
 		p1 = GafferScene.Plane()
-		p1["divisions"].setValue( IECore.V2i( 50 ) )
+		p1["divisions"].setValue( imath.V2i( 50 ) )
 
 		p2 = GafferScene.Plane()
-		p2["divisions"].setValue( IECore.V2i( 51 ) )
+		p2["divisions"].setValue( imath.V2i( 51 ) )
 
 		g = GafferScene.Group()
 		g["in"][0].setInput( p1["out"] )
@@ -171,7 +187,7 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 
 			try :
 				GafferSceneTest.traverseScene( g["out"] )
-			except Exception, e :
+			except Exception as e :
 				exceptions.append( e )
 
 		threads = []
@@ -188,7 +204,7 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 
 	def testNodesConstructWithDefaultValues( self ) :
 
-		self.assertNodesConstructWithDefaultValues( GafferScene )
+		self.assertNodesConstructWithDefaultValues( GafferScene, nodesToIgnore = { GafferScene.LightTweaks } )
 
 	def testDerivingInPython( self ) :
 
@@ -217,7 +233,9 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 				self["__cube"] = GafferScene.Cube()
 				self["__cube"]["enabled"].setInput( self["enabled"] )
 
-				self["__primitiveSwitch"] = GafferScene.SceneSwitch()
+				self["__primitiveSwitch"] = Gaffer.Switch()
+				self["__primitiveSwitch"].setup( GafferScene.ScenePlug() )
+
 				self["__primitiveSwitch"]["index"].setInput( self["type"] )
 				self["__primitiveSwitch"]["in"][0].setInput( self["__sphere"]["out"] )
 				self["__primitiveSwitch"]["in"][1].setInput( self["__cube"]["out"] )
@@ -273,6 +291,50 @@ class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 		)
 
 		self.assertEqual( Gaffer.NodeAlgo.presets( n["type"] ), [ "Sphere", "Cube" ] )
+
+	def testExists( self ) :
+
+		cube = GafferScene.Cube()
+
+		for path, exists in [
+			( "/", True ),
+			( "/cube", True ),
+			( "/cube2", False ),
+			( "/cube/child", False ),
+			( "/notHere/notHereEither", False ),
+		] :
+			self.assertEqual( cube["out"].exists( path ), exists )
+
+			with Gaffer.Context() as c :
+				c["scene:path"] = GafferScene.ScenePlug.stringToPath( path )
+				self.assertEqual( cube["out"].exists(), exists )
+
+	def testExistsInternals( self ) :
+
+		cube = GafferScene.Cube()
+		with Gaffer.Context() as c :
+			c["scene:path"] = IECore.InternedStringVectorData()
+			# When there's only one child, the sorted child names refer
+			# to exactly the same object as the regular child names.
+			self.assertTrue(
+				cube["out"]["__sortedChildNames"].getValue( _copy = False ).isSame(
+					cube["out"]["childNames"].getValue( _copy = False )
+				)
+			)
+			# Likewise when there's none
+			c["scene:path"] = IECore.InternedStringVectorData( [ "cube" ] )
+			self.assertTrue(
+				cube["out"]["__sortedChildNames"].getValue( _copy = False ).isSame(
+					cube["out"]["childNames"].getValue( _copy = False )
+				)
+			)
+
+		cs = GafferTest.CapturingSlot( cube.plugDirtiedSignal() )
+		cube["name"].setValue( "box" )
+		self.assertGreaterEqual(
+			{ x[0] for x in cs },
+			{ cube["out"]["childNames"], cube["out"]["__sortedChildNames"], cube["out"]["__exists"] }
+		)
 
 	def setUp( self ) :
 

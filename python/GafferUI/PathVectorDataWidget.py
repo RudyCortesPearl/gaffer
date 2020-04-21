@@ -34,7 +34,7 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
+import imath
 
 import IECore
 
@@ -58,7 +58,7 @@ class PathVectorDataWidget( GafferUI.VectorDataWidget ) :
 		self.__path = path if path is not None else Gaffer.FileSystemPath( "/" )
 		self.__pathChooserDialogueKeywords = pathChooserDialogueKeywords
 
-		self.__editConnection = self.editSignal().connect( Gaffer.WeakMethod( self.__edit ) )
+		self.editSignal().connect( Gaffer.WeakMethod( self.__edit ), scoped = False )
 
 	def path( self ) :
 
@@ -111,15 +111,15 @@ class _Editor( GafferUI.ListContainer ) :
 		with self :
 			GafferUI.PathWidget( path )
 			button = GafferUI.Button( image = "pathChooser.png", hasFrame = False )
-			self.__buttonClickedConnection = button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
+			button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
 
-			GafferUI.Spacer( IECore.V2i( 2 ) )
+			GafferUI.Spacer( imath.V2i( 2 ) )
 
 		# needed to give the focus to our main editable field when editing starts.
 		self._qtWidget().setFocusProxy( self.__pathWidget()._qtWidget() )
 
 		self.__dialogue = None
-		self.__focusChangedConnection = GafferUI.Widget.focusChangedSignal().connect( Gaffer.WeakMethod( self.__focusChanged ) )
+		GafferUI.Widget.focusChangedSignal().connect( Gaffer.WeakMethod( self.__focusChanged ), scoped = False )
 
 	def setValue( self, value ) :
 

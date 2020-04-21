@@ -45,21 +45,24 @@
 namespace Gaffer
 {
 
-/// A generic mixin class for creating loops in computation - it
-/// can be used for any ValuePlug type and even for compound plug
-/// types.  It is expected that either the BaseType provides plugs named
-/// "in" and "out" already, or that it doesn't and they will be
-/// added dynamically following construction of the node.
-template<typename BaseType>
-class Loop : public BaseType
+class IECORE_EXPORT Loop : public ComputeNode
 {
 
 	public :
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( Loop<BaseType>, BaseType );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Loop, LoopTypeId, ComputeNode );
 
 		Loop( const std::string &name=GraphComponent::defaultName<Loop>() );
-		virtual ~Loop();
+		~Loop() override;
+
+		/// \undoable
+		void setup( const ValuePlug *plug );
+
+		ValuePlug *inPlug();
+		const ValuePlug *inPlug() const;
+
+		ValuePlug *outPlug();
+		const ValuePlug *outPlug() const;
 
 		ValuePlug *nextPlug();
 		const ValuePlug *nextPlug() const;
@@ -73,18 +76,18 @@ class Loop : public BaseType
 		StringPlug *indexVariablePlug();
 		const StringPlug *indexVariablePlug() const;
 
-		virtual Gaffer::BoolPlug *enabledPlug();
-		virtual const Gaffer::BoolPlug *enabledPlug() const;
+		Gaffer::BoolPlug *enabledPlug() override;
+		const Gaffer::BoolPlug *enabledPlug() const override;
 
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override;
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override;
 
-		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
+		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( ValuePlug *output, const Context *context ) const;
+		void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const override;
+		void compute( ValuePlug *output, const Context *context ) const override;
 
 	private :
 
@@ -95,43 +98,14 @@ class Loop : public BaseType
 		void childAdded();
 		bool setupPlugs();
 
-		ValuePlug *inPlugInternal();
-		const ValuePlug *inPlugInternal() const;
-
-		ValuePlug *outPlugInternal();
-		const ValuePlug *outPlugInternal() const;
-
 		void addAffectedPlug( const ValuePlug *output, DependencyNode::AffectedPlugsContainer &outputs ) const;
 		const ValuePlug *ancestorPlug( const ValuePlug *plug, std::vector<IECore::InternedString> &relativeName ) const;
 		const ValuePlug *descendantPlug( const ValuePlug *plug, const std::vector<IECore::InternedString> &relativeName ) const;
 		const ValuePlug *sourcePlug( const ValuePlug *output, const Context *context, int &sourceLoopIndex, IECore::InternedString &indexVariable ) const;
 
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( Loop<BaseType> );
-
 };
 
-namespace Detail
-{
-
-struct IdentityScope;
-
-} // namespace Detail
-
-/// May be specialised to control the behaviour of
-/// Loop<BaseType>.
-template<typename BaseType>
-struct LoopTraits
-{
-
-	/// A class which will be instantiated as
-	/// `IterationsScope iterationsScope( Context::current() )`
-	/// to modify the context when evaluating the number of loop iterations.
-	typedef Detail::IdentityScope IterationsScope;
-
-};
-
-
-typedef Loop<ComputeNode> LoopComputeNode;
+IE_CORE_DECLAREPTR( Loop )
 
 } // namespace Gaffer
 

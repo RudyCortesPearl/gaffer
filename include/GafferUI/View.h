@@ -38,17 +38,19 @@
 #ifndef GAFFERUI_VIEW_H
 #define GAFFERUI_VIEW_H
 
-#include "boost/regex.hpp"
+#include "GafferUI/ViewportGadget.h"
 
 #include "Gaffer/Node.h"
 
-#include "GafferUI/ViewportGadget.h"
-#include "GafferUIBindings/ViewBinding.h" // to enable friend declaration for bindView().
+#include "boost/regex.hpp"
+
+#include <functional>
 
 namespace Gaffer
 {
 
 IE_CORE_FORWARDDECLARE( Context )
+IE_CORE_FORWARDDECLARE( EditScope )
 
 } // namespace Gaffer
 
@@ -57,25 +59,48 @@ namespace GafferUI
 
 IE_CORE_FORWARDDECLARE( View )
 
+} // namespace GafferUI
+
+namespace GafferUIModule
+{
+
+// Forward declarations for friendship
+void bindView();
+Gaffer::NodePtr getPreprocessor( GafferUI::View &v );
+
+}
+
+namespace GafferUI
+{
+
 /// The View classes provide the content for the Viewer, which is implemented in the
 /// GafferUI python module. The View presents whatever is connected into inPlug(),
 /// and may provide further settings via additional plugs.
-class View : public Gaffer::Node
+class GAFFERUI_API View : public Gaffer::Node
 {
 
 	public :
 
-		virtual ~View();
+		~View() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::View, ViewTypeId, Gaffer::Node );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::View, ViewTypeId, Gaffer::Node );
 
 		/// The contents for the view are provided by the input to this plug.
 		/// The view can be switched by connecting a new input - this is how
 		/// the Viewer controls what will be displayed by the view.
-		template<typename T>
+		template<typename T=Gaffer::Plug>
 		T *inPlug();
-		template<typename T>
+		template<typename T=Gaffer::Plug>
 		const T *inPlug() const;
+
+		/// The current EditScope for the view is specified by connecting
+		/// an `EditScope::outPlug()` into this plug.
+		Gaffer::Plug *editScopePlug();
+		const Gaffer::Plug *editScopePlug() const;
+		/// The `editScope()` method is a convenience that returns the connected
+		/// EditScope node, or null if nothing is connected.
+		Gaffer::EditScope *editScope();
+		const Gaffer::EditScope *editScope() const;
 
 		/// The Context in which the View should operate.
 		Gaffer::Context *getContext();
@@ -96,7 +121,7 @@ class View : public Gaffer::Node
 		//@{
 		/// Creates a View for the specified plug.
 		static ViewPtr create( Gaffer::PlugPtr input );
-		typedef boost::function<ViewPtr ( Gaffer::PlugPtr )> ViewCreator;
+		typedef std::function<ViewPtr ( Gaffer::PlugPtr )> ViewCreator;
 		/// Registers a function which will return a View instance for a
 		/// plug of a specific type.
 		static void registerView( IECore::TypeId plugType, ViewCreator creator );
@@ -127,14 +152,14 @@ class View : public Gaffer::Node
 		void setPreprocessor( Gaffer::NodePtr preprocessor );
 		/// Returns the node used for preprocessing, or 0 if no such
 		/// node has been specified (or if it is not of type T).
-		template<typename T>
+		template<typename T=Gaffer::Node>
 		T *getPreprocessor();
-		template<typename T>
+		template<typename T=Gaffer::Node>
 		const T *getPreprocessor() const;
 		/// Returns the "out" plug of the preprocessor, or inPlug() if
 		/// no preprocessor has been specified. This is the plug which
 		/// should be used when computing the contents to display.
-		template<typename T>
+		template<typename T=Gaffer::Plug>
 		T *preprocessedInPlug();
 
 		/// Called when the context changes. Derived classes should call the
@@ -144,10 +169,6 @@ class View : public Gaffer::Node
 		/// classes may block this temporarily if they want to prevent the triggering -
 		/// this can be useful when modifying the context.
 		boost::signals::connection &contextChangedConnection();
-
-		/// May be overridden by derived classes to control the region that is framed
-		/// when "F" is pressed.
-		virtual Imath::Box3f framingBound() const;
 
 		template<class T>
 		struct ViewDescription
@@ -164,8 +185,6 @@ class View : public Gaffer::Node
 		UnarySignal m_contextChangedSignal;
 		boost::signals::scoped_connection m_contextChangedConnection;
 
-		bool keyPress( GadgetPtr gadget, const KeyEvent &keyEvent );
-
 		typedef std::map<IECore::TypeId, ViewCreator> CreatorMap;
 		static CreatorMap &creators();
 
@@ -176,8 +195,8 @@ class View : public Gaffer::Node
 
 		static size_t g_firstPlugIndex;
 
-		friend void GafferUIBindings::bindView();
-		friend Gaffer::NodePtr GafferUIBindings::getPreprocessor( View & );
+		friend void GafferUIModule::bindView();
+		friend Gaffer::NodePtr GafferUIModule::getPreprocessor( View & );
 
 };
 

@@ -45,6 +45,14 @@ from InteractiveArnoldRenderTest import InteractiveArnoldRenderTest
 from ArnoldDisplacementTest import ArnoldDisplacementTest
 from LightToCameraTest import LightToCameraTest
 from IECoreArnoldPreviewTest import *
+from ArnoldAOVShaderTest import ArnoldAOVShaderTest
+from ArnoldAtmosphereTest import ArnoldAtmosphereTest
+from ArnoldBackgroundTest import ArnoldBackgroundTest
+from ArnoldTextureBakeTest import ArnoldTextureBakeTest
+from ModuleTest import ModuleTest
+from ArnoldShaderBallTest import ArnoldShaderBallTest
+from ArnoldCameraShadersTest import ArnoldCameraShadersTest
+from ArnoldLightFilterTest import ArnoldLightFilterTest
 
 if __name__ == "__main__":
 	import unittest

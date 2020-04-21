@@ -37,11 +37,11 @@
 #ifndef GAFFERIMAGE_WARP_H
 #define GAFFERIMAGE_WARP_H
 
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/TypedObjectPlug.h"
-#include "Gaffer/StringPlug.h"
+#include "GafferImage/FlatImageProcessor.h"
 
-#include "GafferImage/ImageProcessor.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace GafferImage
 {
@@ -57,14 +57,14 @@ namespace GafferImage
 ///   pixel positions from output pixel positions.
 /// - Implement hashEngine() and computeEngine() to create
 ///   and return the Engine subclass.
-class Warp : public ImageProcessor
+class GAFFERIMAGE_API Warp : public FlatImageProcessor
 {
 	public :
 
 		Warp( const std::string &name=defaultName<Warp>() );
-		virtual ~Warp();
+		~Warp() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Warp, WarpTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Warp, WarpTypeId, FlatImageProcessor );
 
 		Gaffer::IntPlug *boundingModePlug();
 		const Gaffer::IntPlug *boundingModePlug() const;
@@ -75,15 +75,15 @@ class Warp : public ImageProcessor
 		Gaffer::BoolPlug *useDerivativesPlug();
 		const Gaffer::BoolPlug *useDerivativesPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 		/// Abstract base class for implementing the warp function.
 		struct Engine

@@ -38,93 +38,79 @@
 #ifndef GAFFERIMAGE_DISPLAY_H
 #define GAFFERIMAGE_DISPLAY_H
 
-#include "IECore/DisplayDriverServer.h"
+#include "GafferImage/ImageNode.h"
 
 #include "Gaffer/NumericPlug.h"
 
-#include "GafferImage/ImageNode.h"
+#include "IECoreImage/DisplayDriver.h"
+
+#include <functional>
 
 namespace GafferImage
 {
 
 IE_CORE_FORWARDDECLARE( GafferDisplayDriver )
 
-/// \todo Remove portPlug() and the internal server
-/// \todo Pass GafferDisplayDriver rather than IECore::DisplayDriver
-/// in setDriver/getDriver/driverCreatedSignal.
-class Display : public ImageNode
+class GAFFERIMAGE_API Display : public ImageNode
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Display, DisplayTypeId, ImageNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Display, DisplayTypeId, ImageNode );
 
 		Display( const std::string &name = defaultName<Display>() );
-		virtual ~Display();
-
-		Gaffer::IntPlug *portPlug();
-		const Gaffer::IntPlug *portPlug() const;
+		~Display() override;
 
 		/// Sets the driver used to provide the
 		/// image to this node.
-		void setDriver( IECore::DisplayDriverPtr driver );
-		/// \todo Default copy to false and remove method above
-		void setDriver( IECore::DisplayDriverPtr driver, bool copy );
-		IECore::DisplayDriver *getDriver();
-		const IECore::DisplayDriver *getDriver() const;
+		void setDriver( IECoreImage::DisplayDriverPtr driver, bool copy = false );
+		IECoreImage::DisplayDriver *getDriver();
+		const IECoreImage::DisplayDriver *getDriver() const;
 
 		/// Emitted when a new driver has been created. This can
 		/// then be passed to `Display::setDriver()` to populate
 		/// a Display with an incoming image.
-		typedef boost::signal<void ( IECore::DisplayDriver *driver, const IECore::CompoundData *parameters )> DriverCreatedSignal;
+		typedef boost::signal<void ( IECoreImage::DisplayDriver *driver, const IECore::CompoundData *parameters )> DriverCreatedSignal;
 		static DriverCreatedSignal &driverCreatedSignal();
 
-		/// Emitted when a new bucket is received.
-		static UnaryPlugSignal &dataReceivedSignal();
 		/// Emitted when a complete image has been received.
 		static UnaryPlugSignal &imageReceivedSignal();
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
-
-		/// Used to trigger UI updates when image data is received
-		/// via a driver on a background thread. Exposed publicly
-		/// for the use of the Catalogue node.
-		typedef boost::function<void ()> UIThreadFunction;
-		static void executeOnUIThread( UIThreadFunction function );
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		virtual void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		// Don't need to re-implement hashMetadata() because we always return the same value.
-		virtual IECore::ConstCompoundDataPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundDataPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		// Signal used to request the execution of a function on the UI thread.
-		// We service these requests in DisplayUI.py.
-		typedef boost::signal<void ( UIThreadFunction )> ExecuteOnUIThreadSignal;
-		static ExecuteOnUIThreadSignal &executeOnUIThreadSignal();
+		void hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		bool computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const override;
+
+		void hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstIntVectorDataPtr computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 	private :
 
-		IECore::DisplayDriverServerPtr m_server;
 		GafferDisplayDriverPtr m_driver;
 
-		Gaffer::IntPlug *updateCountPlug();
-		const Gaffer::IntPlug *updateCountPlug() const;
+		Gaffer::IntPlug *driverCountPlug();
+		const Gaffer::IntPlug *driverCountPlug() const;
 
-		void plugSet( Gaffer::Plug *plug );
-		void setupServer();
-		void driverCreated( IECore::DisplayDriver *driver );
+		Gaffer::IntPlug *channelDataCountPlug();
+		const Gaffer::IntPlug *channelDataCountPlug() const;
+
 		void setupDriver( GafferDisplayDriverPtr driver );
 		void dataReceived();
 		void imageReceived();

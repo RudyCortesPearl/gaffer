@@ -34,14 +34,38 @@
 #
 ##########################################################################
 
+import functools
+
 import Gaffer
 import GafferArnold
+
+# Defer parameter metadata lookups to the internal shader node
+# aside from nodule:type, which we handle manually to prevent
+# some connectable plugs appearing.
+
+## \todo Refactor the GafferScene::Light base class so this can be
+# registered there, and work for all subclasses. The main issue is that
+# there is no simple generic way of querying the required "ai:light:"
+# prefix from the subclass.
+def __parameterUserDefault( plug ) :
+
+	light = plug.node()
+	return Gaffer.Metadata.value(
+		"ai:light:" + light["__shader"]["name"].getValue() + ":" + plug.relativeName( light["parameters"] ),
+		"userDefault"
+	)
 
 Gaffer.Metadata.registerNode(
 
 	GafferArnold.ArnoldLight,
 
 	plugs = {
+
+		"parameters..." : [
+
+			"userDefault", __parameterUserDefault,
+
+		],
 
 		"parameters.*" : [
 
@@ -53,7 +77,14 @@ Gaffer.Metadata.registerNode(
 		"parameters.color" : [
 
 			# The color parameter on quad and skydome lights is connectable.
-			"nodule:type", lambda plug : "GafferUI::StandardNodule" if plug.node()["__shaderName"].getValue() in ( "quad_light", "skydome_light" ) else ""
+			"nodule:type", lambda plug : "GafferUI::StandardNodule" if plug.node()["__shader"]["name"].getValue() in ( "quad_light", "skydome_light" ) else ""
+
+		],
+
+		"parameters.shader" : [
+
+			# The shader parameter, which only exists on skydome lights, is connectable.
+			"nodule:type", "GafferUI::StandardNodule"
 
 		],
 

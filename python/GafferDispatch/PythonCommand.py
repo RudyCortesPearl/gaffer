@@ -37,6 +37,7 @@
 import ast
 
 import IECore
+import imath
 
 import Gaffer
 import GafferDispatch
@@ -50,24 +51,30 @@ class PythonCommand( GafferDispatch.TaskNode ) :
 		# Turn off automatic substitutions for the command, since it's a pain
 		# to have to manually escape things, and the context is available
 		# directly anyway.
-		self["command"] = Gaffer.StringPlug( substitutions = Gaffer.Context.Substitutions.NoSubstitutions )
+		self["command"] = Gaffer.StringPlug( substitutions = IECore.StringAlgo.Substitutions.NoSubstitutions )
 		self["variables"] = Gaffer.CompoundDataPlug()
 		self["sequence"] = Gaffer.BoolPlug()
 
 	def hash( self, context ) :
 
+		command = self["command"].getValue()
+		if command == "" :
+			return IECore.MurmurHash()
+
 		h = GafferDispatch.TaskNode.hash( self, context )
 
-		command = self["command"].getValue()
 		h.append( command )
 
-		parser = _Parser( command )
-		for name in parser.contextReads :
+		for name in _contextReadsCache.get( command ) :
 			value = context.get( name )
 			if isinstance( value, IECore.Object ) :
 				value.hash( h )
-			else :
+			elif value is not None :
 				h.append( value )
+			else :
+				# Variable not in context. Hash a value that is
+				# extremely unlikely to be found in a context.
+				h.append( "__pythonCommandMissingContextVariable__" )
 
 		self["variables"].hash( h )
 
@@ -79,7 +86,8 @@ class PythonCommand( GafferDispatch.TaskNode ) :
 	def execute( self ) :
 
 		executionDict = self.__executionDict()
-		exec( self["command"].getValue(), executionDict, executionDict )
+		with executionDict["context"] :
+			exec( _codeObjectCache.get( self["command"].getValue() ), executionDict, executionDict )
 
 	def executeSequence( self, frames ) :
 
@@ -93,7 +101,8 @@ class PythonCommand( GafferDispatch.TaskNode ) :
 			return
 
 		executionDict = self.__executionDict( frames )
-		exec( self["command"].getValue(), executionDict, executionDict )
+		with executionDict["context"] :
+			exec( self["command"].getValue(), executionDict, executionDict )
 
 	def requiresSequenceExecution( self ) :
 
@@ -101,15 +110,18 @@ class PythonCommand( GafferDispatch.TaskNode ) :
 
 	def __executionDict( self, frames = None ) :
 
+		context = Gaffer.Context( Gaffer.Context.current() )
+
 		result = {
 			"IECore" : IECore,
 			"Gaffer" : Gaffer,
+			"imath" : imath,
 			"self" : self,
-			"context" : Gaffer.Context.current(),
+			"context" : context,
 			"variables" : _VariablesDict(
 				self["variables"],
-				Gaffer.Context.current(),
-				validFrames = set( frames ) if frames is not None else { Gaffer.Context.current().getFrame() }
+				context,
+				validFrames = set( frames ) if frames is not None else { context.getFrame() }
 			)
 		}
 
@@ -140,12 +152,13 @@ class _VariablesDict( dict ) :
 		return dict.__getitem__( self, key )
 
 	def __update( self ) :
+		frame = self.__context.get( "frame", "NO FRAME" )
 
-		if self.__frame == self.__context.getFrame() :
+		if self.__frame == frame :
 			return
 
-		if self.__context.getFrame() not in self.__validFrames :
-			raise ValueError( "Invalid frame" )
+		if frame != "NO FRAME" and frame not in self.__validFrames :
+			raise ValueError( "Cannot access variables at frame outside range specified for PythonCommand" )
 
 		self.clear()
 		for plug in self.__variables.children() :
@@ -157,7 +170,7 @@ class _VariablesDict( dict ) :
 
 			self[name] = value
 
-		self.__frame = self.__context.getFrame()
+		self.__frame = frame
 
 class _Parser( ast.NodeVisitor ) :
 
@@ -201,5 +214,17 @@ class _Parser( ast.NodeVisitor ) :
 						self.contextReads.add( node.args[0].s )
 
 		ast.NodeVisitor.generic_visit( self, node )
+
+def __contextReadsCacheGetter( expression ) :
+
+	return _Parser( expression ).contextReads, 1
+
+_contextReadsCache = IECore.LRUCache( __contextReadsCacheGetter, 10000 )
+
+def __codeObjectCacheGetter( expression ) :
+
+	return compile( expression, "<string>", "exec" ), 1
+
+_codeObjectCache = IECore.LRUCache( __codeObjectCacheGetter, 10000 )
 
 IECore.registerRunTimeTyped( PythonCommand, typeName = "GafferDispatch::PythonCommand" )

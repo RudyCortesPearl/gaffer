@@ -37,9 +37,9 @@
 #ifndef GAFFER_RANDOM_H
 #define GAFFER_RANDOM_H
 
+#include "Gaffer/CompoundNumericPlug.h"
 #include "Gaffer/ComputeNode.h"
 #include "Gaffer/NumericPlug.h"
-#include "Gaffer/CompoundNumericPlug.h"
 
 namespace Gaffer
 {
@@ -47,15 +47,15 @@ namespace Gaffer
 IE_CORE_FORWARDDECLARE( StringPlug )
 
 /// Base class for nodes which generate random values based on Context values.
-class Random : public ComputeNode
+class GAFFER_API Random : public ComputeNode
 {
 
 	public :
 
 		Random( const std::string &name=defaultName<Random>() );
-		virtual ~Random();
+		~Random() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Random, RandomTypeId, ComputeNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Random, RandomTypeId, ComputeNode );
 
 		IntPlug *seedPlug();
 		const IntPlug *seedPlug() const;
@@ -78,14 +78,14 @@ class Random : public ComputeNode
 		Color3fPlug *outColorPlug();
 		const Color3fPlug *outColorPlug() const;
 
-		virtual void affects( const Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 		Imath::Color3f randomColor( unsigned long int seed ) const;
 
 	protected :
 
-		virtual void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( ValuePlug *output, const Context *context ) const;
+		void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const override;
+		void compute( ValuePlug *output, const Context *context ) const override;
 
 	private :
 

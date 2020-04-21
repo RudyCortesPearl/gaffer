@@ -37,15 +37,16 @@
 #ifndef GAFFERIMAGE_FORMATPLUG_H
 #define GAFFERIMAGE_FORMATPLUG_H
 
-#include "Gaffer/BoxPlug.h"
-
 #include "GafferImage/Format.h"
 #include "GafferImage/TypeIds.h"
+
+#include "Gaffer/BoxPlug.h"
 
 namespace Gaffer
 {
 
 IE_CORE_FORWARDDECLARE( ScriptNode )
+IE_CORE_FORWARDDECLARE( Context )
 
 } // namespace Gaffer
 
@@ -55,14 +56,14 @@ namespace GafferImage
 /// Compound plug for representing an image format in a way
 /// easily edited by users, with individual child plugs for
 /// each aspect of the format.
-class FormatPlug : public Gaffer::ValuePlug
+class GAFFERIMAGE_API FormatPlug : public Gaffer::ValuePlug
 {
 
 	public :
 
 		typedef Format ValueType;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::FormatPlug, FormatPlugTypeId, Gaffer::ValuePlug );
+		GAFFER_PLUG_DECLARE_TYPE( GafferImage::FormatPlug, FormatPlugTypeId, Gaffer::ValuePlug );
 
 		FormatPlug(
 			const std::string &name = defaultName<FormatPlug>(),
@@ -71,11 +72,11 @@ class FormatPlug : public Gaffer::ValuePlug
 			unsigned flags = Default
 		);
 
-		virtual ~FormatPlug();
+		~FormatPlug() override;
 
 		/// Accepts no children following construction.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		Gaffer::Box2iPlug *displayWindowPlug();
 		const Gaffer::Box2iPlug *displayWindowPlug() const;
@@ -95,7 +96,7 @@ class FormatPlug : public Gaffer::ValuePlug
 		Format getValue() const;
 
 		/// Reimplemented to account for the substitutions performed in getValue().
-		virtual IECore::MurmurHash hash() const;
+		IECore::MurmurHash hash() const override;
 		/// Ensures the method above doesn't mask
 		/// ValuePlug::hash( h )
 		using ValuePlug::hash;
@@ -120,16 +121,12 @@ class FormatPlug : public Gaffer::ValuePlug
 		/// to specify the default format for a particular script. When the
 		/// value of this plug is changed, the default format within
 		/// ScriptNode::context() will be updated automatically.
-		/// \todo This is currently called automatically in ImageNode::parentChanging(),
-		/// but it would be better to leave it to application config
-		/// files to call it, so each application can decide if it is
-		/// appropriate or not.
 		static FormatPlug *acquireDefaultFormatPlug( Gaffer::ScriptNode *scriptNode );
 		//@}
 
 	private :
 
-		virtual void parentChanging( Gaffer::GraphComponent *newParent );
+		void parentChanging( Gaffer::GraphComponent *newParent ) override;
 		void plugDirtied( Gaffer::Plug *plug );
 
 		Format m_defaultValue;

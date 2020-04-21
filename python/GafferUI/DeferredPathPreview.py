@@ -36,6 +36,8 @@
 
 import weakref
 import threading
+import functools
+import imath
 
 import IECore
 
@@ -57,12 +59,12 @@ class DeferredPathPreview( GafferUI.PathPreviewWidget ) :
 		self.__tabbedContainer.setTabsVisible( False )
 		self.__tabbedContainer.append( GafferUI.BusyWidget( size = 25 ) ) # for when we're loading
 		self.__tabbedContainer.append( displayWidget ) # for when we loaded ok
-		self.__tabbedContainer.append( GafferUI.Spacer( size = IECore.V2i( 10 ) ) ) # for when we didn't load ok
+		self.__tabbedContainer.append( GafferUI.Spacer( size = imath.V2i( 10 ) ) ) # for when we didn't load ok
 
 		# a timer we use to display the busy status if loading takes too long
 		self.__busyTimer = QtCore.QTimer()
 		self.__busyTimer.setSingleShot( True )
-		self.__busyTimer.timeout.connect( IECore.curry( DeferredPathPreview.__displayBusy, weakref.ref( self ) ) )
+		self.__busyTimer.timeout.connect( functools.partial( DeferredPathPreview.__displayBusy, weakref.ref( self ) ) )
 
 	def _updateFromPath( self ) :
 
@@ -71,7 +73,7 @@ class DeferredPathPreview( GafferUI.PathPreviewWidget ) :
 			# thread (or schedule a timer as above), we do so using only a weak reference
 			# to ourselves. this means that we can die appropriately even while loading
 			# something.
-			thread = threading.Thread( target = IECore.curry( DeferredPathPreview.__load, weakref.ref( self ) ) )
+			thread = threading.Thread( target = functools.partial( DeferredPathPreview.__load, weakref.ref( self ) ) )
 			thread.daemon = True
 			thread.start()
 			# start the timer to show the busy widget if loading takes too long
@@ -101,7 +103,7 @@ class DeferredPathPreview( GafferUI.PathPreviewWidget ) :
 			return
 
 		o = self._load()
-		GafferUI.EventLoop.executeOnUIThread( IECore.curry( DeferredPathPreview.__display, selfWeakRef, o ) )
+		GafferUI.EventLoop.executeOnUIThread( functools.partial( DeferredPathPreview.__display, selfWeakRef, o ) )
 
 	@staticmethod
 	def __display( selfWeakRef, o ) :

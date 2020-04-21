@@ -38,8 +38,8 @@
 #ifndef GAFFERUI_COMPOUNDNODULE_H
 #define GAFFERUI_COMPOUNDNODULE_H
 
-#include "GafferUI/Nodule.h"
 #include "GafferUI/LinearContainer.h"
+#include "GafferUI/Nodule.h"
 
 namespace GafferUI
 {
@@ -48,24 +48,23 @@ IE_CORE_FORWARDDECLARE( NoduleLayout );
 
 /// A Nodule subclass to represent each of the children of a
 /// Plug with their own nodule.
-class CompoundNodule : public Nodule
+class GAFFERUI_API CompoundNodule : public Nodule
 {
 
 	public :
 
-		/// \deprecated All arguments except the plug are ignored -
-		/// use plug metadata instead.
-		CompoundNodule( Gaffer::PlugPtr plug, LinearContainer::Orientation orientation=LinearContainer::X,
-			float spacing = 0.0f, LinearContainer::Direction direction=LinearContainer::InvalidDirection );
-		virtual ~CompoundNodule();
+		CompoundNodule( Gaffer::PlugPtr plug );
+		~CompoundNodule() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::CompoundNodule, CompoundNoduleTypeId, Nodule );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::CompoundNodule, CompoundNoduleTypeId, Nodule );
 
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
+		bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
 
-		/// Returns a Nodule for a child of the plug being represented.
-		Nodule *nodule( const Gaffer::Plug *plug );
-		const Nodule *nodule( const Gaffer::Plug *plug ) const;
+		Nodule *nodule( const Gaffer::Plug *plug ) override;
+		const Nodule *nodule( const Gaffer::Plug *plug ) const override;
+
+		bool canCreateConnection( const Gaffer::Plug *endpoint ) const override;
+		void createConnection( Gaffer::Plug *endpoint ) override;
 
 	private :
 

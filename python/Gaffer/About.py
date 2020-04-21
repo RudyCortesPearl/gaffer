@@ -76,7 +76,7 @@ class About :
 	@staticmethod
 	def copyright() :
 
-		return "Copyright (c) 2011-2016 John Haddon, Copyright (c) 2011-2016 Image Engine Design Inc."
+		return "Copyright (c) 2011-2019 John Haddon, Copyright (c) 2011-2019 Image Engine Design Inc."
 
 	@staticmethod
 	def license() :
@@ -86,7 +86,7 @@ class About :
 	@staticmethod
 	def url() :
 
-		return "http://imageengine.github.io/gaffer/"
+		return "http://www.gafferhq.org"
 
 	@staticmethod
 	def dependenciesPreamble() :
@@ -104,57 +104,57 @@ class About :
 			{
 				"name" : "boost",
 				"url" : "http://www.boost.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/boost",
+				"license" : "$GAFFER_ROOT/doc/licenses/Boost",
 			},
 
 			{
 				"name" : "cortex",
 				"url" : "https://github.com/ImageEngine/cortex/",
-				"license" : "$GAFFER_ROOT/doc/licenses/cortex",
+				"license" : "$GAFFER_ROOT/doc/licenses/Cortex",
 			},
 
 			{
 				"name" : "freetype",
 				"url" : "http://www.freetype.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/freetype",
+				"license" : "$GAFFER_ROOT/doc/licenses/FreeType",
 				"credit" : "Portions of this software are copyright (c) 2009 The FreeType Project (www.freetype.org). All rights reserved."
 			},
 
 			{
 				"name" : "glew",
 				"url" : "http://glew.sourceforge.net/",
-				"license" : "$GAFFER_ROOT/doc/licenses/glew",
+				"license" : "$GAFFER_ROOT/doc/licenses/GLEW",
 			},
 
 			{
 				"name" : "ilmbase",
 				"url" : "http://www.openexr.com/",
-				"license" : "$GAFFER_ROOT/doc/licenses/ilmbase",
+				"license" : "$GAFFER_ROOT/doc/licenses/IlmBase",
 			},
 
 			{
-				"name" : "libjpeg",
-				"url" : "http://www.ijg.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libjpeg",
+				"name" : "libjpeg-turbo",
+				"url" : "https://libjpeg-turbo.org/",
+				"license" : "$GAFFER_ROOT/doc/licenses/LibJPEG-Turbo",
 				"credit" : "This software is based in part on the work of the Independent JPEG Group.",
 			},
 
 			{
 				"name" : "libpng",
 				"url" : "http://www.libpng.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libpng",
+				"license" : "$GAFFER_ROOT/doc/licenses/LibPNG",
 			},
 
 			{
 				"name" : "openexr",
 				"url" : "http://www.openexr.com/",
-				"license" : "$GAFFER_ROOT/doc/licenses/openexr",
+				"license" : "$GAFFER_ROOT/doc/licenses/OpenEXR",
 			},
 
 			{
 				"name" : "python",
 				"url" : "http://python.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/python",
+				"license" : "$GAFFER_ROOT/doc/licenses/Python",
 			},
 
 			{
@@ -165,55 +165,61 @@ class About :
 			{
 				"name" : "libtiff",
 				"url" : "http://www.libtiff.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libtiff",
+				"license" : "$GAFFER_ROOT/doc/licenses/LibTIFF",
 			},
 
 			{
 				"name" : "tbb",
 				"url" : "http://threadingbuildingblocks.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/tbb",
+				"license" : "$GAFFER_ROOT/doc/licenses/TBB",
 			},
 
 			{
 				"name" : "OpenColorIO",
 				"url" : "http://opencolorio.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/openColorIO",
+				"license" : "$GAFFER_ROOT/doc/licenses/OpenColorIO",
 			},
 
 			{
 				"name" : "OpenImageIO",
 				"url" : "http://www.openimageio.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/openImageIO",
+				"license" : "$GAFFER_ROOT/doc/licenses/OpenImageIO",
 			},
 
 			{
 				"name" : "HDF5",
 				"url" : "http://www.hdfgroup.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/hdf5",
+				"license" : "$GAFFER_ROOT/doc/licenses/HDF5",
 			},
 
 			{
 				"name" : "Alembic",
 				"url" : "http://www.alembic.io/",
-				"license" : "$GAFFER_ROOT/doc/licenses/alembic",
+				"license" : "$GAFFER_ROOT/doc/licenses/Alembic",
 			},
 
 			{
 				"name" : "OpenShadingLanguage",
 				"url" : "https://github.com/imageworks/OpenShadingLanguage/",
-				"license" : "$GAFFER_ROOT/doc/licenses/osl",
+				"license" : "$GAFFER_ROOT/doc/licenses/OpenShadingLanguage",
 			},
 
 			{
 				"name" : "OpenVDB",
 				"url" : "http://www.openvdb.org//",
-				"license" : "$GAFFER_ROOT/doc/licenses/openvdb",
+				"license" : "$GAFFER_ROOT/doc/licenses/OpenVDB",
+			},
+
+			{
+				"name" : "USD",
+				"url" : "http://http://graphics.pixar.com/usd",
+				"license" : "$GAFFER_ROOT/doc/licenses/USD",
 			},
 
 			{
 				"name" : "Qt",
 				"url" : "http://qt.nokia.com/",
-				"license" : "$GAFFER_ROOT/doc/licenses/qt",
+				"license" : "$GAFFER_ROOT/doc/licenses/Qt",
 			},
 
 		]

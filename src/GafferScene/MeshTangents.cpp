@@ -34,132 +34,221 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/MeshPrimitive.h"
-#include "IECore/MeshAlgo.h"
-
 #include "GafferScene/MeshTangents.h"
 
+#include "IECoreScene/MeshAlgo.h"
+#include "IECoreScene/MeshPrimitive.h"
+
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( MeshTangents );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( MeshTangents );
 
 size_t MeshTangents::g_firstPlugIndex = 0;
 
-MeshTangents::MeshTangents( const std::string &name ) : SceneElementProcessor( name )
+MeshTangents::MeshTangents( const std::string &name )
+	:	ObjectProcessor( name, PathMatcher::EveryMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new StringPlug( "uvSet", Plug::In, "st" ) );
+	addChild( new IntPlug( "mode", Plug::In, Mode::UV, /* min */ 0, /* max */ Mode::NumberOfModes ) );
+	addChild( new BoolPlug( "orthogonal", Plug::In, true ) );
+	addChild( new BoolPlug( "leftHanded", Plug::In, false ) );
 	addChild( new StringPlug( "position", Plug::In, "P" ) );
+	addChild( new StringPlug( "normal", Plug::In, "N" ) );
+	addChild( new StringPlug( "uvSet", Plug::In, "uv" ) );
 	addChild( new StringPlug( "uTangent", Plug::In, "uTangent" ) );
 	addChild( new StringPlug( "vTangent", Plug::In, "vTangent" ) );
-	addChild( new BoolPlug( "orthogonal", Plug::In, true ) );
-
-	// Fast pass-throughs for things we don't modify
-	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
-	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
-	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
+	addChild( new StringPlug( "tangent", Plug::In, "tangent" ) );
+	addChild( new StringPlug( "biTangent", Plug::In, "biTangent" ) );
 }
 
 MeshTangents::~MeshTangents()
 {
 }
 
-Gaffer::StringPlug *MeshTangents::uvSetPlug()
+Gaffer::IntPlug *MeshTangents::modePlug()
 {
-	return getChild<StringPlug>( g_firstPlugIndex );
+	return getChild<IntPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::StringPlug *MeshTangents::uvSetPlug() const
+const Gaffer::IntPlug *MeshTangents::modePlug() const
 {
-	return getChild<StringPlug>( g_firstPlugIndex );
-}
-
-Gaffer::StringPlug *MeshTangents::positionPlug()
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 1 );
-}
-
-const Gaffer::StringPlug *MeshTangents::positionPlug() const
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 1 );
-}
-
-Gaffer::StringPlug *MeshTangents::uTangentPlug()
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 2 );
-}
-
-const Gaffer::StringPlug *MeshTangents::uTangentPlug() const
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 2 );
-}
-
-Gaffer::StringPlug *MeshTangents::vTangentPlug()
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 3 );
-}
-
-const Gaffer::StringPlug *MeshTangents::vTangentPlug() const
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+	return getChild<IntPlug>( g_firstPlugIndex );
 }
 
 Gaffer::BoolPlug *MeshTangents::orthogonalPlug()
 {
-	return getChild<BoolPlug>( g_firstPlugIndex + 4 );
+	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
 }
 
 const Gaffer::BoolPlug *MeshTangents::orthogonalPlug() const
 {
-	return getChild<BoolPlug>( g_firstPlugIndex + 4 );
+	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
 }
 
-void MeshTangents::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+Gaffer::BoolPlug *MeshTangents::leftHandedPlug()
 {
-	SceneElementProcessor::affects( input, outputs );
-
-	if( input == uvSetPlug() || input == positionPlug() || input == orthogonalPlug() || input == uTangentPlug() || input == vTangentPlug() )
-	{
-		outputs.push_back( outPlug()->objectPlug() );
-	}
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
 }
 
-bool MeshTangents::processesObject() const
+const Gaffer::BoolPlug *MeshTangents::leftHandedPlug() const
 {
-	return true;
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+}
+
+Gaffer::StringPlug *MeshTangents::positionPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+}
+
+const Gaffer::StringPlug *MeshTangents::positionPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+}
+
+Gaffer::StringPlug *MeshTangents::normalPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 4 );
+}
+
+const Gaffer::StringPlug *MeshTangents::normalPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 4 );
+}
+
+Gaffer::StringPlug *MeshTangents::uvSetPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 5 );
+}
+
+const Gaffer::StringPlug *MeshTangents::uvSetPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 5 );
+}
+
+Gaffer::StringPlug *MeshTangents::uTangentPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 6 );
+}
+
+const Gaffer::StringPlug *MeshTangents::uTangentPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 6 );
+}
+
+Gaffer::StringPlug *MeshTangents::vTangentPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 7 );
+}
+
+const Gaffer::StringPlug *MeshTangents::vTangentPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 7 );
+}
+
+Gaffer::StringPlug *MeshTangents::tangentPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 8 );
+}
+
+const Gaffer::StringPlug *MeshTangents::tangentPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 8 );
+}
+
+Gaffer::StringPlug *MeshTangents::biTangentPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 9 );
+}
+
+const Gaffer::StringPlug *MeshTangents::biTangentPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 9 );
+}
+
+bool MeshTangents::affectsProcessedObject( const Gaffer::Plug *input ) const
+{
+	return
+		ObjectProcessor::affectsProcessedObject( input ) ||
+		input == uvSetPlug() ||
+		input == positionPlug() ||
+		input == orthogonalPlug() ||
+		input == modePlug() ||
+		input == leftHandedPlug() ||
+		input == uTangentPlug() ||
+		input == vTangentPlug() ||
+		input == tangentPlug() ||
+		input == biTangentPlug() ||
+		input == normalPlug()
+	;
 }
 
 void MeshTangents::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ObjectProcessor::hashProcessedObject( path, context, h );
 	uvSetPlug()->hash( h );
 	positionPlug()->hash( h );
 	orthogonalPlug()->hash( h );
+	leftHandedPlug()->hash( h );
+	modePlug()->hash( h );
 	uTangentPlug()->hash( h );
 	vTangentPlug()->hash( h );
+	tangentPlug()->hash( h );
+	biTangentPlug()->hash( h );
+	normalPlug()->hash( h );
 }
 
-IECore::ConstObjectPtr MeshTangents::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const
+IECore::ConstObjectPtr MeshTangents::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const
 {
-	const MeshPrimitive *mesh = runTimeCast<const MeshPrimitive>( inputObject.get() );
+	const MeshPrimitive *mesh = runTimeCast<const MeshPrimitive>( inputObject );
 	if( !mesh )
 	{
 		return inputObject;
 	}
 
-	std::string uvSet = uvSetPlug()->getValue();
 	std::string position = positionPlug()->getValue();
 	bool ortho = orthogonalPlug()->getValue();
+	bool leftHanded = leftHandedPlug()->getValue();
+	Mode mode = (Mode) modePlug()->getValue();
 
-	std::string uTangent = uTangentPlug()->getValue();
-	std::string vTangent = vTangentPlug()->getValue();
-
-	std::pair<PrimitiveVariable, PrimitiveVariable> tangentPrimvars = MeshAlgo::calculateTangents( mesh, uvSet, ortho, position);
 	MeshPrimitivePtr meshWithTangents = runTimeCast<MeshPrimitive>( mesh->copy() );
+	std::pair<PrimitiveVariable, PrimitiveVariable> tangentPrimvars;
 
-	meshWithTangents->variables[uTangent] = tangentPrimvars.first;
-	meshWithTangents->variables[vTangent] = tangentPrimvars.second;
+	if ( mode == Mode::UV )
+	{
+		std::string uvSet = uvSetPlug()->getValue();
+		std::string uTangent = uTangentPlug()->getValue();
+		std::string vTangent = vTangentPlug()->getValue();
+
+		tangentPrimvars = MeshAlgo::calculateTangentsFromUV( mesh, uvSet, position, ortho, leftHanded );
+
+		meshWithTangents->variables[uTangent] = tangentPrimvars.first;
+		meshWithTangents->variables[vTangent] = tangentPrimvars.second;
+	}
+	else
+	{
+		std::string normal = normalPlug()->getValue();
+		std::string tangent = tangentPlug()->getValue();
+		std::string biTangent = biTangentPlug()->getValue();
+
+		if ( mode == Mode::FirstEdge )
+		{
+			tangentPrimvars = MeshAlgo::calculateTangentsFromFirstEdge( mesh, position, normal, ortho, leftHanded  );
+		}
+		else if ( mode == Mode::TwoEdges )
+		{
+			tangentPrimvars = MeshAlgo::calculateTangentsFromTwoEdges( mesh, position, normal, ortho, leftHanded  );
+		}
+		else
+		{
+			tangentPrimvars = MeshAlgo::calculateTangentsFromPrimitiveCentroid( mesh, position, normal, ortho, leftHanded  );
+		}
+
+		meshWithTangents->variables[tangent] = tangentPrimvars.first;
+		meshWithTangents->variables[biTangent] = tangentPrimvars.second;
+	}
 
 	return meshWithTangents;
 }

@@ -34,10 +34,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringAlgo.h"
+#include "GafferImage/DeleteImageMetadata.h"
+
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/DeleteImageMetadata.h"
+#include "IECore/StringAlgo.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -45,7 +46,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( DeleteImageMetadata );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeleteImageMetadata );
 
 size_t DeleteImageMetadata::g_firstPlugIndex = 0;
 

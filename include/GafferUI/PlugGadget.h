@@ -54,18 +54,18 @@ namespace GafferUI
 /// GafferUI.PlugWidget to GafferUI.LabelledPlugWidget, to better match
 /// this class (and shorten some rather long names).
 /// Add read-only support in the same way as PlugValueWidget does it.
-class PlugGadget : public ContainerGadget
+class GAFFERUI_API PlugGadget : public ContainerGadget
 {
 
 	public :
 
 		PlugGadget( Gaffer::PlugPtr plug );
-		virtual ~PlugGadget();
+		~PlugGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::PlugGadget, PlugGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::PlugGadget, PlugGadgetTypeId, Gadget );
 
 		void setPlug( Gaffer::PlugPtr plug );
-		template<typename T>
+		template<typename T=Gaffer::Plug>
 		T *getPlug();
 
 		void setContext( Gaffer::ContextPtr context );

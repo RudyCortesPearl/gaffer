@@ -34,15 +34,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferArnold/InteractiveArnoldRender.h"
+
 #include "boost/unordered_set.hpp"
 
 #include "ai_universe.h"
 
-#include "GafferArnold/InteractiveArnoldRender.h"
-
 using namespace Gaffer;
 using namespace GafferScene;
-using namespace GafferScene::Preview;
 using namespace GafferArnold;
 
 //////////////////////////////////////////////////////////////////////////
@@ -67,7 +66,7 @@ typedef std::pair<IntPlug *, InteractiveRender::State> Interrupted;
 // InteractiveArnoldRender
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( InteractiveArnoldRender );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( InteractiveArnoldRender );
 
 InteractiveArnoldRender::InteractiveArnoldRender( const std::string &name )
 	:	InteractiveRender( "Arnold", name )

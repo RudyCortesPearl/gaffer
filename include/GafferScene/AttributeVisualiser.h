@@ -37,10 +37,10 @@
 #ifndef GAFFERSCENE_ATTRIBUTEVISUALISER_H
 #define GAFFERSCENE_ATTRIBUTEVISUALISER_H
 
-#include "Gaffer/SplinePlug.h"
-#include "Gaffer/NumericPlug.h"
+#include "GafferScene/AttributeProcessor.h"
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/SplinePlug.h"
 
 namespace Gaffer
 {
@@ -52,15 +52,15 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 namespace GafferScene
 {
 
-class AttributeVisualiser : public SceneElementProcessor
+class GAFFERSCENE_API AttributeVisualiser : public AttributeProcessor
 {
 
 	public :
 
 		AttributeVisualiser( const std::string &name=defaultName<AttributeVisualiser>() );
-		virtual ~AttributeVisualiser();
+		~AttributeVisualiser() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::AttributeVisualiser, AttributeVisualiserTypeId, SceneElementProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::AttributeVisualiser, AttributeVisualiserTypeId, AttributeProcessor );
 
 		enum Mode
 		{
@@ -94,13 +94,11 @@ class AttributeVisualiser : public SceneElementProcessor
 		Gaffer::StringPlug *shaderParameterPlug();
 		const Gaffer::StringPlug *shaderParameterPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
-
 	protected :
 
-		virtual bool processesAttributes() const;
-		virtual void hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const;
+		bool affectsProcessedAttributes( const Gaffer::Plug *input ) const override;
+		void hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, const IECore::CompoundObject *inputAttributes ) const override;
 
 	private :
 

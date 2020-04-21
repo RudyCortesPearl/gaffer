@@ -50,6 +50,12 @@ if [[ $1 == -psn_0_* ]] ; then
 	shift
 fi
 
+# Work around OCIO bug that causes parsing to fail for certain locales.
+# See https://github.com/imageworks/OpenColorIO/issues/297
+##########################################################################
+
+export LC_NUMERIC=C
+
 # Find where this script is located, resolving any symlinks that were used
 # to invoke it. Set GAFFER_ROOT based on the script location.
 ##########################################################################
@@ -129,12 +135,16 @@ prependToPath "$HOME/gaffer/apps:$GAFFER_ROOT/apps" GAFFER_APP_PATHS
 prependToPath "$HOME/gaffer/startup" GAFFER_STARTUP_PATHS
 appendToPath "$GAFFER_ROOT/startup" GAFFER_STARTUP_PATHS
 
+prependToPath "$HOME/gaffer/startup" CORTEX_STARTUP_PATHS
+appendToPath "$GAFFER_ROOT/startup" CORTEX_STARTUP_PATHS
+
 prependToPath "$GAFFER_ROOT/graphics" GAFFERUI_IMAGE_PATHS
 
 if [[ -e $GAFFER_ROOT/bin/oslc ]] ; then
 	export OSLHOME=$GAFFER_ROOT
 fi
 
+## \todo: should we rename this to "osl" to match our "glsl" folder?
 prependToPath "$HOME/gaffer/shaders:$GAFFER_ROOT/shaders" OSL_SHADER_PATHS
 
 if [[ -z $GAFFEROSL_CODE_DIRECTORY ]] ; then
@@ -177,9 +187,6 @@ else
 	# Work around this by putting them on the DYLD_LIBRARY_PATH.
 	prependToPath "$PYTHONHOME/lib/python2.7/site-packages/PySide2" DYLD_LIBRARY_PATH
 	prependToPath /System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/ImageIO.framework/Resources/ DYLD_LIBRARY_PATH
-	if [[ -n $DELIGHT ]] ; then
-		appendToPath "$DELIGHT/lib" DYLD_LIBRARY_PATH
-	fi
 fi
 
 if [[ -e $GAFFER_ROOT/qt/plugins ]] ; then
@@ -213,7 +220,7 @@ if [[ $APPLESEED ]] ; then
 		prependToPath "$appleseedPython" PYTHONPATH
 	done
 
-	prependToPath "$APPLESEED/shaders/gaffer" OSL_SHADER_PATHS
+	prependToPath "$APPLESEED/shaders/appleseed" OSL_SHADER_PATHS
 	prependToPath "$GAFFER_ROOT/appleseedDisplays" APPLESEED_SEARCHPATH
 	prependToPath "$OSL_SHADER_PATHS" APPLESEED_SEARCHPATH
 
@@ -239,6 +246,52 @@ if [[ $ARNOLD_ROOT ]] ; then
 
 fi
 
+# Set up 3Delight
+##########################################################################
+
+if [[ -n $DELIGHT ]] ; then
+
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$DELIGHT/lib" LD_LIBRARY_PATH
+	else
+		appendToPath "$DELIGHT/lib" DYLD_LIBRARY_PATH
+	fi
+
+	appendToPath "$DELIGHT/bin" PATH
+	appendToPath "$DELIGHT/python" PYTHONPATH
+	appendToPath "$DELIGHT/shaders" DL_SHADERS_PATH
+	appendToPath "$DELIGHT/displays" DL_DISPLAYS_PATH
+
+	appendToPath "$DELIGHT" OSL_SHADER_PATHS
+
+	appendToPath "$GAFFER_ROOT/renderMan/displayDrivers" DL_RESOURCES_PATH
+
+fi
+
+# Set up 3rd Party extensions
+##########################################################################
+
+IFS=:
+for extension in $GAFFER_EXTENSION_PATHS; do
+
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$extension/lib" LD_LIBRARY_PATH
+	else
+		appendToPath "$extension/lib" DYLD_LIBRARY_PATH
+	fi
+
+	appendToPath "$extension/bin" PATH
+	appendToPath "$extension/python" PYTHONPATH
+	appendToPath "$extension/apps" GAFFER_APP_PATHS
+	appendToPath "$extension/graphics" GAFFERUI_IMAGE_PATHS
+	appendToPath "$extension/glsl" IECOREGL_SHADER_PATHS
+	appendToPath "$extension/glsl" IECOREGL_SHADER_INCLUDE_PATHS
+	appendToPath "$extension/shaders" OSL_SHADER_PATHS
+	prependToPath "$extension/startup" GAFFER_STARTUP_PATHS
+
+done
+unset IFS
+
 # Run gaffer itself
 ##########################################################################
 
@@ -251,7 +304,7 @@ if [[ -n $GAFFER_DEBUG ]] ; then
 		fi
 	fi
 	# Using `which` because lldb doesn't seem to respect $PATH
-	exec $GAFFER_DEBUGGER `which python` "$GAFFER_ROOT/bin/gaffer.py" "$@"
+	exec $GAFFER_DEBUGGER `which python` "$GAFFER_ROOT/bin/__gaffer.py" "$@"
 else
-	exec python "$GAFFER_ROOT/bin/gaffer.py" "$@"
+	exec python "$GAFFER_ROOT/bin/__gaffer.py" "$@"
 fi

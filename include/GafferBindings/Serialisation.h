@@ -38,18 +38,20 @@
 #ifndef GAFFERBINDINGS_SERIALISATION_H
 #define GAFFERBINDINGS_SERIALISATION_H
 
-#include "Gaffer/Set.h"
+#include "GafferBindings/Export.h"
+
 #include "Gaffer/GraphComponent.h"
+#include "Gaffer/Set.h"
 
 namespace GafferBindings
 {
 
-class Serialisation
+class GAFFERBINDINGS_API Serialisation
 {
 
 	public :
 
-		Serialisation( const Gaffer::GraphComponent *parent, const std::string &parentName = "parent", const Gaffer::Set *filter = 0 );
+		Serialisation( const Gaffer::GraphComponent *parent, const std::string &parentName = "parent", const Gaffer::Set *filter = nullptr );
 
 		/// Returns the parent passed to the constructor.
 		const Gaffer::GraphComponent *parent() const;
@@ -58,6 +60,14 @@ class Serialisation
 		/// within the serialisation. Returns the empty string if the object is not
 		/// to be included in the serialisation.
 		std::string identifier( const Gaffer::GraphComponent *graphComponent ) const;
+		/// Returns an identifier for a child relative to its parent identifier. This
+		/// is quicker than calling `identifier( child )` if you already have the
+		/// parent identifier to hand.
+		std::string childIdentifier( const std::string &parentIdentifier, const Gaffer::GraphComponent *child ) const;
+		/// \todo This overload provides improved performance in some situations,
+		/// but we should instead optimise GraphComponent storage so that it is not
+		/// necessary.
+		std::string childIdentifier( const std::string &parentIdentifier, Gaffer::GraphComponent::ChildIterator child ) const;
 
 		/// Returns the result of the serialisation.
 		std::string result() const;
@@ -67,8 +77,10 @@ class Serialisation
 		/// As above, but returns the empty string for built in python types.
 		static std::string modulePath( boost::python::object &object );
 		/// Convenience function to return the name of the class which object is an instance of.
-		/// \note This function can not handle nested classes correctly - Python prior to 3.3
-		/// simply does not provide the information to do so. See http://www.python.org/dev/peps/pep-3155/
+		/// \note Prior to Python 3.3 there is no way to automatically obtain a qualified name for
+		/// a nested class (see http://www.python.org/dev/peps/pep-3155). In the meantime,
+		/// you may manually add your own __qualname__ attribute, and it will be used by this
+		/// function.
 		static std::string classPath( const IECore::RefCounted *object );
 		/// Convenience function to return the name of the class which object is an instance of.
 		/// If object is a type object rather than an instance, then the path for the type
@@ -125,6 +137,7 @@ class Serialisation
 		const Gaffer::GraphComponent *m_parent;
 		const std::string m_parentName;
 		const Gaffer::Set *m_filter;
+		const bool m_protectParentNamespace;
 
 		std::string m_hierarchyScript;
 		std::string m_connectionScript;
@@ -138,8 +151,6 @@ class Serialisation
 		static SerialiserMap &serialiserMap();
 
 };
-
-void bindSerialisation();
 
 } // namespace GafferBindings
 

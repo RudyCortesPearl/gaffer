@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-import re
-import fnmatch
 import functools
 import warnings
 
@@ -49,27 +47,32 @@ import GafferUI
 # Currently every PlugValueWidget instance connects to the various plug signals
 # on the node, and tests to see if the plug is of interest when signalled. When many
 # PlugValueWidgets are instantiated for a node this might prove a little slow. In this
-# eventuality perhaps we can optimise things by having CompoundPlugValueWidget be
-# responsible for updating only the correct child, so the children don't need to be
-# connected themselves. PlugValueWidget would need to maintain the ability to do things
-# itself when used alone, but this might give a good speedup for the most common case.
+# eventuality perhaps we can optimise things by having PlugLayout be responsible for
+# updating only the correct child, so the children don't need to be connected themselves.
+# PlugValueWidget would need to maintain the ability to do things itself when used alone,
+# but this might give a good speedup for the most common case.
 class PlugValueWidget( GafferUI.Widget ) :
 
 	def __init__( self, topLevelWidget, plug, **kw ) :
 
 		GafferUI.Widget.__init__( self, topLevelWidget, **kw )
+		self._qtWidget().setProperty( "gafferPlugValueWidget", True )
 
 		# we don't want to call _updateFromPlug yet because the derived
 		# classes haven't constructed yet. they can call it themselves
 		# upon completing construction.
 		self.__setPlugInternal( plug, callUpdateFromPlug=False )
 
-		self.__popupMenuConnections = []
 		self.__readOnly = False
 
-		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
-		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
-		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
+		self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ), scoped = False )
+		self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ), scoped = False )
+		self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ), scoped = False )
+
+		Gaffer.Metadata.nodeValueChangedSignal().connect(
+			Gaffer.WeakMethod( self.__nodeMetadataChanged ),
+			scoped = False
+		)
 
 	## Note that it is acceptable to pass None to setPlug() (and to the constructor)
 	# and that derived classes should be implemented to cope with this eventuality.
@@ -99,10 +102,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		return self.__context
 
-	## This method allows editing of the plug value
-	# to be disabled for this ui. Note that even when getReadOnly()
-	# is False, the ui may not allow editing due to the plug
-	# itself being read only for other reasons.
+	## \deprecated
 	def setReadOnly( self, readOnly ) :
 
 		assert( isinstance( readOnly, bool ) )
@@ -112,6 +112,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 		self.__readOnly = readOnly
 		self._updateFromPlug()
 
+	## \deprecated
 	def getReadOnly( self ) :
 
 		return self.__readOnly
@@ -138,10 +139,10 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		inputText = ""
 		if input is not None :
-			inputText = " &lt;- " + input.relativeName( input.commonAncestor( plug, Gaffer.GraphComponent.staticTypeId() ) )
+			inputText = " <- " + input.relativeName( input.commonAncestor( plug, Gaffer.GraphComponent ) )
 
-		result = "<h3>" + plug.relativeName( plug.node() ) + inputText + "</h3>"
-		description = Gaffer.Metadata.plugDescription( plug )
+		result = "# " + plug.relativeName( plug.node() ) + inputText
+		description = Gaffer.Metadata.value( plug, "description" )
 		if description :
 			result += "\n\n" + description
 
@@ -149,11 +150,9 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 	## Because Plugs may have child Plugs, so too PlugValueWidgets may
 	# have child PlugValueWidgets to represent the children of their plug.
-	# This method should be reimplemented to return such children. Because
-	# UIs may be built lazily on demand, the lazy flag is provided to
-	# determine whether or not the query should force a build in the case
-	# that one has not been performed yet.
-	def childPlugValueWidget( self, childPlug, lazy=True ) :
+	# This method should be reimplemented to return such children, or `None`
+	# if no appropriate child exists.
+	def childPlugValueWidget( self, childPlug ) :
 
 		return None
 
@@ -164,7 +163,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		editor = GafferUI.NodeEditor.acquire( plug.node() )
 
-		plugValueWidget = editor.nodeUI().plugValueWidget( plug, lazy=False )
+		plugValueWidget = editor.nodeUI().plugValueWidget( plug )
 		if not plugValueWidget :
 			return None
 
@@ -257,14 +256,10 @@ class PlugValueWidget( GafferUI.Widget ) :
 		# it's unclear under what circumstances we get given a right-click vs a context menu event,
 		# but we try to cover all our bases by connecting to both.
 
-		self.__popupMenuConnections.append(
-			widget.buttonPressSignal().connect( functools.partial( Gaffer.WeakMethod( self.__buttonPress ), buttonMask = buttons ) )
-		)
+		widget.buttonPressSignal().connect( functools.partial( Gaffer.WeakMethod( self.__buttonPress ), buttonMask = buttons ), scoped = False )
 
 		if buttons & GafferUI.ButtonEvent.Buttons.Right :
-			self.__popupMenuConnections.append(
-				widget.contextMenuSignal().connect( functools.partial( Gaffer.WeakMethod( self.__contextMenu ) ) )
-			)
+			widget.contextMenuSignal().connect( functools.partial( Gaffer.WeakMethod( self.__contextMenu ) ), scoped = False )
 
 	## Returns a definition for the popup menu - this is called each time the menu is displayed
 	# to allow for dynamic menus. Subclasses may override this method to customise the menu, but
@@ -332,7 +327,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 		if len( menuDefinition.items() ) :
 			menuDefinition.append( "/LockDivider", { "divider" : True } )
 
-		readOnly = Gaffer.MetadataAlgo.getReadOnly( self.getPlug() ) or self.getPlug().getFlags( Gaffer.Plug.Flags.ReadOnly )
+		readOnly = Gaffer.MetadataAlgo.getReadOnly( self.getPlug() )
 		menuDefinition.append(
 			"/Unlock" if readOnly else "/Lock",
 			{
@@ -360,9 +355,8 @@ class PlugValueWidget( GafferUI.Widget ) :
 	# "plugValueWidget:type" metadata value, specifying the fully qualified
 	# python type name for a widget class. To suppress the creation of a widget,
 	# a value of "" may be registered - in this case None will be returned from
-	# create(). If useTypeOnly is True, then custom registrations made by
-	# registerCreator() will be ignored and only the plug type will be taken into
-	# account in creating a PlugValueWidget.
+	# create(). If useTypeOnly is True, then the metadata will be ignored and
+	# only the plug type will be taken into account in creating a PlugValueWidget.
 	@classmethod
 	def create( cls, plug, useTypeOnly=False ) :
 
@@ -385,20 +379,6 @@ class PlugValueWidget( GafferUI.Widget ) :
 				for n in path[1:] :
 					widgetClass = getattr( widgetClass, n )
 				return widgetClass( plug )
-
-			node = plug.node()
-			if node is not None :
-				plugPath = plug.relativeName( node )
-				nodeHierarchy = IECore.RunTimeTyped.baseTypeIds( node.typeId() )
-				for nodeTypeId in [ node.typeId() ] + nodeHierarchy :
-					creators = cls.__nodeTypesToCreators.get( nodeTypeId, None )
-					if creators :
-						for creator in creators :
-							if creator.plugPathMatcher.match( plugPath ) :
-								if creator.creator is not None :
-									return creator.creator( plug, **(creator.creatorKeywordArgs) )
-								else :
-									return None
 
 		# if that failed, then just create something based on the type of the plug
 		typeId = plug.typeId()
@@ -423,34 +403,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		cls.__plugTypesToCreators[plugTypeId] = creator
 
-	## \deprecated
-	## \todo Use "plugValueWidget:type" metadata everywhere instead of
-	# using this. Then remove this method.
-	@classmethod
-	def registerCreator( cls, nodeClassOrTypeId, plugPath, creator, **creatorKeywordArgs ) :
-
-		if isinstance( nodeClassOrTypeId, IECore.TypeId ) :
-			nodeTypeId = nodeClassOrTypeId
-		else :
-			nodeTypeId = nodeClassOrTypeId.staticTypeId()
-
-		if isinstance( plugPath, basestring ) :
-			plugPath = re.compile( fnmatch.translate( plugPath ) )
-		else :
-			assert( type( plugPath ) is type( re.compile( "" ) ) )
-
-		creators = cls.__nodeTypesToCreators.setdefault( nodeTypeId, [] )
-
-		creator = IECore.Struct(
-			plugPathMatcher = plugPath,
-			creator = creator,
-			creatorKeywordArgs = creatorKeywordArgs,
-		)
-
-		creators.insert( 0, creator )
-
 	__plugTypesToCreators = {}
-	__nodeTypesToCreators = {}
 
 	def __plugDirtied( self, plug ) :
 
@@ -476,8 +429,16 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		if (
 			Gaffer.MetadataAlgo.affectedByChange( self.__plug, nodeTypeId, plugPath, plug ) or
-			( key == "readOnly" and Gaffer.MetadataAlgo.ancestorAffectedByChange( self.__plug, nodeTypeId, plugPath, plug ) )
+			Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__plug, nodeTypeId, plugPath, key, plug )
 		) :
+			self._updateFromPlug()
+
+	def __nodeMetadataChanged( self, nodeTypeId, key, node ) :
+
+		if self.__plug is None :
+			return
+
+		if Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__plug, nodeTypeId, key, node ) :
 			self._updateFromPlug()
 
 	def __contextChanged( self, context, key ) :
@@ -495,7 +456,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 			self.__plugInputChangedConnection = plug.node().plugInputChangedSignal().connect( Gaffer.WeakMethod( self.__plugInputChanged ) )
 			self.__plugFlagsChangedConnection = plug.node().plugFlagsChangedSignal().connect( Gaffer.WeakMethod( self.__plugFlagsChanged ) )
 			self.__plugMetadataChangedConnection = Gaffer.Metadata.plugValueChangedSignal().connect( Gaffer.WeakMethod( self.__plugMetadataChanged ) )
-			scriptNode = self.__plug.ancestor( Gaffer.ScriptNode.staticTypeId() )
+			scriptNode = self.__plug.ancestor( Gaffer.ScriptNode )
 			if scriptNode is not None :
 				context = scriptNode.context()
 		else :
@@ -518,7 +479,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		context = self.__context
 		plug = self.getPlug()
-		if plug is None or plug.getInput() is None :
+		if plug is None or ( plug.getInput() is None and plug.direction() == Gaffer.Plug.Direction.In ):
 			context = None
 
 		if context is not None :
@@ -550,7 +511,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 		title = ".".join( [ IECore.CamelCase.join( IECore.CamelCase.split( x ) ) for x in title.split( "." ) ] )
 
 		self.__popupMenu = GafferUI.Menu( menuDefinition, title = title )
-		self.__popupMenu.popup()
+		self.__popupMenu.popup( parent = self )
 
 		return True
 
@@ -569,7 +530,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 	def __setValue( self, value ) :
 
-		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().setValue( value )
 
 	def __editInput( self ) :
@@ -586,12 +547,12 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 	def __removeInput( self ) :
 
-		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().setInput( None )
 
 	def __applyUserDefault( self ) :
 
-		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			Gaffer.NodeAlgo.applyUserDefault( self.getPlug() )
 
 	def __presetsSubMenu( self ) :
@@ -601,8 +562,9 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		result = IECore.MenuDefinition()
 		for presetName in Gaffer.NodeAlgo.presets( self.getPlug() ) :
+			menuPath = presetName if presetName.startswith( "/" ) else "/" + presetName
 			result.append(
-				presetName, {
+				menuPath, {
 					"command" : functools.partial( Gaffer.WeakMethod( self.__applyPreset ), presetName ),
 					"active" : self._editable(),
 					"checkBox" : presetName == currentPreset,
@@ -613,28 +575,19 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 	def __applyPreset( self, presetName, *unused ) :
 
-		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			Gaffer.NodeAlgo.applyPreset( self.getPlug(), presetName )
 
 	def __applyReadOnly( self, readOnly ) :
 
-		def clearFlags( plug ) :
-			plug.setFlags( Gaffer.Plug.Flags.ReadOnly, False )
-			for child in plug.children() :
-				clearFlags( child )
-
-		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
-			# We used to use a plug flag, but we use metadata now
-			# instead. Clear the old flags so that metadata is in
-			# control.
-			clearFlags( self.getPlug() )
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			Gaffer.MetadataAlgo.setReadOnly( self.getPlug(), readOnly )
 
 	# drag and drop stuff
 
 	def __dragEnter( self, widget, event ) :
 
-		if self.getReadOnly() :
+		if self.getReadOnly() or Gaffer.MetadataAlgo.readOnly( self.getPlug() ):
 			return False
 
 		if isinstance( event.sourceWidget, GafferUI.PlugValueWidget ) :
@@ -646,7 +599,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 			return False
 
 		if isinstance( event.data, Gaffer.Plug ) :
-			if self.getPlug().acceptsInput( event.data ) :
+			if self.getPlug().direction() == Gaffer.Plug.Direction.In and self.getPlug().acceptsInput( event.data ) :
 				self.setHighlighted( True )
 				return True
 		elif hasattr( self.getPlug(), "setValue" ) and self._convertValue( event.data ) is not None :

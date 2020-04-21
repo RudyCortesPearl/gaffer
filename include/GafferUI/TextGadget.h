@@ -40,29 +40,30 @@
 
 #include "GafferUI/Gadget.h"
 
-#include "IECore/Font.h"
+#include "IECoreScene/Font.h"
 
 namespace GafferUI
 {
 
-class TextGadget : public Gadget
+class GAFFERUI_API TextGadget : public Gadget
 {
 
 	public :
 
 		TextGadget( const std::string &text );
-		virtual ~TextGadget();
+		~TextGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::TextGadget, TextGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::TextGadget, TextGadgetTypeId, Gadget );
 
 		const std::string &getText() const;
 		void setText( const std::string &text );
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
+		bool hasLayer( Layer layer ) const override { return layer == Layer::Main; };
 
 	private :
 

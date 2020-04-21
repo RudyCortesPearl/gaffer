@@ -232,7 +232,7 @@ bool CompoundNumericPlug<T>::isGanged() const
 {
 	for( size_t i = 1, e = children().size(); i < e; ++i )
 	{
-		if( const Plug *input = getChild( i )->template getInput<Plug>() )
+		if( const Plug *input = getChild( i )->getInput() )
 		{
 			if( input->parent<Plug>() == this )
 			{
@@ -249,11 +249,11 @@ void CompoundNumericPlug<T>::ungang()
 	for( size_t i = 1, e = children().size(); i < e; ++i )
 	{
 		Plug *child = getChild( i );
-		if( const Plug *input = child->getInput<Plug>() )
+		if( const Plug *input = child->getInput() )
 		{
 			if( input->parent<Plug>() == this )
 			{
-				child->setInput( 0 );
+				child->setInput( nullptr );
 			}
 		}
 	}
@@ -278,12 +278,12 @@ const char **Color4fPlug::childNames()
 	return names;
 }
 
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::V2fPlug, V2fPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::V3fPlug, V3fPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::V2iPlug, V2iPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::V3iPlug, V3iPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Color3fPlug, Color3fPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Color4fPlug, Color4fPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::V2fPlug, V2fPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::V3fPlug, V3fPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::V2iPlug, V2iPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::V3iPlug, V3iPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::Color3fPlug, Color3fPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::Color4fPlug, Color4fPlugTypeId )
 
 // explicit instantiations
 

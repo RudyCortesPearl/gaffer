@@ -35,15 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/tokenizer.hpp"
-
 #include "GafferSceneTest/CompoundObjectSource.h"
+
+#include "boost/tokenizer.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferSceneTest;
 
-IE_CORE_DEFINERUNTIMETYPED( CompoundObjectSource )
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CompoundObjectSource )
 
 CompoundObjectSource::CompoundObjectSource( const std::string &name )
 	:	SceneNode( name )
@@ -217,7 +217,7 @@ void CompoundObjectSource::hashSet( const IECore::InternedString &setName, const
 	h.append( setName );
 }
 
-GafferScene::ConstPathMatcherDataPtr CompoundObjectSource::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr CompoundObjectSource::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const
 {
 	ConstCompoundObjectPtr compoundObject = inObject();
 

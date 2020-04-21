@@ -34,19 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/format.hpp"
-#include "boost/lexical_cast.hpp"
+#include "GafferAppleseed/AppleseedLight.h"
 
-#include "renderer/api/environmentedf.h"
-#include "renderer/api/light.h"
-
-#include "IECore/Exception.h"
-#include "IECore/Shader.h"
-
-#include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/PlugAlgo.h"
 #include "Gaffer/StringPlug.h"
 
-#include "GafferAppleseed/AppleseedLight.h"
+#include "IECoreScene/Shader.h"
+
+#include "IECore/Exception.h"
+
+#include "renderer/api/edf.h"
+#include "renderer/api/environmentedf.h"
+#include "renderer/api/light.h"
+#include "renderer/api/version.h"
+
+#include "boost/format.hpp"
 
 using namespace Gaffer;
 using namespace GafferAppleseed;
@@ -54,7 +56,7 @@ using namespace GafferAppleseed;
 namespace asf = foundation;
 namespace asr = renderer;
 
-IE_CORE_DEFINERUNTIMETYPED( AppleseedLight );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( AppleseedLight );
 
 size_t AppleseedLight::g_firstPlugIndex = 0;
 
@@ -62,7 +64,7 @@ AppleseedLight::AppleseedLight( const std::string &name )
 	:	GafferScene::Light( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new StringPlug( "__model" ) );
+	addChild( new StringPlug( "__model", Plug::In, "", Plug::Default & ~Plug::Serialisable ) );
 }
 
 AppleseedLight::~AppleseedLight()
@@ -87,7 +89,14 @@ void AppleseedLight::loadShader( const std::string &shaderName )
 		const asr::ILightFactory *factory = registrar.lookup( shaderName.c_str() );
 		metadata = factory->get_input_metadata();
 	}
-	else /* unknown model */
+	// finally, area lights
+	else if( asr::EDFFactoryRegistrar().lookup( shaderName.c_str() ) )
+	{
+		asr::EDFFactoryRegistrar registrar;
+		const asr::IEDFFactory *factory = registrar.lookup( shaderName.c_str() );
+		metadata = factory->get_input_metadata();
+	}
+	else // unknown model
 	{
 		throw IECore::Exception( boost::str( boost::format( "Light or Environment model \"%s\" not found" ) % shaderName ) );
 	}
@@ -105,17 +114,18 @@ void AppleseedLight::hashLight( const Gaffer::Context *context, IECore::MurmurHa
 	modelPlug()->hash( h );
 }
 
-IECore::ObjectVectorPtr AppleseedLight::computeLight( const Gaffer::Context *context ) const
+IECoreScene::ConstShaderNetworkPtr AppleseedLight::computeLight( const Gaffer::Context *context ) const
 {
-	IECore::ShaderPtr result = new IECore::Shader( modelPlug()->getValue(), "as:light" );
+	IECoreScene::ShaderPtr shader = new IECoreScene::Shader( modelPlug()->getValue(), "as:light" );
 	for( InputValuePlugIterator it( parametersPlug() ); !it.done(); ++it )
 	{
-		result->parameters()[(*it)->getName()] = CompoundDataPlug::extractDataFromPlug( it->get() );
+		shader->parameters()[(*it)->getName()] = PlugAlgo::extractDataFromPlug( it->get() );
 	}
 
-	IECore::ObjectVectorPtr resultVector = new IECore::ObjectVector();
-	resultVector->members().push_back( result );
-	return resultVector;
+	IECoreScene::ShaderNetworkPtr result = new IECoreScene::ShaderNetwork();
+	result->addShader( "light", std::move( shader ) );
+	result->setOutput( { "light" } );
+	return result;
 }
 
 Gaffer::StringPlug *AppleseedLight::modelPlug()
@@ -128,6 +138,21 @@ const Gaffer::StringPlug *AppleseedLight::modelPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
+namespace
+{
+
+float get_min_max_value( const asf::Dictionary &inputMetadata, const std::string &key )
+{
+#if APPLESEED_VERSION >= 10800
+	const asf::Dictionary& m = inputMetadata.dictionary( key.c_str() );
+	return m.get<float>( "value" );
+#else
+	return inputMetadata.get<float>( key + "_value" );
+#endif
+}
+
+}
+
 void AppleseedLight::setupPlugs( const std::string &shaderName, const asf::DictionaryArray &metadata )
 {
 	bool needsRadianceTexture = shaderName.find( "map" ) != std::string::npos;
@@ -138,7 +163,7 @@ void AppleseedLight::setupPlugs( const std::string &shaderName, const asf::Dicti
 		std::string inputName = inputMetadata.get( "name" );
 		std::string inputType = inputMetadata.get( "type" );
 
-		Gaffer::Plug *plug = 0;
+		Gaffer::Plug *plug = nullptr;
 
 		// some environment lights need their radiance color input
 		// replaced by a texture input: latlong map and mirrorball map.
@@ -150,9 +175,9 @@ void AppleseedLight::setupPlugs( const std::string &shaderName, const asf::Dicti
 		{
 			if( inputType == "numeric" )
 			{
-				float defaultValue = boost::lexical_cast<float>( inputMetadata.get( "default" ) );
-				float minValue = boost::lexical_cast<float>( inputMetadata.get( "min_value" ) );
-				float maxValue = boost::lexical_cast<float>( inputMetadata.get( "max_value" ) );
+				float defaultValue = inputMetadata.get<float>( "default" );
+				float minValue = get_min_max_value( inputMetadata, "min" );
+				float maxValue = get_min_max_value( inputMetadata, "max" );
 				plug = new Gaffer::FloatPlug( inputName, Gaffer::Plug::In, defaultValue, minValue, maxValue );
 			}
 			else if( inputType == "colormap" )
@@ -180,14 +205,13 @@ void AppleseedLight::setupPlugs( const std::string &shaderName, const asf::Dicti
 			// text are non-texturable float inputs.
 			else if( inputType == "text" )
 			{
-				float defaultValue = boost::lexical_cast<float>( inputMetadata.get( "default" ) );
+				float defaultValue = inputMetadata.get<float>( "default" );
 				plug = new Gaffer::FloatPlug( inputName, Gaffer::Plug::In, defaultValue );
 			}
 		}
 
 		if( plug )
 		{
-			plug->setFlags( Gaffer::Plug::Dynamic, true );
 			parametersPlug()->addChild( plug );
 		}
 	}

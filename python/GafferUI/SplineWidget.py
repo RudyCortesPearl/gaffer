@@ -35,6 +35,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -44,8 +46,7 @@ from Qt import QtCore
 from Qt import QtGui
 from Qt import QtWidgets
 
-## This Widget simply displays an IECore.Spline object. For representation and editing
-# of SplinePlugs use a SplineEditor instead.
+## This Widget simply displays an IECore.Spline object.
 class SplineWidget( GafferUI.Widget ) :
 
 	DrawMode = IECore.Enum.create( "Invalid", "Ramp", "Splines" )
@@ -57,7 +58,6 @@ class SplineWidget( GafferUI.Widget ) :
 		GafferUI.Widget.__init__( self, QtWidgets.QFrame(), **kw )
 
 		self._qtWidget().setSizePolicy( QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding )
-		self._qtWidget().setObjectName( "gafferSplineWidget" )
 
 		self.setDrawMode( drawMode )
 
@@ -74,7 +74,7 @@ class SplineWidget( GafferUI.Widget ) :
 
 		self.setSpline( spline )
 
-		self.__displayTransformChangedConnection = GafferUI.DisplayTransform.changedSignal().connect( Gaffer.WeakMethod( self.__displayTransformChanged ) )
+		GafferUI.DisplayTransform.changedSignal().connect( Gaffer.WeakMethod( self.__displayTransformChanged ), scoped = False )
 
 		self._qtWidget().paintEvent = Gaffer.WeakMethod( self.__paintEvent )
 
@@ -125,6 +125,7 @@ class SplineWidget( GafferUI.Widget ) :
 			self.__paintSplines( painter )
 
 	def __paintRamp( self, painter ) :
+
 		numStops = 500
 		if self.__gradientToDraw is None :
 
@@ -136,33 +137,28 @@ class SplineWidget( GafferUI.Widget ) :
 				t = float( i + 0.5 ) / numStops
 				c = self.__spline( t )
 				if isinstance( c, float ) :
-					c = IECore.Color3f( c, c, c )
+					c = imath.Color3f( c, c, c )
 				else :
-					c = IECore.Color3f( c[0], c[1], c[2] )
+					c = imath.Color3f( c[0], c[1], c[2] )
 
 				c = displayTransform( c )
 				self.__gradientToDraw.setPixel( i, 0, self._qtColor( c ).rgb() )
 
-		rect = self._qtWidget().contentsRect()
-		brush = QtGui.QBrush( self.__gradientToDraw )
-		brush.setTransform( QtGui.QTransform( float( rect.width() ) / numStops, 0, 0, 1, 0, 0 ) )
-		painter.fillRect( rect, brush )
+		painter.drawImage( self._qtWidget().contentsRect(), self.__gradientToDraw )
 
 	def __paintSplines( self, painter ) :
 
 		# update the evaluation of our splines if necessary
-		numPoints = 50
+		numPoints = 200
 		if not self.__splinesToDraw :
 			self.__splinesToDraw = []
-			interval = self.__spline.interval()
 			if isinstance( self.__spline, IECore.Splineff ) :
 				spline = IECore.Struct()
-				spline.color = IECore.Color3f( 1 )
+				spline.color = imath.Color3f( 1 )
 				spline.path = QtGui.QPainterPath()
 				for i in range( 0, numPoints ) :
 					t = float( i ) / ( numPoints - 1 )
-					tt = interval[0] + (interval[1] - interval[0]) * t
-					c = self.__spline( tt )
+					c = self.__spline( t )
 					if i==0 :
 						spline.path.moveTo( t, c )
 					else :
@@ -172,9 +168,9 @@ class SplineWidget( GafferUI.Widget ) :
 				for i in range( 0, self.__spline( 0 ).dimensions() ) :
 					spline = IECore.Struct()
 					if i==3 :
-						spline.color = IECore.Color3f( 1 )
+						spline.color = imath.Color3f( 1 )
 					else :
-						c = IECore.Color3f( 0 )
+						c = imath.Color3f( 0 )
 						c[i] = 1
 						spline.color = c
 					spline.path = QtGui.QPainterPath()
@@ -182,19 +178,18 @@ class SplineWidget( GafferUI.Widget ) :
 
 				for i in range( 0, numPoints ) :
 					t = float( i ) / ( numPoints - 1 )
-					tt = interval[0] + (interval[1] - interval[0]) * t
-					c = self.__spline( tt )
+					c = self.__spline( t )
 					for j in range( 0, c.dimensions() ) :
 						if i == 0 :
 							self.__splinesToDraw[j].path.moveTo( t, c[j] )
 						else :
 							self.__splinesToDraw[j].path.lineTo( t, c[j] )
 
-			self.__splineBound = QtCore.QRectF()
+			self.__splineBound = QtCore.QRectF( 0, 0, 1, 1 )
 			for s in self.__splinesToDraw :
 				self.__splineBound = self.__splineBound.united( s.path.controlPointRect() )
 
-		# draw the splines
+		# Set view transform
 		rect = self._qtWidget().contentsRect()
 		transform = QtGui.QTransform()
 		if self.__splineBound.width() :
@@ -203,13 +198,40 @@ class SplineWidget( GafferUI.Widget ) :
 		if self.__splineBound.height() :
 			transform.translate( 0, rect.y() + rect.height() )
 			transform.scale( 1, -rect.height() / self.__splineBound.height() )
+			transform.translate( 0, -self.__splineBound.top() )
 
 		painter.setTransform( transform )
+
+		painter.setCompositionMode( QtGui.QPainter.CompositionMode.CompositionMode_SourceOver )
+
+		# Draw axis lines at y=0 and y=1
+		if self.__splineBound.top() < 0:
+			pen = QtGui.QPen( self._qtColor( imath.Color3f( 0.2 ) ) )
+			pen.setCosmetic( True )
+			painter.setPen( pen )
+			zeroLine = QtGui.QPainterPath()
+			zeroLine.moveTo( 0, 0 )
+			zeroLine.lineTo( 1, 0 )
+			painter.drawPath( zeroLine )
+
+		if self.__splineBound.bottom() > 1:
+			pen = QtGui.QPen( self._qtColor( imath.Color3f( 0.4 ) ) )
+			pen.setCosmetic( True )
+			painter.setPen( pen )
+			oneLine = QtGui.QPainterPath()
+			oneLine.moveTo( 0, 1 )
+			oneLine.lineTo( 1, 1 )
+			painter.drawPath( oneLine )
+
+		# draw the splines
+		painter.setCompositionMode( QtGui.QPainter.CompositionMode.CompositionMode_Plus )
 		for s in self.__splinesToDraw :
 			pen = QtGui.QPen( self._qtColor( s.color ) )
+			pen.setCosmetic( True )
 			painter.setPen( pen )
 			painter.drawPath( s.path )
 
 	def __displayTransformChanged( self ) :
 
+		self.__gradientToDraw = None
 		self._qtWidget().update()

@@ -37,33 +37,33 @@
 #ifndef GAFFERIMAGE_METADATAPROCESSOR_H
 #define GAFFERIMAGE_METADATAPROCESSOR_H
 
-#include "Gaffer/CompoundDataPlug.h"
-
 #include "GafferImage/ImageProcessor.h"
+
+#include "Gaffer/CompoundDataPlug.h"
 
 namespace GafferImage
 {
 
 /// The MetadataProcessor class provides a base class for modifying metadata
 /// of an image while passing everything else through unchanged.
-class MetadataProcessor : public ImageProcessor
+class GAFFERIMAGE_API MetadataProcessor : public ImageProcessor
 {
 
 	public :
 
 		MetadataProcessor( const std::string &name=defaultName<MetadataProcessor>() );
-		virtual ~MetadataProcessor();
+		~MetadataProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::MetadataProcessor, MetadataProcessorTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::MetadataProcessor, MetadataProcessorTypeId, ImageProcessor );
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
 		// Reimplemented to call hashProcessedMetadata()
-		virtual void hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		// Reimplemented to call computeProcessedMetadata()
-		virtual IECore::ConstCompoundDataPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		IECore::ConstCompoundDataPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 		/// Must be implemented by derived classes to compute the hash for the work done in computeProcessedMetadata().
 		virtual void hashProcessedMetadata( const Gaffer::Context *context, IECore::MurmurHash &h ) const = 0;

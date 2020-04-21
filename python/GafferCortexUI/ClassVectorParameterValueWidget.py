@@ -35,11 +35,15 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
 import GafferUI
 import GafferCortexUI
+
+from GafferCortexUI.CompoundPlugValueWidget import CompoundPlugValueWidget
 
 class ClassVectorParameterValueWidget( GafferCortexUI.CompoundParameterValueWidget ) :
 
@@ -70,7 +74,7 @@ class _PlugValueWidget( GafferCortexUI.CompoundParameterValueWidget._PlugValueWi
 		self.__buttonRow.append(
 			GafferUI.MenuButton( image="plus.png", hasFrame=False, menu=GafferUI.Menu( self.__classMenuDefinition() ) )
 		)
-		self.__buttonRow.append( GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ) ), expand = True )
+		self.__buttonRow.append( GafferUI.Spacer( imath.V2i( 1 ), imath.V2i( 999999, 1 ) ), expand = True )
 
 		return self.__buttonRow
 
@@ -216,11 +220,11 @@ class _PlugValueWidget( GafferCortexUI.CompoundParameterValueWidget._PlugValueWi
 
 GafferCortexUI.ParameterValueWidget.registerType( IECore.ClassVectorParameter, ClassVectorParameterValueWidget )
 
-class _ChildParameterUI( GafferUI.CompoundPlugValueWidget ) :
+class _ChildParameterUI( CompoundPlugValueWidget ) :
 
 	def __init__( self, parameterHandler, **kw ) :
 
-		GafferUI.CompoundPlugValueWidget.__init__(
+		CompoundPlugValueWidget.__init__(
 			self,
 			parameterHandler.plug(),
 			collapsed = None,
@@ -236,9 +240,9 @@ class _ChildParameterUI( GafferUI.CompoundPlugValueWidget ) :
 		with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal ) as result :
 
 			collapseButton = GafferUI.Button( image = "collapsibleArrowRight.png", hasFrame=False )
-			self.__collapseButtonConnection = collapseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__collapseButtonClicked ) )
+			collapseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__collapseButtonClicked ), scoped = False )
 
-			GafferUI.Spacer( IECore.V2i( 2 ) )
+			GafferUI.Spacer( imath.V2i( 2 ) )
 
 			# find parameters which belong in the header
 			############################################
@@ -277,7 +281,7 @@ class _ChildParameterUI( GafferUI.CompoundPlugValueWidget ) :
 
 			layerButton.setMenu( GafferUI.Menu( IECore.curry( Gaffer.WeakMethod( compoundPlugValueWidget._layerMenuDefinition ), self.__parameterHandler.parameter().name ) ) )
 
-			GafferUI.Spacer( IECore.V2i( 2 ) )
+			GafferUI.Spacer( imath.V2i( 2 ) )
 
 			# the label
 
@@ -289,15 +293,15 @@ class _ChildParameterUI( GafferUI.CompoundPlugValueWidget ) :
 						self.__parameterHandler.childParameterHandler( self.__parameterHandler.parameter()["label"] ),
 					),
 				)
-				self.__labelButtonPressConnection = self.__label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__labelButtonPress ) )
-				self.__plugSetConnection = self.getPlug().node().plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ) )
+				self.__label.buttonPressSignal().connect( Gaffer.WeakMethod( self.__labelButtonPress ), scoped = False )
+				self.getPlug().node().plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ), scoped = False )
 
 			# parameters after the label
 			for parameter in headerParameters :
 				GafferCortexUI.ParameterValueWidget.create( self.__parameterHandler.childParameterHandler( parameter ) )
 
 			# prevent things expanding in an unwanted way
-			GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ), parenting = { "expand" : True } )
+			GafferUI.Spacer( imath.V2i( 1 ), imath.V2i( 999999, 1 ), parenting = { "expand" : True } )
 
 		return result
 

@@ -35,6 +35,8 @@
 ##########################################################################
 
 import unittest
+import imath
+import os
 
 import IECore
 
@@ -316,7 +318,7 @@ class BoxTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["n"] = Gaffer.Node()
 		s["n"]["c"] = Gaffer.Color3fPlug()
-		s["n"]["c"].setValue( IECore.Color3f( 1, 0, 1 ) )
+		s["n"]["c"].setValue( imath.Color3f( 1, 0, 1 ) )
 
 		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
 
@@ -330,7 +332,7 @@ class BoxTest( GafferTest.TestCase ) :
 		self.assertTrue( b["n"]["c"]["r"].getInput().isSame( p["r"] ) )
 		self.assertTrue( b["n"]["c"]["g"].getInput().isSame( p["g"] ) )
 		self.assertTrue( b["n"]["c"]["b"].getInput().isSame( p["b"] ) )
-		self.assertEqual( p.getValue(), IECore.Color3f( 1, 0, 1 ) )
+		self.assertEqual( p.getValue(), imath.Color3f( 1, 0, 1 ) )
 
 	def testPromoteCompoundPlugAndSerialise( self ) :
 
@@ -373,7 +375,7 @@ class BoxTest( GafferTest.TestCase ) :
 		s["b"]["n"] = Gaffer.Random()
 
 		p = s["b"].promotePlug( s["b"]["n"]["baseColor"] )
-		p.setValue( IECore.Color3f( 1, 2, 3 ) )
+		p.setValue( imath.Color3f( 1, 2, 3 ) )
 		p.setName( "c" )
 
 		self.assertTrue( isinstance( s["b"]["c"], Gaffer.Color3fPlug ) )
@@ -381,7 +383,7 @@ class BoxTest( GafferTest.TestCase ) :
 		self.assertTrue( s["b"]["n"]["baseColor"]["r"].getInput().isSame( s["b"]["c"]["r"] ) )
 		self.assertTrue( s["b"]["n"]["baseColor"]["g"].getInput().isSame( s["b"]["c"]["g"] ) )
 		self.assertTrue( s["b"]["n"]["baseColor"]["b"].getInput().isSame( s["b"]["c"]["b"] ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 1, 2, 3 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 1, 2, 3 ) )
 
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s.serialise() )
@@ -391,7 +393,7 @@ class BoxTest( GafferTest.TestCase ) :
 		self.assertTrue( s2["b"]["n"]["baseColor"]["r"].getInput().isSame( s2["b"]["c"]["r"] ) )
 		self.assertTrue( s2["b"]["n"]["baseColor"]["g"].getInput().isSame( s2["b"]["c"]["g"] ) )
 		self.assertTrue( s2["b"]["n"]["baseColor"]["b"].getInput().isSame( s2["b"]["c"]["b"] ) )
-		self.assertEqual( s2["b"]["c"].getValue(), IECore.Color3f( 1, 2, 3 ) )
+		self.assertEqual( s2["b"]["c"].getValue(), imath.Color3f( 1, 2, 3 ) )
 
 	def testCantPromoteNonSerialisablePlugs( self ) :
 
@@ -565,90 +567,6 @@ class BoxTest( GafferTest.TestCase ) :
 
 		self.assertEqual( Gaffer.Metadata.value( s2["Box"]["op1"], "description" ), "hello" )
 
-	def testCantPromoteReadOnlyPlug( self ) :
-
-		s = Gaffer.ScriptNode()
-
-		s["n"] = Gaffer.Node()
-		s["n"]["i"] = Gaffer.IntPlug()
-		s["n"]["c"] = Gaffer.Color3fPlug()
-
-		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
-
-		self.assertTrue( b.canPromotePlug( b["n"]["i"] ) )
-		self.assertTrue( b.canPromotePlug( b["n"]["c"] ) )
-		self.assertTrue( b.canPromotePlug( b["n"]["c"]["r"] ) )
-
-		b["n"]["i"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		b["n"]["c"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		b["n"]["c"]["r"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-		self.assertFalse( b.canPromotePlug( b["n"]["i"] ) )
-		self.assertFalse( b.canPromotePlug( b["n"]["c"] ) )
-		self.assertFalse( b.canPromotePlug( b["n"]["c"]["r"] ) )
-
-		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["i"] )
-		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"] )
-		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"]["r"] )
-
-		k = b.keys()
-		uk = b["user"].keys()
-		try :
-			b.promotePlug( b["n"]["i"] )
-		except Exception, e :
-			self.assertTrue( "Cannot promote" in str( e ) )
-			self.assertTrue( "read only" in str( e ) )
-			self.assertEqual( b.keys(), k )
-			self.assertEqual( b["user"].keys(), uk )
-
-	def testCantPromotePlugWithReadOnlyChildren( self ) :
-
-		s = Gaffer.ScriptNode()
-
-		s["n"] = Gaffer.Node()
-		s["n"]["c"] = Gaffer.Color3fPlug()
-
-		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
-
-		self.assertTrue( b.canPromotePlug( b["n"]["c"] ) )
-		self.assertTrue( b.canPromotePlug( b["n"]["c"]["r"] ) )
-
-		b["n"]["c"]["r"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-		self.assertFalse( b.canPromotePlug( b["n"]["c"] ) )
-		self.assertFalse( b.canPromotePlug( b["n"]["c"]["r"] ) )
-
-		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"] )
-		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"]["r"] )
-
-		k = b.keys()
-		uk = b["user"].keys()
-		try :
-			b.promotePlug( b["n"]["c"] )
-		except Exception, e :
-			self.assertTrue( "Cannot promote" in str( e ) )
-			self.assertTrue( "read only" in str( e ) )
-			self.assertEqual( b.keys(), k )
-			self.assertEqual( b["user"].keys(), uk )
-
-	def testMakePlugReadOnlyAfterPromoting( self ) :
-
-		s = Gaffer.ScriptNode()
-
-		s["n"] = GafferTest.AddNode()
-		s["n"]["op1"].setValue( 0 )
-		s["n"]["op2"].setValue( 0 )
-
-		self.assertEqual( s["n"]["sum"].getValue(), 0 )
-
-		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
-
-		op1 = b.promotePlug( b["n"]["op1"] )
-		b["n"]["op1"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-		op1.setValue( 1 )
-		self.assertEqual( b["n"]["sum"].getValue(), 1 )
-
 	def testMetadataSignalling( self ) :
 
 		s = Gaffer.ScriptNode()
@@ -669,7 +587,6 @@ class BoxTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 
 		s["b"] = Gaffer.Box()
-		self.assertEqual( Gaffer.Metadata.value( s["b"], "description" ), None )
 
 		cs = GafferTest.CapturingSlot( Gaffer.Metadata.nodeValueChangedSignal() )
 
@@ -725,8 +642,8 @@ class BoxTest( GafferTest.TestCase ) :
 		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
 		p = b.promotePlug( b["n"]["op1"] )
 
-		self.assertEqual( Gaffer.Metadata.value( b, "description" ), None )
-		self.assertEqual( Gaffer.Metadata.value( p, "description" ), None )
+		originalBoxDescription = Gaffer.Metadata.value( b, "description" )
+		originalPlugDescription = Gaffer.Metadata.value( p, "description" )
 
 		with Gaffer.UndoScope( s ) :
 			Gaffer.Metadata.registerValue( b, "description", "d" )
@@ -749,8 +666,8 @@ class BoxTest( GafferTest.TestCase ) :
 
 		s.undo()
 
-		self.assertEqual( Gaffer.Metadata.value( b, "description" ), None )
-		self.assertEqual( Gaffer.Metadata.value( p, "description" ), None )
+		self.assertEqual( Gaffer.Metadata.value( b, "description" ), originalBoxDescription )
+		self.assertEqual( Gaffer.Metadata.value( p, "description" ), originalPlugDescription )
 
 		s.redo()
 
@@ -839,8 +756,11 @@ class BoxTest( GafferTest.TestCase ) :
 		s["b"] = Gaffer.Box()
 		s["b"]["n"] = Gaffer.Node()
 
+		defaultDescription = Gaffer.Metadata.value( s["b"], "description" )
+		defaultNodeColor = Gaffer.Metadata.value( s["b"], "nodeGadget:color" )
+
 		Gaffer.Metadata.registerValue( s["b"], "description", "Test description" )
-		Gaffer.Metadata.registerValue( s["b"], "nodeGadget:color", IECore.Color3f( 1, 0, 0 ) )
+		Gaffer.Metadata.registerValue( s["b"], "nodeGadget:color", imath.Color3f( 1, 0, 0 ) )
 
 		ss = s.serialise( parent = s["b"] )
 
@@ -848,8 +768,8 @@ class BoxTest( GafferTest.TestCase ) :
 		s.execute( ss, parent = s["b2"] )
 
 		self.assertTrue( "n" in s["b2"] )
-		self.assertEqual( Gaffer.Metadata.value( s["b2"], "description" ), None )
-		self.assertEqual( Gaffer.Metadata.value( s["b2"], "nodeGadget:color" ), None )
+		self.assertEqual( Gaffer.Metadata.value( s["b2"], "description" ), defaultDescription )
+		self.assertEqual( Gaffer.Metadata.value( s["b2"], "nodeGadget:color" ), defaultNodeColor )
 
 	def testPromoteDynamicBoxPlugAndSerialise( self ) :
 
@@ -859,14 +779,14 @@ class BoxTest( GafferTest.TestCase ) :
 		s["b"]["n"]["p"] = Gaffer.Box2iPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 
 		p = s["b"].promotePlug( s["b"]["n"]["p"] )
-		p.setValue( IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) ) )
+		p.setValue( imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) ) )
 		p.setName( "c" )
 
 		self.assertTrue( isinstance( s["b"]["c"], Gaffer.Box2iPlug ) )
 		self.assertTrue( s["b"]["n"]["p"].getInput().isSame( s["b"]["c"] ) )
 		self.assertTrue( s["b"]["n"]["p"]["min"].getInput().isSame( s["b"]["c"]["min"] ) )
 		self.assertTrue( s["b"]["n"]["p"]["max"].getInput().isSame( s["b"]["c"]["max"] ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) ) )
 
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s.serialise() )
@@ -875,7 +795,7 @@ class BoxTest( GafferTest.TestCase ) :
 		self.assertTrue( s2["b"]["n"]["p"].getInput().isSame( s2["b"]["c"] ) )
 		self.assertTrue( s2["b"]["n"]["p"]["min"].getInput().isSame( s2["b"]["c"]["min"] ) )
 		self.assertTrue( s2["b"]["n"]["p"]["max"].getInput().isSame( s2["b"]["c"]["max"] ) )
-		self.assertEqual( s2["b"]["c"].getValue(), IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) ) )
+		self.assertEqual( s2["b"]["c"].getValue(), imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) ) )
 
 	def testPromoteStaticPlugsWithChildren( self ) :
 
@@ -1042,6 +962,50 @@ class BoxTest( GafferTest.TestCase ) :
 		self.assertTrue( s["b"]["sum"].source().isSame( innerBox["n"]["sum"] ) )
 		self.assertTrue( innerBox["n"]["op1"].source().isSame( s["b"]["op1"] ) )
 
+	def testCreateWithBoxIOPassThroughInSelection( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		# Make a Box containing BoxIn -> n -> BoxOut
+		# and BoxIn -> dot -> BoxOut.passThrough
+
+		s["b"] = Gaffer.Box()
+		s["b"]["i"] = Gaffer.BoxIn()
+		s["b"]["n"] = GafferTest.AddNode()
+		s["b"]["o"] = Gaffer.BoxOut()
+
+		s["b"]["i"]["name"].setValue( "op1" )
+		s["b"]["i"].setup( s["b"]["n"]["op1"] )
+		s["b"]["n"]["op1"].setInput( s["b"]["i"]["out"] )
+
+		s["b"]["dot"] = Gaffer.Dot()
+		s["b"]["dot"].setup( s["b"]["n"]["sum"] )
+		s["b"]["dot"]["in"].setInput( s["b"]["i"]["out"] )
+
+		s["b"]["o"]["name"].setValue( "sum" )
+		s["b"]["o"].setup( s["b"]["n"]["sum"] )
+		s["b"]["o"]["in"].setInput( s["b"]["n"]["sum"] )
+		s["b"]["o"]["passThrough"].setInput( s["b"]["dot"]["out"] )
+
+		# Ask to move all that (including the BoxIOs) into a
+		# nested Box. This doesn't really make sense, because
+		# the BoxIOs exist purely to build a bridge to the
+		# outer parent. So we expect them to remain where they
+		# were.
+
+		innerBox = Gaffer.Box.create( s["b"], Gaffer.StandardSet( s["b"].children( Gaffer.Node ) ) )
+
+		self.assertEqual( len( innerBox.children( Gaffer.Node ) ), 1 )
+		self.assertTrue( "n" in innerBox )
+		self.assertFalse( "n" in s["b"] )
+		self.assertFalse( "dot" in innerBox )
+		self.assertTrue( "dot" in s["b"] )
+		self.assertTrue( "i" in s["b"] )
+		self.assertTrue( "o" in s["b"] )
+		self.assertTrue( s["b"]["sum"].source().isSame( innerBox["n"]["sum"] ) )
+		self.assertTrue( innerBox["n"]["op1"].source().isSame( s["b"]["op1"] ) )
+		self.assertTrue( s["b"]["o"]["passThrough"].source().isSame( s["b"]["i"].promotedPlug() ) )
+
 	def testCanBoxNodesWithInternalNodeNetworkAndHiddenPlug( self ) :
 
 		# if we try to box a node which has an internal node network using a hidden non-serialised
@@ -1084,8 +1048,76 @@ class BoxTest( GafferTest.TestCase ) :
 
 		try :
 			box = Gaffer.Box.create( scriptNode, setOfNodesToBox )
-		except RuntimeError, e :
+		except RuntimeError as e :
 			self.assertTrue( False, msg = "boxing should not raise an exception here" )
+
+	def testPassThroughCreatedInVersion0_52( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/boxPassThroughVersion-0.52.0.0.gfr" )
+		s.load()
+
+		def assertPassThrough( script ) :
+
+			self.assertEqual( script["AddTen"]["op1"].getValue(), 0 )
+			self.assertEqual( script["AddTen"]["sum"].getValue(), 10 )
+			self.assertEqual( script["AddTen"].correspondingInput( script["AddTen"]["sum"] ), script["AddTen"]["op1"] )
+
+			script["AddTen"]["enabled"].setValue( False )
+			self.assertEqual( script["AddTen"]["sum"].getValue(), 0 )
+
+			script["AddTen"]["op1"].setValue( 1 )
+			self.assertEqual( script["AddTen"]["sum"].getValue(), 1 )
+
+			script["AddTen"]["enabled"].setValue( True )
+			script["AddTen"]["op1"].setValue( 0 )
+
+		assertPassThrough( s )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		assertPassThrough( s2 )
+
+	def testAddPassThroughToBoxFromVersion0_52( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/boxVersion-0.52.0.0.gfr" )
+		s.load()
+
+		# The original Box had no pass-through behaviour defined,
+		# and no "enabled" plug. We don't want that to change without
+		# user interaction.
+
+		self.assertNotIn( "enabled", s["AddTen"] )
+		self.assertEqual( s["AddTen"]["sum"].getValue(), 10 )
+
+		# When the user defines a pass-through for the first time,
+		# only then do we want to create the enabled plug and hook
+		# everything up.
+
+		s["AddTen"]["BoxOut"]["passThrough"].setInput( s["AddTen"]["BoxIn"]["out"] )
+
+		def assertPassThrough( script ) :
+
+			self.assertIn( "enabled", script["AddTen"] )
+			self.assertEqual( script["AddTen"]["enabled"].getValue(), True )
+			self.assertEqual( script["AddTen"]["sum"].getValue(), 10 )
+			script["AddTen"]["enabled"].setValue( False )
+			self.assertEqual( script["AddTen"]["sum"].getValue(), 0 )
+
+			script["AddTen"]["op1"].setValue( 1 )
+			self.assertEqual( script["AddTen"]["sum"].getValue(), 1 )
+
+			script["AddTen"]["enabled"].setValue( True )
+			script["AddTen"]["op1"].setValue( 0 )
+
+		assertPassThrough( s )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		assertPassThrough( s2 )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -34,22 +34,29 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/algorithm/string.hpp"
-
-#include "OpenEXR/ImathMatrix.h"
-#include "OpenEXR/ImathVec.h"
-
-#include "IECore/CompoundData.h"
-#include "IECore/Camera.h"
-#include "IECore/Shader.h"
-#include "IECore/Transform.h"
-
-#include "Gaffer/Metadata.h"
-#include "Gaffer/Context.h"
-
 #include "GafferScene/LightToCamera.h"
 
+#include "Gaffer/Context.h"
+#include "Gaffer/Metadata.h"
+
+#include "IECoreScene/Camera.h"
+#include "IECoreScene/Shader.h"
+#include "IECoreScene/ShaderNetwork.h"
+#include "IECoreScene/Transform.h"
+
+#include "IECore/CompoundData.h"
+#include "IECore/Export.h"
+#include "IECore/AngleConversion.h"
+
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathMatrix.h"
+#include "OpenEXR/ImathVec.h"
+IECORE_POP_DEFAULT_VISIBILITY
+
+#include "boost/algorithm/string.hpp"
+
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 using namespace Imath;
@@ -92,14 +99,13 @@ void light( const CompoundObject *attributes, const IECore::CompoundData* &shade
 			continue;
 		}
 
-		const IECore::ObjectVector *shaderVector = IECore::runTimeCast<const IECore::ObjectVector>( it->second.get() );
-		if( !shaderVector || shaderVector->members().empty() )
+		const IECoreScene::ShaderNetwork *shaderNetwork = IECore::runTimeCast<const IECoreScene::ShaderNetwork>( it->second.get() );
+		if( !shaderNetwork || !shaderNetwork->size() )
 		{
 			continue;
 		}
 
-		IECore::InternedString shaderName;
-		const IECore::Shader *shader = IECore::runTimeCast<const IECore::Shader>( shaderVector->members().back().get() );
+		const IECoreScene::Shader *shader = shaderNetwork->outputShader();
 		if( !shader )
 		{
 			continue;
@@ -111,7 +117,7 @@ void light( const CompoundObject *attributes, const IECore::CompoundData* &shade
 	}
 
 	metadataTarget = "";
-	shaderParameters = NULL;
+	shaderParameters = nullptr;
 	return;
 }
 
@@ -140,7 +146,7 @@ float lightOuterAngle( const IECore::CompoundData *shaderParameters, const std::
 		}
 	}
 
-	const std::string *penumbraType = NULL;
+	const std::string *penumbraType = nullptr;
 	ConstStringDataPtr penumbraTypeData = Metadata::value<StringData>( metadataTarget, "penumbraType" );
 	if( penumbraTypeData )
 	{
@@ -196,20 +202,18 @@ M44f lightCameraTransform( const IECore::CompoundData *shaderParameters, const s
 	}
 }
 
-IECore::CameraPtr lightToCamera( const IECore::CompoundData *shaderParameters, const std::string &metadataTarget )
+IECoreScene::CameraPtr lightToCamera( const IECore::CompoundData *shaderParameters, Camera::FilmFit filmFit, const std::string &metadataTarget )
 {
-	IECore::CameraPtr result = new IECore::Camera();
+	IECoreScene::CameraPtr result = new IECoreScene::Camera();
 	const char *type = lightType( shaderParameters, metadataTarget );
 
-
-	float screenWindowScale = 1.0f;
 	if( type && !strcmp( type, "distant" ) )
 	{
 		const float locatorScale = parameter<float>( metadataTarget, shaderParameters, "locatorScaleParameter", 1 );
 
-		result->parameters()["projection"] = new StringData( "orthographic" );
-		result->parameters()["clippingPlanes"] = new V2fData( V2f( -100000, 100000 ) );
-		screenWindowScale = locatorScale;
+		result->setProjection( "orthographic" );
+		result->setClippingPlanes( V2f( -100000, 100000 ) );
+		result->setAperture( V2f( 2.0f * locatorScale ) );
 	}
 	else if( type && !strcmp( type, "spot" ) )
 	{
@@ -222,52 +226,61 @@ IECore::CameraPtr lightToCamera( const IECore::CompoundData *shaderParameters, c
 		// to make sure that we don't go under 0.01 in near clip to preserve depth range,
 		// and we keep the near clip slightly past the origin of the light so we don't see
 		// the light's color indicator when looking through it in the viewport
-		result->parameters()["clippingPlanes"] = new V2fData( V2f( std::max( focalPointOffset + 0.0001f, 0.01f ), 100000 ) );
-		result->parameters()["projection"] = new StringData( "perspective" );
-		result->parameters()["projection:fov"] = new FloatData( outerAngle );
+		result->setClippingPlanes( V2f( std::max( focalPointOffset + 0.0001f, 0.01f ), 100000 ) );
+		result->setProjection( "perspective" );
+		result->setAperture( V2f( 1.0f ) );
+		result->setFocalLengthFromFieldOfView( outerAngle );
 	}
 	else
 	{
-		return NULL;
+		return nullptr;
 	}
-
-	// Hardcode resolution to some sort of square by default, interface for selecting resolution
-	// not yet decided, as per John
-	result->parameters()["resolutionOverride"] = new V2iData( V2i( 512, 512 ) );
-	Box2f screenWindow( screenWindowScale * V2f( -1.0f ), screenWindowScale * V2f( 1.0f ) );
-	result->parameters()["screenWindow"] = new Box2fData( screenWindow );
+	result->setFilmFit( filmFit );
 
 	return result;
 }
 
 } // namespace
 
-IE_CORE_DEFINERUNTIMETYPED( LightToCamera );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( LightToCamera );
 
 size_t LightToCamera::g_firstPlugIndex = 0;
 
 LightToCamera::LightToCamera( const std::string &name )
-	:	SceneElementProcessor( name, GafferScene::Filter::NoMatch )
+	:	SceneElementProcessor( name, IECore::PathMatcher::NoMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
+
+	addChild( new IntPlug( "filmFit", Plug::In, IECoreScene::Camera::Fit ) );
 
 	// Fast pass-throughs for things we don't modify
 	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
 
 	// We do modify sets
-	outPlug()->setNamesPlug()->setInput( NULL );
-	outPlug()->setPlug()->setInput( NULL );
+	outPlug()->setNamesPlug()->setInput( nullptr );
+	outPlug()->setPlug()->setInput( nullptr );
 }
 
 LightToCamera::~LightToCamera()
 {
 }
 
+Gaffer::IntPlug *LightToCamera::filmFitPlug()
+{
+	return getChild<IntPlug>( g_firstPlugIndex );
+}
+
+const Gaffer::IntPlug *LightToCamera::filmFitPlug() const
+{
+	return getChild<IntPlug>( g_firstPlugIndex );
+}
+
+
 void LightToCamera::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneElementProcessor::affects( input, outputs );
 
-	if( input == inPlug()->attributesPlug() )
+	if( input == inPlug()->attributesPlug() || input == filmFitPlug() )
 	{
 		outputs.push_back( outPlug()->objectPlug() );
 		outputs.push_back( outPlug()->transformPlug() );
@@ -290,25 +303,22 @@ bool LightToCamera::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *
 
 	if( plug == filterPlug() )
 	{
-		if( const Filter *filter = runTimeCast<const Filter>( inputPlug->source<Plug>()->node() ) )
+		if(
+			filterPlug()->sceneAffectsMatch( inPlug(), inPlug()->boundPlug() ) ||
+			filterPlug()->sceneAffectsMatch( inPlug(), inPlug()->transformPlug() ) ||
+			filterPlug()->sceneAffectsMatch( inPlug(), inPlug()->attributesPlug() ) ||
+			filterPlug()->sceneAffectsMatch( inPlug(), inPlug()->objectPlug() ) ||
+			filterPlug()->sceneAffectsMatch( inPlug(), inPlug()->childNamesPlug() )
+		)
 		{
-			if(
-				filter->sceneAffectsMatch( inPlug(), inPlug()->boundPlug() ) ||
-				filter->sceneAffectsMatch( inPlug(), inPlug()->transformPlug() ) ||
-				filter->sceneAffectsMatch( inPlug(), inPlug()->attributesPlug() ) ||
-				filter->sceneAffectsMatch( inPlug(), inPlug()->objectPlug() ) ||
-				filter->sceneAffectsMatch( inPlug(), inPlug()->childNamesPlug() )
-			)
-			{
-				// We make a single call to filterHash() in hashSet(), to account for
-				// the fact that the filter is used in remapping sets. This wouldn't
-				// work for filter types which actually vary based on data within the
-				// scene hierarchy, because then multiple calls would be necessary.
-				// We could make more calls here, but that would be expensive.
-				/// \todo In an ideal world we'd be able to compute a hash for the
-				/// filter across a whole hierarchy.
-				return false;
-			}
+			// We make a single call to filterHash() in hashSet(), to account for
+			// the fact that the filter is used in remapping sets. This wouldn't
+			// work for filter types which actually vary based on data within the
+			// scene hierarchy, because then multiple calls would be necessary.
+			// We could make more calls here, but that would be expensive.
+			/// \todo In an ideal world we'd be able to compute a hash for the
+			/// filter across a whole hierarchy.
+			return false;
 		}
 	}
 
@@ -323,6 +333,7 @@ bool LightToCamera::processesObject() const
 
 void LightToCamera::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	filmFitPlug()->hash( h );
 	inPlug()->attributesPlug()->hash( h );
 }
 
@@ -331,23 +342,19 @@ IECore::ConstObjectPtr LightToCamera::computeProcessedObject( const ScenePath &p
 	const IECore::CompoundData* shaderParameters;
 	std::string metadataTarget;
 	light( inPlug()->attributesPlug()->getValue().get(), shaderParameters, metadataTarget );
-	IECore::ConstCameraPtr camera = NULL;
+	IECoreScene::CameraPtr camera = nullptr;
 	if( shaderParameters )
 	{
-		camera = lightToCamera( shaderParameters, metadataTarget );
+		camera = lightToCamera( shaderParameters, (Camera::FilmFit)filmFitPlug()->getValue(), metadataTarget );
 	}
 
-	if( camera )
+	if( !camera )
 	{
-		return camera;
+		camera = new IECoreScene::Camera();
+		camera->setProjection( "perspective" );
 	}
-	else
-	{
-		IECore::CameraPtr defaultCamera = new IECore::Camera();
-		defaultCamera->parameters()["projection"] = new StringData( "perspective" );
-		defaultCamera->parameters()["resolutionOverride"] = new V2iData( V2i( 512, 512 ) );
-		return defaultCamera;
-	}
+
+	return camera;
 }
 
 bool LightToCamera::processesTransform() const
@@ -365,7 +372,7 @@ M44f LightToCamera::computeProcessedTransform( const ScenePath &path, const Gaff
 	const IECore::CompoundData* shaderParameters;
 	std::string metadataTarget;
 	light( inPlug()->attributesPlug()->getValue().get(), shaderParameters, metadataTarget );
-	IECore::ConstCameraPtr camera = NULL;
+	IECoreScene::ConstCameraPtr camera = nullptr;
 	if( shaderParameters )
 	{
 		return lightCameraTransform( shaderParameters, metadataTarget ) * inputTransform;
@@ -450,7 +457,7 @@ void LightToCamera::hashSet( const IECore::InternedString &setName, const Gaffer
 	filterPlug()->hash( h );
 }
 
-GafferScene::ConstPathMatcherDataPtr LightToCamera::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr LightToCamera::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	ConstPathMatcherDataPtr inputSetData = inPlug()->setPlug()->getValue();
 
@@ -487,7 +494,7 @@ GafferScene::ConstPathMatcherDataPtr LightToCamera::computeSet( const IECore::In
 	{
 		sceneScope.set( ScenePlug::scenePathContextName, *pIt );
 		const int m = filterPlug()->getValue();
-		if( m & Filter::ExactMatch )
+		if( m & IECore::PathMatcher::ExactMatch )
 		{
 			if( isLightSet )
 			{

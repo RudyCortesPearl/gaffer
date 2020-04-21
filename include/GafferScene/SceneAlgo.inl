@@ -34,8 +34,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/task.h"
 #include "Gaffer/Context.h"
+
+#include "tbb/task.h"
 
 namespace GafferScene
 {
@@ -51,20 +52,20 @@ class TraverseTask : public tbb::task
 
 		TraverseTask(
 			const GafferScene::ScenePlug *scene,
-			const Gaffer::Context *context,
+			const Gaffer::ThreadState &threadState,
 			ThreadableFunctor &f
 		)
-			:	m_scene( scene ), m_context( context ), m_f( f )
+			:	m_scene( scene ), m_threadState( threadState ), m_f( f )
 		{
 		}
 
-		virtual ~TraverseTask()
+		~TraverseTask() override
 		{
 		}
 
-		virtual task *execute()
+		task *execute() override
 		{
-			ScenePlug::PathScope pathScope( m_context, m_path );
+			ScenePlug::PathScope pathScope( m_threadState, m_path );
 
 			if( m_f( m_scene, m_path ) )
 			{
@@ -84,25 +85,87 @@ class TraverseTask : public tbb::task
 				wait_for_all();
 			}
 
-			return NULL;
+			return nullptr;
 		}
 
 	protected :
 
 		TraverseTask( const TraverseTask &other, const ScenePlug::ScenePath &path )
 			:	m_scene( other.m_scene ),
-				m_context( other.m_context ),
-				m_f( other.m_f ),
-				m_path( path )
+			m_threadState( other.m_threadState ),
+			m_f( other.m_f ),
+			m_path( path )
 		{
 		}
 
 	private :
 
 		const GafferScene::ScenePlug *m_scene;
-		const Gaffer::Context *m_context;
+		const Gaffer::ThreadState &m_threadState;
 		ThreadableFunctor &m_f;
 		GafferScene::ScenePlug::ScenePath m_path;
+
+};
+
+template<typename ThreadableFunctor>
+class LocationTask : public tbb::task
+{
+
+	public :
+
+		LocationTask(
+			const GafferScene::ScenePlug *scene,
+			const Gaffer::ThreadState &threadState,
+			const ScenePlug::ScenePath &path,
+			ThreadableFunctor &f
+		)
+			:	m_scene( scene ), m_threadState( threadState ), m_path( path ), m_f( f )
+		{
+		}
+
+		~LocationTask() override
+		{
+		}
+
+		task *execute() override
+		{
+			ScenePlug::PathScope pathScope( m_threadState, m_path );
+
+			if( !m_f( m_scene, m_path ) )
+			{
+				return nullptr;
+			}
+
+			IECore::ConstInternedStringVectorDataPtr childNamesData = m_scene->childNamesPlug()->getValue();
+			const std::vector<IECore::InternedString> &childNames = childNamesData->readable();
+			if( childNames.empty() )
+			{
+				return nullptr;
+			}
+
+			std::vector<ThreadableFunctor> childFunctors( childNames.size(), m_f );
+
+			set_ref_count( 1 + childNames.size() );
+
+			ScenePlug::ScenePath childPath = m_path;
+			childPath.push_back( IECore::InternedString() ); // space for the child name
+			for( size_t i = 0, e = childNames.size(); i < e; ++i )
+			{
+				childPath.back() = childNames[i];
+				LocationTask *t = new( allocate_child() ) LocationTask( m_scene, m_threadState, childPath, childFunctors[i] );
+				spawn( *t );
+			}
+			wait_for_all();
+
+			return nullptr;
+		}
+
+	private :
+
+		const GafferScene::ScenePlug *m_scene;
+		const Gaffer::ThreadState &m_threadState;
+		const GafferScene::ScenePlug::ScenePath m_path;
+		ThreadableFunctor &m_f;
 
 };
 
@@ -113,8 +176,13 @@ struct ThreadableFilteredFunctor
 
 	bool operator()( const GafferScene::ScenePlug *scene, const GafferScene::ScenePlug::ScenePath &path )
 	{
-		const GafferScene::Filter::Result match = (GafferScene::Filter::Result)m_filter->getValue();
-		if( match & GafferScene::Filter::ExactMatch )
+		IECore::PathMatcher::Result match;
+		{
+			FilterPlug::SceneScope sceneScope( Gaffer::Context::current(), scene );
+			match = (IECore::PathMatcher::Result)m_filter->getValue();
+		}
+
+		if( match & IECore::PathMatcher::ExactMatch )
 		{
 			if( !m_f( scene, path ) )
 			{
@@ -122,7 +190,7 @@ struct ThreadableFilteredFunctor
 			}
 		}
 
-		return ( match & GafferScene::Filter::DescendantMatch ) != 0;
+		return ( match & IECore::PathMatcher::DescendantMatch ) != 0;
 	}
 
 	ThreadableFunctor &m_f;
@@ -134,7 +202,7 @@ template<class ThreadableFunctor>
 struct PathMatcherFunctor
 {
 
-	PathMatcherFunctor( ThreadableFunctor &f, const PathMatcher &filter )
+	PathMatcherFunctor( ThreadableFunctor &f, const IECore::PathMatcher &filter )
 		: m_f( f ), m_filter( filter )
 	{
 	}
@@ -142,7 +210,7 @@ struct PathMatcherFunctor
 	bool operator()( const GafferScene::ScenePlug *scene, const GafferScene::ScenePlug::ScenePath &path )
 	{
 		const unsigned match = m_filter.match( path );
-		if( match & GafferScene::Filter::ExactMatch )
+		if( match & IECore::PathMatcher::ExactMatch )
 		{
 			if( !m_f( scene, path ) )
 			{
@@ -150,13 +218,13 @@ struct PathMatcherFunctor
 			}
 		}
 
-		return match & GafferScene::Filter::DescendantMatch;
+		return match & IECore::PathMatcher::DescendantMatch;
 	}
 
 	private :
 
 		ThreadableFunctor &m_f;
-		const PathMatcher &m_filter;
+		const IECore::PathMatcher &m_filter;
 
 };
 
@@ -166,10 +234,24 @@ namespace SceneAlgo
 {
 
 template <class ThreadableFunctor>
+void parallelProcessLocations( const GafferScene::ScenePlug *scene, ThreadableFunctor &f )
+{
+	return parallelProcessLocations( scene, f, ScenePlug::ScenePath() );
+}
+
+template <class ThreadableFunctor>
+void parallelProcessLocations( const GafferScene::ScenePlug *scene, ThreadableFunctor &f, const ScenePlug::ScenePath &root )
+{
+	tbb::task_group_context taskGroupContext( tbb::task_group_context::isolated ); // Prevents outer tasks silently cancelling our tasks
+	Detail::LocationTask<ThreadableFunctor> *task = new( tbb::task::allocate_root( taskGroupContext ) ) Detail::LocationTask<ThreadableFunctor>( scene, Gaffer::ThreadState::current(), root, f );
+	tbb::task::spawn_root_and_wait( *task );
+}
+
+template <class ThreadableFunctor>
 void parallelTraverse( const GafferScene::ScenePlug *scene, ThreadableFunctor &f )
 {
-	FilterPlug::SceneScope sceneScope( Gaffer::Context::current(), scene );
-	Detail::TraverseTask<ThreadableFunctor> *task = new( tbb::task::allocate_root() ) Detail::TraverseTask<ThreadableFunctor>( scene, Gaffer::Context::current(), f );
+	tbb::task_group_context taskGroupContext( tbb::task_group_context::isolated ); // Prevents outer tasks silently cancelling our tasks
+	Detail::TraverseTask<ThreadableFunctor> *task = new( tbb::task::allocate_root( taskGroupContext ) ) Detail::TraverseTask<ThreadableFunctor>( scene, Gaffer::ThreadState::current(), f );
 	tbb::task::spawn_root_and_wait( *task );
 }
 
@@ -187,7 +269,7 @@ void filteredParallelTraverse( const GafferScene::ScenePlug *scene, const Gaffer
 }
 
 template <class ThreadableFunctor>
-void filteredParallelTraverse( const ScenePlug *scene, const PathMatcher &filter, ThreadableFunctor &f )
+void filteredParallelTraverse( const ScenePlug *scene, const IECore::PathMatcher &filter, ThreadableFunctor &f )
 {
 	Detail::PathMatcherFunctor<ThreadableFunctor> ff( f, filter );
 	parallelTraverse( scene, ff );

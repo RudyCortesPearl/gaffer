@@ -37,6 +37,7 @@
 import unittest
 import threading
 import weakref
+import imath
 
 import IECore
 
@@ -117,33 +118,33 @@ class ContextTest( GafferTest.TestCase ) :
 		self.assertEqual( c["string"], "bye" )
 		self.failUnless( isinstance( c["string"], basestring ) )
 
-		c["v2i"] = IECore.V2i( 1, 2 )
-		self.assertEqual( c["v2i"], IECore.V2i( 1, 2 ) )
-		self.assertEqual( c.get( "v2i" ), IECore.V2i( 1, 2 ) )
-		c.set( "v2i", IECore.V2i( 1, 2 ) )
-		self.assertEqual( c["v2i"], IECore.V2i( 1, 2 ) )
-		self.failUnless( isinstance( c["v2i"], IECore.V2i ) )
+		c["v2i"] = imath.V2i( 1, 2 )
+		self.assertEqual( c["v2i"], imath.V2i( 1, 2 ) )
+		self.assertEqual( c.get( "v2i" ), imath.V2i( 1, 2 ) )
+		c.set( "v2i", imath.V2i( 1, 2 ) )
+		self.assertEqual( c["v2i"], imath.V2i( 1, 2 ) )
+		self.failUnless( isinstance( c["v2i"], imath.V2i ) )
 
-		c["v3i"] = IECore.V3i( 1, 2, 3 )
-		self.assertEqual( c["v3i"], IECore.V3i( 1, 2, 3 ) )
-		self.assertEqual( c.get( "v3i" ), IECore.V3i( 1, 2, 3 ) )
-		c.set( "v3i", IECore.V3i( 1, 2, 3 ) )
-		self.assertEqual( c["v3i"], IECore.V3i( 1, 2, 3 ) )
-		self.failUnless( isinstance( c["v3i"], IECore.V3i ) )
+		c["v3i"] = imath.V3i( 1, 2, 3 )
+		self.assertEqual( c["v3i"], imath.V3i( 1, 2, 3 ) )
+		self.assertEqual( c.get( "v3i" ), imath.V3i( 1, 2, 3 ) )
+		c.set( "v3i", imath.V3i( 1, 2, 3 ) )
+		self.assertEqual( c["v3i"], imath.V3i( 1, 2, 3 ) )
+		self.failUnless( isinstance( c["v3i"], imath.V3i ) )
 
-		c["v2f"] = IECore.V2f( 1, 2 )
-		self.assertEqual( c["v2f"], IECore.V2f( 1, 2 ) )
-		self.assertEqual( c.get( "v2f" ), IECore.V2f( 1, 2 ) )
-		c.set( "v2f", IECore.V2f( 1, 2 ) )
-		self.assertEqual( c["v2f"], IECore.V2f( 1, 2 ) )
-		self.failUnless( isinstance( c["v2f"], IECore.V2f ) )
+		c["v2f"] = imath.V2f( 1, 2 )
+		self.assertEqual( c["v2f"], imath.V2f( 1, 2 ) )
+		self.assertEqual( c.get( "v2f" ), imath.V2f( 1, 2 ) )
+		c.set( "v2f", imath.V2f( 1, 2 ) )
+		self.assertEqual( c["v2f"], imath.V2f( 1, 2 ) )
+		self.failUnless( isinstance( c["v2f"], imath.V2f ) )
 
-		c["v3f"] = IECore.V3f( 1, 2, 3 )
-		self.assertEqual( c["v3f"], IECore.V3f( 1, 2, 3 ) )
-		self.assertEqual( c.get( "v3f" ), IECore.V3f( 1, 2, 3 ) )
-		c.set( "v3f", IECore.V3f( 1, 2, 3 ) )
-		self.assertEqual( c["v3f"], IECore.V3f( 1, 2, 3 ) )
-		self.failUnless( isinstance( c["v3f"], IECore.V3f ) )
+		c["v3f"] = imath.V3f( 1, 2, 3 )
+		self.assertEqual( c["v3f"], imath.V3f( 1, 2, 3 ) )
+		self.assertEqual( c.get( "v3f" ), imath.V3f( 1, 2, 3 ) )
+		c.set( "v3f", imath.V3f( 1, 2, 3 ) )
+		self.assertEqual( c["v3f"], imath.V3f( 1, 2, 3 ) )
+		self.failUnless( isinstance( c["v3f"], imath.V3f ) )
 
 	def testCopying( self ) :
 
@@ -236,10 +237,10 @@ class ContextTest( GafferTest.TestCase ) :
 		self.assertEqual( c["v"], v )
 		self.failIf( c["v"].isSame( v ) )
 
-	def testGetWithDefault( self ) :
+	def testGetFallbackValue( self ) :
 
 		c = Gaffer.Context()
-		self.assertRaises( RuntimeError, c.get, "f" )
+		self.assertEqual( c.get( "f" ), None )
 		self.assertEqual( c.get( "f", 10 ), 10 )
 		c["f"] = 1.0
 		self.assertEqual( c.get( "f" ), 1.0 )
@@ -295,13 +296,13 @@ class ContextTest( GafferTest.TestCase ) :
 		c["a"] = "apple"
 		c["b"] = "bear"
 
-		self.assertEqual( c.substitute( "~", c.Substitutions.AllSubstitutions & ~c.Substitutions.TildeSubstitutions ), "~" )
-		self.assertEqual( c.substitute( "#", c.Substitutions.AllSubstitutions & ~c.Substitutions.FrameSubstitutions ), "#" )
-		self.assertEqual( c.substitute( "$a/${b}", c.Substitutions.AllSubstitutions & ~c.Substitutions.VariableSubstitutions ), "$a/${b}" )
-		self.assertEqual( c.substitute( "\\", c.Substitutions.AllSubstitutions & ~c.Substitutions.EscapeSubstitutions ), "\\" )
-		self.assertEqual( c.substitute( "\\$a", c.Substitutions.AllSubstitutions & ~c.Substitutions.EscapeSubstitutions ), "\\apple" )
-		self.assertEqual( c.substitute( "#${a}", c.Substitutions.AllSubstitutions & ~c.Substitutions.FrameSubstitutions ), "#apple" )
-		self.assertEqual( c.substitute( "#${a}", c.Substitutions.NoSubstitutions ), "#${a}" )
+		self.assertEqual( c.substitute( "~", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.TildeSubstitutions ), "~" )
+		self.assertEqual( c.substitute( "#", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions ), "#" )
+		self.assertEqual( c.substitute( "$a/${b}", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.VariableSubstitutions ), "$a/${b}" )
+		self.assertEqual( c.substitute( "\\", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.EscapeSubstitutions ), "\\" )
+		self.assertEqual( c.substitute( "\\$a", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.EscapeSubstitutions ), "\\apple" )
+		self.assertEqual( c.substitute( "#${a}", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions ), "#apple" )
+		self.assertEqual( c.substitute( "#${a}", IECore.StringAlgo.Substitutions.NoSubstitutions ), "#${a}" )
 
 	def testFrameAndVariableSubstitutionsAreDifferent( self ) :
 
@@ -310,31 +311,19 @@ class ContextTest( GafferTest.TestCase ) :
 
 		# Turning off variable substitutions should have no effect on '#' substitutions.
 		self.assertEqual( c.substitute( "###.$frame" ), "003.3" )
-		self.assertEqual( c.substitute( "###.$frame", c.Substitutions.AllSubstitutions & ~c.Substitutions.VariableSubstitutions ), "003.$frame" )
+		self.assertEqual( c.substitute( "###.$frame", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.VariableSubstitutions ), "003.$frame" )
 
 		# Turning off '#' substitutions should have no effect on variable substitutions.
 		self.assertEqual( c.substitute( "###.$frame" ), "003.3" )
-		self.assertEqual( c.substitute( "###.$frame", c.Substitutions.AllSubstitutions & ~c.Substitutions.FrameSubstitutions ), "###.3" )
+		self.assertEqual( c.substitute( "###.$frame", IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions ), "###.3" )
 
-	def testSubstitutions( self ) :
-
-		c = Gaffer.Context
-		self.assertEqual( c.substitutions( "a"), c.Substitutions.NoSubstitutions )
-		self.assertEqual( c.substitutions( "~/something"), c.Substitutions.TildeSubstitutions )
-		self.assertEqual( c.substitutions( "$a"), c.Substitutions.VariableSubstitutions )
-		self.assertEqual( c.substitutions( "${a}"), c.Substitutions.VariableSubstitutions )
-		self.assertEqual( c.substitutions( "###"), c.Substitutions.FrameSubstitutions )
-		self.assertEqual( c.substitutions( "\#"), c.Substitutions.EscapeSubstitutions )
-		self.assertEqual( c.substitutions( "${a}.###"), c.Substitutions.VariableSubstitutions | c.Substitutions.FrameSubstitutions )
-
-	def testHasSubstitutions( self ) :
+	def testInternedStringVectorDataSubstitutions( self ) :
 
 		c = Gaffer.Context()
-		self.assertFalse( c.hasSubstitutions( "a" ) )
-		self.assertTrue( c.hasSubstitutions( "~something" ) )
-		self.assertTrue( c.hasSubstitutions( "$a" ) )
-		self.assertTrue( c.hasSubstitutions( "${a}" ) )
-		self.assertTrue( c.hasSubstitutions( "###" ) )
+		c["test1"] = IECore.InternedStringVectorData( [ "a", "b" ] )
+		c["test2"] = IECore.InternedStringVectorData()
+		self.assertEqual( c.substitute( "${test1}" ), "/a/b" )
+		self.assertEqual( c.substitute( "${test2}" ), "/" )
 
 	def testNames( self ) :
 
@@ -353,6 +342,7 @@ class ContextTest( GafferTest.TestCase ) :
 
 		self.assertEqual( cc.names(), cc.keys() )
 
+	@GafferTest.TestRunner.PerformanceTestMethod()
 	def testManyContexts( self ) :
 
 		GafferTest.testManyContexts()
@@ -546,10 +536,12 @@ class ContextTest( GafferTest.TestCase ) :
 		c["ui:test"] = 1
 		self.assertEqual( h, c.hash() )
 
+	@GafferTest.TestRunner.PerformanceTestMethod()
 	def testManySubstitutions( self ) :
 
 		GafferTest.testManySubstitutions()
 
+	@GafferTest.TestRunner.PerformanceTestMethod()
 	def testManyEnvironmentSubstitutions( self ) :
 
 		GafferTest.testManyEnvironmentSubstitutions()
@@ -568,9 +560,6 @@ class ContextTest( GafferTest.TestCase ) :
 		# the extra slashes are escaping for the python interpreter.
 		self.assertEqual( c.substitute( "\\\\" ), "\\" )
 		self.assertEqual( c.substitute( "\\" ), "" )
-
-		self.assertTrue( c.hasSubstitutions( "\\" ) ) # must return true, because escaping affects substitution
-		self.assertTrue( c.hasSubstitutions( "\\\\" ) ) # must return true, because escaping affects substitution
 
 	def testRemove( self ) :
 
@@ -650,6 +639,22 @@ class ContextTest( GafferTest.TestCase ) :
 	def testEditableScope( self ) :
 
 		GafferTest.testEditableScope()
+
+	def testCanceller( self ) :
+
+		c = Gaffer.Context()
+		c["test"] = 1
+		self.assertEqual( c.canceller(), None )
+
+		canceller = IECore.Canceller()
+		cc = Gaffer.Context( c, canceller )
+
+		self.assertEqual( cc["test"], 1 )
+		self.assertTrue( cc.canceller() is not None )
+
+		canceller.cancel()
+		with self.assertRaises( IECore.Cancelled ) :
+			IECore.Canceller.check( cc.canceller() )
 
 if __name__ == "__main__":
 	unittest.main()

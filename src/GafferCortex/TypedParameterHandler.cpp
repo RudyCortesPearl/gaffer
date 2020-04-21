@@ -35,13 +35,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/TypedParameter.h"
-
-#include "Gaffer/TypedPlug.h"
-
 #include "GafferCortex/TypedParameterHandler.h"
 
-using namespace GafferCortex;
+#include "Gaffer/PlugAlgo.h"
+#include "Gaffer/TypedPlug.h"
+
+#include "IECore/CompoundObject.h"
+#include "IECore/TypedParameter.h"
+
+namespace GafferCortex
+{
 
 template<typename T>
 ParameterHandler::ParameterHandlerDescription<TypedParameterHandler<T>, IECore::TypedParameter<T> > TypedParameterHandler<T>::g_description;
@@ -75,21 +78,53 @@ void TypedParameterHandler<T>::restore( Gaffer::GraphComponent *plugParent )
 }
 
 template<typename T>
+typename TypedParameterHandler<T>::PlugType::Ptr TypedParameterHandler<T>::createPlug( Gaffer::Plug::Direction direction ) const
+{
+	return new PlugType( m_parameter->name(), direction, m_parameter->typedDefaultValue() );
+}
+
+template<>
+TypedParameterHandler<std::string>::PlugType::Ptr TypedParameterHandler<std::string>::createPlug( Gaffer::Plug::Direction direction, IECore::StringAlgo::Substitutions substitutions ) const
+{
+	return new Gaffer::StringPlug( m_parameter->name(), direction, m_parameter->typedDefaultValue(), Gaffer::Plug::Default, substitutions );
+}
+
+template<typename T>
 Gaffer::Plug *TypedParameterHandler<T>::setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction, unsigned flags )
 {
 	m_plug = plugParent->getChild<PlugType>( m_parameter->name() );
 	if( !m_plug || m_plug->direction()!=direction )
 	{
-		m_plug = new PlugType( m_parameter->name(), direction, m_parameter->typedDefaultValue() );
-		if( m_parameter->isInstanceOf( IECore::FileSequenceParameterTypeId ) )
+		m_plug = createPlug( direction );
+		Gaffer::PlugAlgo::replacePlug( plugParent, m_plug );
+	}
+
+	setupPlugFlags( m_plug.get(), flags );
+
+	return m_plug.get();
+}
+
+template<>
+Gaffer::Plug *TypedParameterHandler<std::string>::setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction, unsigned flags )
+{
+	// We have to turn off substitutions for FileSequenceParameters because they'd remove the
+	// #### destined for the parameter.
+	IECore::StringAlgo::Substitutions substitutions = m_parameter->isInstanceOf( IECore::FileSequenceParameterTypeId ) ? IECore::StringAlgo::NoSubstitutions : IECore::StringAlgo::AllSubstitutions;
+
+	// We also allow individual parameters to override the substitutions via userData
+	if( const auto *gafferUserData = m_parameter->userData()->member<IECore::CompoundObject>( "gaffer" ) )
+	{
+		if( const auto *substitutionsUserData = gafferUserData->member<IECore::IntData>( "substitutions" ) )
 		{
-			// we have to turn off substitutions because they'd remove the #### destined
-			// for the parameter. it's a bit naughty to have FileSequenceParameter-specific
-			// code in here, but i think it's preferable to deriving off a whole new
-			// ParameterHandler just to add this one line of code.
-			flags &= ~Gaffer::Plug::PerformsSubstitutions;
+			substitutions = (IECore::StringAlgo::Substitutions)substitutionsUserData->readable();
 		}
-		plugParent->setChild( m_parameter->name(), m_plug );
+	}
+
+	m_plug = plugParent->getChild<PlugType>( m_parameter->name() );
+	if( !m_plug || m_plug->direction()!=direction || m_plug->substitutions()!=substitutions )
+	{
+		m_plug = createPlug( direction, substitutions );
+		Gaffer::PlugAlgo::replacePlug( plugParent, m_plug );
 	}
 
 	setupPlugFlags( m_plug.get(), flags );
@@ -123,20 +158,22 @@ void TypedParameterHandler<T>::setPlugValue()
 
 // explicit instantiations
 
-template class TypedParameterHandler<std::string>;
-template class TypedParameterHandler<bool>;
+template class GafferCortex::TypedParameterHandler<std::string>;
+template class GafferCortex::TypedParameterHandler<bool>;
 
-template class TypedParameterHandler<Imath::Box2f>;
-template class TypedParameterHandler<Imath::Box3f>;
+template class GafferCortex::TypedParameterHandler<Imath::Box2f>;
+template class GafferCortex::TypedParameterHandler<Imath::Box3f>;
 
-template class TypedParameterHandler<Imath::Box2i>;
-template class TypedParameterHandler<Imath::Box3i>;
+template class GafferCortex::TypedParameterHandler<Imath::Box2i>;
+template class GafferCortex::TypedParameterHandler<Imath::Box3i>;
 
-template class TypedParameterHandler<Imath::V2f>;
-template class TypedParameterHandler<Imath::V3f>;
+template class GafferCortex::TypedParameterHandler<Imath::V2f>;
+template class GafferCortex::TypedParameterHandler<Imath::V3f>;
 
-template class TypedParameterHandler<Imath::V2i>;
-template class TypedParameterHandler<Imath::V3i>;
+template class GafferCortex::TypedParameterHandler<Imath::V2i>;
+template class GafferCortex::TypedParameterHandler<Imath::V3i>;
 
-template class TypedParameterHandler<Imath::Color3f>;
-template class TypedParameterHandler<Imath::Color4f>;
+template class GafferCortex::TypedParameterHandler<Imath::Color3f>;
+template class GafferCortex::TypedParameterHandler<Imath::Color4f>;
+
+} // namespace Cortex

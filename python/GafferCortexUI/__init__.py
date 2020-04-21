@@ -38,7 +38,6 @@
 # PathPreviewWidgets and browser modes
 
 from FileIndexedIOPathPreview import FileIndexedIOPathPreview
-from ImageReaderPathPreview import ImageReaderPathPreview
 from OpPathPreview import OpPathPreview
 import OpBrowserMode
 
@@ -58,7 +57,6 @@ from DateTimeParameterValueWidget import DateTimeParameterValueWidget
 from ClassParameterValueWidget import ClassParameterValueWidget
 from FileSequenceVectorParameterValueWidget import FileSequenceVectorParameterValueWidget
 from ClassVectorParameterValueWidget import ClassVectorParameterValueWidget
-from TimeCodeParameterValueWidget import TimeCodeParameterValueWidget
 from ToolParameterValueWidget import ToolParameterValueWidget
 import ParameterPresets
 
@@ -69,6 +67,5 @@ import ObjectReaderUI
 import ObjectWriterUI
 import OpHolderUI
 import ExecutableOpHolderUI
-import ProceduralHolderUI
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferCortexUI" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferCortexUI" )

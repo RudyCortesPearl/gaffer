@@ -38,11 +38,11 @@
 #ifndef GAFFERUI_IMAGEGADGET_H
 #define GAFFERUI_IMAGEGADGET_H
 
-#include "IECore/ImagePrimitive.h"
+#include "GafferUI/Gadget.h"
 
 #include "IECoreGL/TextureLoader.h"
 
-#include "GafferUI/Gadget.h"
+#include "IECoreImage/ImagePrimitive.h"
 
 namespace IECoreGL
 {
@@ -54,7 +54,7 @@ IE_CORE_FORWARDDECLARE( Texture )
 namespace GafferUI
 {
 
-class ImageGadget : public Gadget
+class GAFFERUI_API ImageGadget : public Gadget
 {
 
 	public :
@@ -64,22 +64,25 @@ class ImageGadget : public Gadget
 		/// Throws if the file cannot be loaded.
 		ImageGadget( const std::string &fileName );
 		/// A copy of the image is taken.
-		ImageGadget( const IECore::ConstImagePrimitivePtr image );
-		virtual ~ImageGadget();
+		ImageGadget( const IECoreImage::ConstImagePrimitivePtr image );
+		~ImageGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::ImageGadget, ImageGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::ImageGadget, ImageGadgetTypeId, Gadget );
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 		/// Returns the texture loader used for converting images
 		/// on disk into textures for rendering. This is exposed
 		/// publicly so that other code can share the same texture
 		/// cache.
 		static IECoreGL::TextureLoader *textureLoader();
+		/// Loads a texture using the `textureLoader()` and applies
+		/// the default ImageGadget texture parameters.
+		static IECoreGL::ConstTexturePtr loadTexture( const std::string &fileName );
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
 
 	private :
 

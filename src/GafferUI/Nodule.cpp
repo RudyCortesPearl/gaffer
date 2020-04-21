@@ -35,22 +35,23 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/SimpleTypedData.h"
-
-#include "Gaffer/Plug.h"
-#include "Gaffer/Node.h"
-#include "Gaffer/Metadata.h"
-
 #include "GafferUI/Nodule.h"
 
+#include "Gaffer/Metadata.h"
+#include "Gaffer/Node.h"
+#include "Gaffer/Plug.h"
+
+#include "IECore/SimpleTypedData.h"
+
 using namespace GafferUI;
+using namespace IECore;
 using namespace Imath;
 using namespace std;
 
-IE_CORE_DEFINERUNTIMETYPED( Nodule );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Nodule );
 
 Nodule::Nodule( Gaffer::PlugPtr plug )
-	:	Gadget( defaultName<Nodule>() ), m_plug( plug )
+	:	ConnectionCreator( defaultName<Nodule>() ), m_plug( plug )
 {
 }
 
@@ -66,6 +67,16 @@ Gaffer::Plug *Nodule::plug()
 const Gaffer::Plug *Nodule::plug() const
 {
 	return m_plug.get();
+}
+
+Nodule *Nodule::nodule( const Gaffer::Plug *plug )
+{
+	return nullptr;
+}
+
+const Nodule *Nodule::nodule( const Gaffer::Plug *plug ) const
+{
+	return nullptr;
 }
 
 void Nodule::updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent )
@@ -91,7 +102,7 @@ NodulePtr Nodule::create( Gaffer::PlugPtr plug )
 	{
 		if( noduleType->readable() == "" )
 		{
-			return NULL;
+			return nullptr;
 		}
 		const TypeNameCreatorMap &m = typeNameCreators();
 		TypeNameCreatorMap::const_iterator it = m.find( noduleType->readable() );
@@ -117,7 +128,7 @@ NodulePtr Nodule::create( Gaffer::PlugPtr plug )
 		t = IECore::RunTimeTyped::baseTypeId( t );
 	}
 
-	return 0;
+	return nullptr;
 }
 
 void Nodule::registerNodule( const std::string &noduleTypeName, NoduleCreator creator, IECore::TypeId plugType )
@@ -143,11 +154,10 @@ std::string Nodule::getToolTip( const IECore::LineSegment3f &line ) const
 		result = m_plug->relativeName( node->parent<Gaffer::GraphComponent>() );
 	}
 
-	result = "<h3>" + result + "</h3>";
-	std::string description = Gaffer::Metadata::plugDescription( m_plug.get() );
-	if( description.size() )
+	result = "# " + result;
+	if( ConstStringDataPtr description = Gaffer::Metadata::value<StringData>( m_plug.get(), "description" ) )
 	{
-		result += "\n\n" + description;
+		result += "\n\n" + description->readable();
 	}
 
 	return result;

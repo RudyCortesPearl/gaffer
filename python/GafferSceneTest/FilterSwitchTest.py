@@ -81,7 +81,8 @@ class FilterSwitchTest( GafferSceneTest.SceneTestCase ) :
 		script["pathFilter"] = GafferScene.PathFilter()
 		script["pathFilter"]["paths"].setValue( IECore.StringVectorData( [ "/group/sphere" ] ) )
 
-		script["switchFilter"] = GafferScene.FilterSwitch()
+		script["switchFilter"] = Gaffer.Switch()
+		script["switchFilter"].setup( script["setFilter"]["out"] )
 		script["switchFilter"]["in"][0].setInput( script["setFilter"]["out"] )
 		script["switchFilter"]["in"][1].setInput( script["pathFilter"]["out"] )
 
@@ -144,24 +145,6 @@ class FilterSwitchTest( GafferSceneTest.SceneTestCase ) :
 		script["planeSet"]["paths"].setValue( IECore.StringVectorData( [ "/group", "/group/plane" ] ) )
 		self.assertTrue( script["attributes"]["out"]["attributes"] in [ c[0] for c in cs ] )
 
-	def testFileCompatibilityWithVersion0_15( self ) :
-
-		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/filterSwitchVersion-0.15.0.0.gfr" )
-		s.load()
-
-		self.assertTrue( len( s["FilterSwitch"]["in"] ), 4 )
-		self.assertTrue( s["FilterSwitch"]["in"][0].getInput().isSame( s["PathFilter"]["out"] ) )
-		self.assertTrue( s["FilterSwitch"]["in"][1].getInput().isSame( s["PathFilter1"]["out"] ) )
-		self.assertTrue( s["FilterSwitch"]["in"][2].getInput().isSame( s["PathFilter2"]["out"] ) )
-		self.assertTrue( s["FilterSwitch"]["out"].getInput().isSame( s["FilterSwitch"]["in"][0] ) )
-
-		self.assertTrue( len( s["FilterSwitch1"]["in"] ), 4 )
-		self.assertTrue( s["FilterSwitch1"]["in"][0].getInput().isSame( s["PathFilter"]["out"] ) )
-		self.assertTrue( s["FilterSwitch1"]["in"][1].getInput().isSame( s["PathFilter1"]["out"] ) )
-		self.assertTrue( s["FilterSwitch1"]["in"][2].getInput().isSame( s["PathFilter2"]["out"] ) )
-		self.assertTrue( s["FilterSwitch1"]["out"].getInput().isSame( s["FilterSwitch1"]["in"][1] ) )
-
 	def testSwitchConnectionSerializationProblem( self ):
 
 		s = Gaffer.ScriptNode()
@@ -170,7 +153,8 @@ class FilterSwitchTest( GafferSceneTest.SceneTestCase ) :
 		b2 = Gaffer.Box()
 		b1.addChild( b2 )
 
-		fs = GafferScene.FilterSwitch()
+		fs = Gaffer.Switch( "FilterSwitch" )
+		fs.setup( GafferScene.FilterPlug() )
 		b2.addChild( fs )
 
 		f1 = GafferScene.PathFilter()
@@ -206,7 +190,8 @@ class FilterSwitchTest( GafferSceneTest.SceneTestCase ) :
 		s["i"] = GafferScene.Isolate()
 		s["p"] = GafferScene.PathFilter()
 
-		s["s"] = GafferScene.FilterSwitch()
+		s["s"] = Gaffer.Switch()
+		s["s"].setup( s["p"]["out"] )
 		s["s"]["in"][0].setInput( s["p"]["out"] )
 		s["s"]["in"][0].setInput( None )
 
@@ -220,14 +205,20 @@ class FilterSwitchTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = Gaffer.Dot()
 		s["d"].setup( Gaffer.IntPlug() )
 		s["d"]["in"].setInput( s["p"]["out"] )
-		s["s"] = GafferScene.FilterSwitch()
-		s["s"]["in"][0].setInput( s["d"]["out"] )
+		s["s"] = Gaffer.Switch()
+		s["s"].setup( s["p"]["out"] )
+
+		# We use `execute()` here because the compatibility with int
+		# plugs only applies when loading.
+		s.execute( """script["s"]["in"][0].setInput( script["d"]["out"] )""" )
 
 		s["b"] = Gaffer.Box()
 		s["b"]["filter"] = Gaffer.IntPlug()
 		s["b"]["filter"].setInput( s["p"]["out"] )
-		s["b"]["s"] = GafferScene.FilterSwitch()
-		s["b"]["s"]["in"][0].setInput( s["b"]["filter"] )
+		s["b"]["s"] = Gaffer.Switch()
+		s["b"]["s"].setup( s["p"]["out"] )
+
+		s.execute( """script["b"]["s"]["in"][0].setInput( script["b"]["filter"] )""" )
 
 if __name__ == "__main__":
 	unittest.main()

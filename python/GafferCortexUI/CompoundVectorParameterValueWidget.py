@@ -35,7 +35,7 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
+import imath
 
 import IECore
 
@@ -95,8 +95,8 @@ class _PlugValueWidget( GafferCortexUI.CompoundParameterValueWidget._PlugValueWi
 			sizeEditable = sizeEditable,
 		)
 
-		self.__editConnection = self.__vectorDataWidget.editSignal().connect( Gaffer.WeakMethod( self.__edit ) )
-		self.__dataChangedConnection = self.__vectorDataWidget.dataChangedSignal().connect( Gaffer.WeakMethod( self.__dataChanged ) )
+		self.__vectorDataWidget.editSignal().connect( Gaffer.WeakMethod( self.__edit ), scoped = False )
+		self.__vectorDataWidget.dataChangedSignal().connect( Gaffer.WeakMethod( self.__dataChanged ), scoped = False )
 
 		self._updateFromPlug()
 
@@ -163,9 +163,10 @@ class _PlugValueWidget( GafferCortexUI.CompoundParameterValueWidget._PlugValueWi
 
 		data = vectorDataWidget.getData()
 
-		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
-			for d, p in zip( data, self._parameterHandler().plug().children() ) :
-				p.setValue( d )
+		with Gaffer.BlockedConnection( self._plugConnections() ) :
+			with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+				for d, p in zip( data, self._parameterHandler().plug().children() ) :
+					p.setValue( d )
 
 GafferCortexUI.ParameterValueWidget.registerType( IECore.CompoundVectorParameter, CompoundVectorParameterValueWidget )
 
@@ -210,7 +211,7 @@ class _PresetEditor( GafferUI.ListContainer ) :
 		self.__menu = GafferUI.Menu( m )
 
 		bound = self.bound()
-		self.__menu.popup( parent = self, position = IECore.V2i( bound.min.x, bound.max.y ) )
+		self.__menu.popup( parent = self, position = imath.V2i( bound.min().x, bound.max().y ) )
 
 		# necessary because the qt edit action tries to give us the focus, and we don't want it -
 		# we want the menu to have it so it can be navigated with the cursor keys.
@@ -304,4 +305,4 @@ def __parameterPopupMenu( menuDefinition, parameterValueWidget ) :
 			},
 		)
 
-__parameterPopupMenuConnection = GafferCortexUI.ParameterValueWidget.popupMenuSignal().connect( __parameterPopupMenu )
+GafferCortexUI.ParameterValueWidget.popupMenuSignal().connect( __parameterPopupMenu, scoped = False )

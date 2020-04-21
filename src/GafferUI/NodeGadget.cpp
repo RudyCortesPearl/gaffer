@@ -35,18 +35,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/algorithm/string/find.hpp"
+#include "GafferUI/NodeGadget.h"
+
+#include "GafferUI/LinearContainer.h"
+#include "GafferUI/NameGadget.h"
+#include "GafferUI/Nodule.h"
+#include "GafferUI/Style.h"
+
+#include "Gaffer/Metadata.h"
+#include "Gaffer/ScriptNode.h"
 
 #include "IECore/SimpleTypedData.h"
 
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Metadata.h"
-
-#include "GafferUI/NodeGadget.h"
-#include "GafferUI/NameGadget.h"
-#include "GafferUI/Style.h"
-#include "GafferUI/LinearContainer.h"
-#include "GafferUI/Nodule.h"
+#include "boost/algorithm/string/find.hpp"
 
 using namespace GafferUI;
 using namespace Imath;
@@ -81,7 +82,7 @@ NodeCreatorMap &nodeCreators()
 // NodeGadget
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( NodeGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( NodeGadget );
 
 NodeGadget::NodeGadget( Gaffer::NodePtr node )
 	:	m_node( node.get() )
@@ -99,7 +100,7 @@ NodeGadgetPtr NodeGadget::create( Gaffer::NodePtr node )
 	{
 		if( nodeGadgetType->readable() == "" )
 		{
-			return NULL;
+			return nullptr;
 		}
 		const TypeCreatorMap &m = typeCreators();
 		TypeCreatorMap::const_iterator it = m.find( nodeGadgetType->readable() );
@@ -126,7 +127,7 @@ NodeGadgetPtr NodeGadget::create( Gaffer::NodePtr node )
 		typeId = IECore::RunTimeTyped::baseTypeId( typeId );
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 void NodeGadget::registerNodeGadget( const std::string &nodeGadgetType, NodeGadgetCreator creator, IECore::TypeId nodeType )
@@ -155,15 +156,15 @@ const Gaffer::Node *NodeGadget::node() const
 
 Nodule *NodeGadget::nodule( const Gaffer::Plug *plug )
 {
-	return 0;
+	return nullptr;
 }
 
 const Nodule *NodeGadget::nodule( const Gaffer::Plug *plug ) const
 {
-	return 0;
+	return nullptr;
 }
 
-Imath::V3f NodeGadget::noduleTangent( const Nodule *nodule ) const
+Imath::V3f NodeGadget::connectionTangent( const ConnectionCreator *creator ) const
 {
 	return V3f( 0, 1, 0 );
 }
@@ -193,12 +194,11 @@ std::string NodeGadget::getToolTip( const IECore::LineSegment3f &line ) const
 		title = &*(r.end());
 	}
 
-	result = "<h3>" + title + "</h3>";
+	result = "# " + title;
 
-	std::string description = Gaffer::Metadata::nodeDescription( m_node );
-	if( description.size() )
+	if( ConstStringDataPtr description = Gaffer::Metadata::value<StringData>( m_node, "description" ) )
 	{
-		result += "\n\n" + description;
+		result += "\n\n" + description->readable();
 	}
 
 	if( ConstStringDataPtr summary = Gaffer::Metadata::value<StringData>( m_node, "summary" ) )

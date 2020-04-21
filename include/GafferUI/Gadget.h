@@ -38,21 +38,27 @@
 #ifndef GAFFERUI_GADGET_H
 #define GAFFERUI_GADGET_H
 
-#include "OpenEXR/ImathBox.h"
+#include "GafferUI/ButtonEvent.h"
+#include "GafferUI/DragDropEvent.h"
+#include "GafferUI/EventSignalCombiner.h"
+#include "GafferUI/KeyEvent.h"
+#include "GafferUI/TypeIds.h"
+
+#include "Gaffer/FilteredChildIterator.h"
+#include "Gaffer/FilteredRecursiveChildIterator.h"
+#include "Gaffer/GraphComponent.h"
 
 #include "IECoreGL/GL.h"
 
-#include "Gaffer/GraphComponent.h"
-#include "Gaffer/FilteredChildIterator.h"
-#include "Gaffer/FilteredRecursiveChildIterator.h"
+#include "IECore/Export.h"
 
-#include "GafferUI/TypeIds.h"
-#include "GafferUI/ButtonEvent.h"
-#include "GafferUI/KeyEvent.h"
-#include "GafferUI/EventSignalCombiner.h"
-#include "GafferUI/DragDropEvent.h"
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathBox.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
-namespace GafferUIBindings
+#include <functional>
+
+namespace GafferUIModule
 {
 
 // forward declaration for friendship
@@ -69,15 +75,24 @@ IE_CORE_FORWARDDECLARE( Style );
 /// Gadgets are zoomable UI elements. They draw themselves using OpenGL, and provide an interface for
 /// handling events. To present a Gadget in the user interface, it should be placed in the viewport of
 /// a GadgetWidget.
-class Gadget : public Gaffer::GraphComponent
+class GAFFERUI_API Gadget : public Gaffer::GraphComponent
 {
 
 	public :
 
 		Gadget( const std::string &name=defaultName<Gadget>() );
-		virtual ~Gadget();
+		~Gadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Gadget, GadgetTypeId, Gaffer::GraphComponent );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::Gadget, GadgetTypeId, Gaffer::GraphComponent );
+
+		enum class Layer
+		{
+			Back = -2,
+			MidBack = -1,
+			Main = 0,
+			MidFront = 1,
+			Front = 2,
+		};
 
 		/// Returns the Gadget with the specified name, where name has been retrieved
 		/// from an IECoreGL::HitRecord after rendering some Gadget in GL_SELECT mode.
@@ -89,9 +104,9 @@ class Gadget : public Gaffer::GraphComponent
 		//@{
 		/// Gadgets accept any number of other Gadgets as children. Derived classes
 		/// may further restrict this if they wish, but they must not accept non-Gadget children.
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
+		bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
 		/// Gadgets only accept other Gadgets as parent.
-		virtual bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const;
+		bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const override;
 		//@}
 
 		/// @name Style
@@ -123,7 +138,7 @@ class Gadget : public Gaffer::GraphComponent
 		bool getVisible() const;
 		/// Returns true if this Gadget and all its parents up to the specified
 		/// ancestor are visible.
-		bool visible( Gadget *relativeTo = NULL ) const;
+		bool visible( Gadget *relativeTo = nullptr ) const;
 		typedef boost::signal<void ( Gadget * )> VisibilityChangedSignal;
 		/// Emitted when the result of `Gadget::visible()` changes.
 		VisibilityChangedSignal &visibilityChangedSignal();
@@ -137,7 +152,7 @@ class Gadget : public Gaffer::GraphComponent
 		bool getEnabled() const;
 		/// Returns true if this gadget and all its parents up to the
 		/// specified ancestor are enabled.
-		bool enabled( Gadget *relativeTo = NULL ) const;
+		bool enabled( Gadget *relativeTo = nullptr ) const;
 		/// Sets whether or not this Gadget should be rendered in a highlighted
 		/// state. This status is not inherited by child Gadgets. Note that highlighted
 		/// drawing has not yet been implemented for all Gadget types. Derived
@@ -158,7 +173,7 @@ class Gadget : public Gaffer::GraphComponent
 		/// Returns the full transform of this Gadget relative to the
 		/// specified ancestor. If ancestor is not specified then the
 		/// transform from the root of the hierarchy is returned.
-		Imath::M44f fullTransform( const Gadget *ancestor = 0 ) const;
+		Imath::M44f fullTransform( const Gadget *ancestor = nullptr ) const;
 		//@}
 
 		/// @name Display
@@ -169,8 +184,8 @@ class Gadget : public Gaffer::GraphComponent
 		/// and will be used if and only if not overridden by a Style applied
 		/// specifically to this Gadget. Typically users will not pass currentStyle -
 		/// but it must be passed by Gadget implementations when rendering child
-		/// Gadgets in doRender().
-		void render( const Style *currentStyle = 0 ) const;
+		/// Gadgets in doRenderLayer().
+		void render() const;
 		/// The bounding box of the Gadget before transformation. The default
 		/// implementation returns the union of the transformed bounding boxes
 		/// of all the children.
@@ -260,31 +275,30 @@ class Gadget : public Gaffer::GraphComponent
 		static IdleSignal &idleSignal();
 		//@}
 
-		typedef boost::function<void ()> UIThreadFunction;
-		/// Arranges for the specified function to be run on the main UI thread.
-		/// Note that this is run asynchronously at some point in the future. If
-		/// using boost::bind() to pass a member function here, you _must_
-		/// guarantee that the class instance will still be alive when the
-		/// member function is called. Typically this means using a smart pointer
-		/// to hold `this`.
-		static void executeOnUIThread( UIThreadFunction function );
-
 	protected :
 
 		/// Emits renderRequestSignal() as necessary for this and all ancestors.
 		/// Use this rather than emit the signal manually.
 		void requestRender();
+		/// Implemented to request a render for both the old and the new parent.
+		void parentChanged( GraphComponent *oldParent ) override;
 
-		/// The subclass specific part of render(). The public render() method
-		/// sets the GL state up with the name attribute and transform for
-		/// this Gadget, makes sure the style is bound and then calls doRender().
-		/// The default implementation just renders all the visible child Gadgets.
-		virtual void doRender( const Style *style ) const;
+		/// Should be implemented by subclasses to draw themselves as appropriate
+		/// for the specified layer. Child gadgets will be drawn automatically
+		/// _after_ the parent gadget has been drawn.
+		virtual void doRenderLayer( Layer layer, const Style *style ) const;
+		/// May return false to indicate that neither this gadget nor any
+		/// of its children will render anything for the specified layer.
+		/// The default implementation returns true.
+		virtual bool hasLayer( Layer layer ) const;
 
 	private :
 
+		// Sets the GL state up with the name attribute and transform for
+		// this Gadget, makes sure the style is bound and then calls doRenderLayer().
+		void renderLayer( Layer layer, const Style *currentStyle = nullptr ) const;
+
 		void styleChanged();
-		void parentChanged( GraphComponent *child, GraphComponent *oldParent );
 		void emitDescendantVisibilityChanged();
 
 		ConstStylePtr m_style;
@@ -325,15 +339,8 @@ class Gadget : public Gaffer::GraphComponent
 		// has been accessed, and only use an idle timer
 		// when absolutely necessary (when slots are connected).
 		static IdleSignal &idleSignalAccessedSignal();
-		friend void GafferUIBindings::bindGadget();
-		// Used to implement executeOnUIThread(). When Gadget::executeOnUIThread()
-		// is called, it emits this signal to request that EventLoop.py arranges
-		// to call the passed function on the UI thread.
-		/// \todo I suspect that soon we'll have a Qt dependency in the C++
-		/// half of GafferUI, at which point it'd make more sense to implement
-		/// EventLoop in C++ rather than to implement this in such an awkward way.
-		typedef boost::signal<void ( UIThreadFunction )> ExecuteOnUIThreadSignal;
-		static ExecuteOnUIThreadSignal &executeOnUIThreadSignal();
+		friend void GafferUIModule::bindGadget();
+
 };
 
 typedef Gaffer::FilteredChildIterator<Gaffer::TypePredicate<Gadget> > GadgetIterator;

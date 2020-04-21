@@ -37,7 +37,11 @@
 #ifndef GAFFERIMAGE_BUFFERALGO_H
 #define GAFFERIMAGE_BUFFERALGO_H
 
+#include "IECore/Export.h"
+
+IECORE_PUSH_DEFAULT_VISIBILITY
 #include "OpenEXR/ImathBox.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace GafferImage
 {
@@ -73,9 +77,6 @@ inline Imath::V2i clamp( const Imath::V2i &point, const Imath::Box2i &window );
 inline size_t index( const Imath::V2i &p, const Imath::Box2i &b );
 
 } // namespace BufferAlgo
-
-/// \todo Remove this temporary backwards compatibility.
-using namespace BufferAlgo;
 
 } // namespace GafferImage
 

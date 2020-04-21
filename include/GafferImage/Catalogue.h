@@ -37,27 +37,27 @@
 #ifndef GAFFERIMAGE_CATALOGUE_H
 #define GAFFERIMAGE_CATALOGUE_H
 
-#include "IECore/DisplayDriver.h"
-#include "IECore/DisplayDriverServer.h"
-
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/NumericPlug.h"
-
 #include "GafferImage/ImageNode.h"
-#include "GafferImage/ImageSwitch.h"
+
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/Switch.h"
+
+#include "IECoreImage/DisplayDriver.h"
+#include "IECoreImage/DisplayDriverServer.h"
 
 namespace GafferImage
 {
 
-class Catalogue : public ImageNode
+class GAFFERIMAGE_API Catalogue : public ImageNode
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Catalogue, CatalogueTypeId, ImageNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Catalogue, CatalogueTypeId, ImageNode );
 
 		Catalogue( const std::string &name = defaultName<Catalogue>() );
-		virtual ~Catalogue();
+		~Catalogue() override;
 
 		/// Plug type used to represent an image in the catalogue.
 		class Image : public Gaffer::Plug
@@ -65,7 +65,7 @@ class Catalogue : public ImageNode
 
 			public :
 
-				IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Catalogue::Image, CatalogueImageTypeId, Gaffer::Plug );
+				GAFFER_PLUG_DECLARE_TYPE( GafferImage::Catalogue::Image, CatalogueImageTypeId, Gaffer::Plug );
 
 				Image( const std::string &name = defaultName<Image>(), Direction direction = In, unsigned flags = Default );
 
@@ -84,7 +84,7 @@ class Catalogue : public ImageNode
 				static Ptr load( const std::string &fileName );
 				void save( const std::string &fileName ) const;
 
-				virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+				Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		};
 
@@ -104,9 +104,9 @@ class Catalogue : public ImageNode
 
 		/// All Catalogues share a single DisplayDriverServer instance
 		/// to receive rendered images. To send an image to the catalogues,
-		/// use an IECore::ClientDisplayDriver with the "displayPort" parameter
+		/// use an IECoreImage::ClientDisplayDriver with the "displayPort" parameter
 		/// set to match `Catalogue::displayDriverServer()->portNumber()`.
-		static IECore::DisplayDriverServer *displayDriverServer();
+		static IECoreImage::DisplayDriverServer *displayDriverServer();
 
 		/// Generates a filename that could be used for storing
 		/// a particular image locally in this Catalogue's directory.
@@ -114,10 +114,18 @@ class Catalogue : public ImageNode
 		std::string generateFileName( const Image *image ) const;
 		std::string generateFileName( const ImagePlug *image ) const;
 
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+
 	private :
 
-		ImageSwitch *imageSwitch();
-		const ImageSwitch *imageSwitch() const;
+		Gaffer::IntPlug *internalImageIndexPlug();
+		const Gaffer::IntPlug *internalImageIndexPlug() const;
+
+		Gaffer::AtomicCompoundDataPlug *mappingPlug();
+		const Gaffer::AtomicCompoundDataPlug *mappingPlug() const;
+
+		Gaffer::Switch *imageSwitch();
+		const Gaffer::Switch *imageSwitch() const;
 
 		IE_CORE_FORWARDDECLARE( InternalImage );
 		static InternalImage *imageNode( Image *image );
@@ -126,8 +134,13 @@ class Catalogue : public ImageNode
 		void imageAdded( GraphComponent *graphComponent );
 		void imageRemoved( GraphComponent *graphComponent );
 
-		void driverCreated( IECore::DisplayDriver *driver, const IECore::CompoundData *parameters );
+		void driverCreated( IECoreImage::DisplayDriver *driver, const IECore::CompoundData *parameters );
 		void imageReceived( Gaffer::Plug *plug );
+
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+
+		void computeNameToIndexMapping();
 
 		static size_t g_firstPlugIndex;
 

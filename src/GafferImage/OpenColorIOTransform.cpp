@@ -34,14 +34,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/mutex.h"
-#include "tbb/null_mutex.h"
-
-#include "IECore/SimpleTypedData.h"
+#include "GafferImage/OpenColorIOTransform.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferImage/OpenColorIOTransform.h"
+#include "IECore/SimpleTypedData.h"
+
+#include "tbb/mutex.h"
+#include "tbb/null_mutex.h"
 
 using namespace std;
 using namespace IECore;
@@ -68,7 +68,7 @@ static OCIOMutex g_ocioMutex;
 
 } // namespace
 
-IE_CORE_DEFINERUNTIMETYPED( OpenColorIOTransform );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OpenColorIOTransform );
 
 size_t OpenColorIOTransform::g_firstPlugIndex = 0;
 
@@ -90,7 +90,7 @@ Gaffer::CompoundDataPlug *OpenColorIOTransform::contextPlug()
 {
 	if( !m_hasContextPlug )
 	{
-		return NULL;
+		return nullptr;
 	}
 	return getChild<CompoundDataPlug>( g_firstPlugIndex );
 }
@@ -99,7 +99,7 @@ const Gaffer::CompoundDataPlug *OpenColorIOTransform::contextPlug() const
 {
 	if( !m_hasContextPlug )
 	{
-		return NULL;
+		return nullptr;
 	}
 	return getChild<CompoundDataPlug>( g_firstPlugIndex );
 }
@@ -165,7 +165,7 @@ OpenColorIO::ConstContextRcPtr OpenColorIOTransform::ocioContext(OpenColorIO::Co
 	std::string name;
 	std::string value;
 
-	for( CompoundDataPlug::MemberPlugIterator it( p ); !it.done(); ++it )
+	for( NameValuePlugIterator it( p ); !it.done(); ++it )
 	{
 		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
 		if( d )
@@ -219,9 +219,9 @@ void OpenColorIOTransform::processColorData( const Gaffer::Context *context, IEC
 		r->baseWritable(),
 		g->baseWritable(),
 		b->baseWritable(),
-		0, // alpha
-		ImagePlug::tileSize(), // width
-		ImagePlug::tileSize() // height
+		nullptr, // alpha
+		r->readable().size(), // Treat all pixels as a single line, since geometry doesn't affect OCIO
+		1 // height
 	);
 
 	processor->apply( image );
@@ -237,5 +237,18 @@ void OpenColorIOTransform::availableColorSpaces( std::vector<std::string> &color
 	for( int i = 0; i < config->getNumColorSpaces(); ++i )
 	{
 		colorSpaces.push_back( config->getColorSpaceNameByIndex( i ) );
+	}
+}
+
+void OpenColorIOTransform::availableRoles( std::vector<std::string> &roles )
+{
+	OpenColorIO::ConstConfigRcPtr config = OpenColorIO::GetCurrentConfig();
+
+	roles.clear();
+	roles.reserve( config->getNumRoles() );
+
+	for( int i = 0; i < config->getNumRoles(); ++i )
+	{
+		roles.push_back( config->getRoleName( i ) );
 	}
 }

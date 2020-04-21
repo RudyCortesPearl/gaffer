@@ -38,12 +38,15 @@
 #ifndef GAFFER_GRAPHCOMPONENT_H
 #define GAFFER_GRAPHCOMPONENT_H
 
+#include "Gaffer/Export.h"
+#include "Gaffer/TypeIds.h"
+
+#include "IECore/InternedString.h"
+#include "IECore/RunTimeTyped.h"
+
 #include "boost/signals.hpp"
 
-#include "IECore/RunTimeTyped.h"
-#include "IECore/InternedString.h"
-
-#include "Gaffer/TypeIds.h"
+#include <memory>
 
 namespace Gaffer
 {
@@ -56,18 +59,34 @@ struct TypePredicate;
 template<typename Predicate>
 class FilteredChildIterator;
 
+template<typename Predicate>
+class FilteredChildRange;
+
 template<typename Predicate, typename RecursionPredicate>
 class FilteredRecursiveChildIterator;
 
-class GraphComponent : public IECore::RunTimeTyped, public boost::signals::trackable
+template<typename Predicate, typename RecursionPredicate>
+class FilteredRecursiveChildRange;
+
+#define GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( TYPE, TYPEID, BASETYPE ) \
+	IE_CORE_DECLARERUNTIMETYPEDEXTENSION( TYPE, TYPEID, BASETYPE ) \
+	using Iterator = Gaffer::FilteredChildIterator<Gaffer::TypePredicate<TYPE>>; \
+	using RecursiveIterator = Gaffer::FilteredRecursiveChildIterator<Gaffer::TypePredicate<TYPE>, Gaffer::TypePredicate<GraphComponent>>; \
+	using Range = Gaffer::FilteredChildRange<Gaffer::TypePredicate<TYPE>>; \
+	using RecursiveRange = Gaffer::FilteredRecursiveChildRange<Gaffer::TypePredicate<TYPE>, Gaffer::TypePredicate<GraphComponent>>;
+
+#define GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TYPE ) \
+	IE_CORE_DEFINERUNTIMETYPED( TYPE )
+
+class GAFFER_API GraphComponent : public IECore::RunTimeTyped, public boost::signals::trackable
 {
 
 	public :
 
 		GraphComponent( const std::string &name=GraphComponent::defaultName<GraphComponent>() );
-		virtual ~GraphComponent();
+		~GraphComponent() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::GraphComponent, GraphComponentTypeId, IECore::RunTimeTyped );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::GraphComponent, GraphComponentTypeId, IECore::RunTimeTyped );
 
 		typedef boost::signal<void (GraphComponent *)> UnarySignal;
 		typedef boost::signal<void (GraphComponent *, GraphComponent *)> BinarySignal;
@@ -89,7 +108,7 @@ class GraphComponent : public IECore::RunTimeTyped, public boost::signals::track
 		/// Returns the full path name from the topmost parent to this component.
 		std::string fullName() const;
 		/// Returns the relative path name from the specified ancestor to this component.
-		/// Passing NULL for ancestor yields the same result as calling fullName().
+		/// Passing nullptr for ancestor yields the same result as calling fullName().
 		std::string relativeName( const GraphComponent *ancestor ) const;
 		/// A signal which is emitted whenever a name is changed.
 		UnarySignal &nameChangedSignal();
@@ -139,52 +158,52 @@ class GraphComponent : public IECore::RunTimeTyped, public boost::signals::track
 		/// \undoable
 		void clearChildren();
 		/// Get an immediate child by name, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		T *getChild( const IECore::InternedString &name );
 		/// Get an immediate child by name, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		const T *getChild( const IECore::InternedString &name ) const;
 		/// Get a child by index, performing a runTimeCast to T.
 		/// Note that this function does not perform any bounds checking.
-		template<typename T>
+		template<typename T=GraphComponent>
 		inline T *getChild( size_t index );
 		/// Get a child by index, performing a runTimeCast to T.
 		/// Note that this function does not perform any bounds checking.
-		template<typename T>
+		template<typename T=GraphComponent>
 		inline const T *getChild( size_t index ) const;
 		/// Read only access to the internal container of children. This
 		/// is useful for iteration over children.
 		const ChildContainer &children() const;
 		/// Returns a descendant of this node specified by a "." separated
 		/// relative path, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		inline T *descendant( const std::string &relativePath );
 		/// Returns a descendant of this node specified by a "." separated
 		/// relative path, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		inline const T *descendant( const std::string &relativePath ) const;
 		/// Returns the parent for this component, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		T *parent();
 		/// Returns the parent for this component, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		const T *parent() const;
 		/// Returns the first ancestor of type T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		T *ancestor();
 		/// Returns the first ancestor of type T.
-		template<typename T>
+		template<typename T=GraphComponent>
 		const T *ancestor() const;
 		/// As above, but taking a TypeId to specify type - this is mainly provided for the binding.
 		GraphComponent *ancestor( IECore::TypeId ancestorType );
 		const GraphComponent *ancestor( IECore::TypeId ancestorType ) const;
 		/// Returns the first ancestor of type T which
 		/// is also an ancestor of other.
-		template<typename T>
+		template<typename T=GraphComponent>
 		T *commonAncestor( const GraphComponent *other );
 		/// Returns the first ancestor of type T which
 		/// is also an ancestor of other.
-		template<typename T>
+		template<typename T=GraphComponent>
 		const T *commonAncestor( const GraphComponent *other ) const;
 		/// As above, but taking a TypeId to specify type - this is mainly provided for the binding.
 		GraphComponent *commonAncestor( const GraphComponent *other, IECore::TypeId ancestorType );
@@ -200,7 +219,7 @@ class GraphComponent : public IECore::RunTimeTyped, public boost::signals::track
 		/// A signal emitted when the parent of this component changes. Slots should
 		/// be of the form void ( child, oldParent ). Note that in the special case
 		/// of a child being removed from the destructor of the parent, oldParent
-		/// will be NULL as it is no longer available.
+		/// will be null as it is no longer available.
 		BinarySignal &parentChangedSignal();
 		//@}
 
@@ -211,8 +230,8 @@ class GraphComponent : public IECore::RunTimeTyped, public boost::signals::track
 		/// in preparation for the new relationship - currently it allows
 		/// Plugs to remove their connections if they're about to have no parent.
 		/// In the special case of a child being removed from the destructor of the
-		/// parent, parent() will already be NULL in addition to newParent
-		/// being NULL - this is to avoid the temptation to access the dying parent.
+		/// parent, parent() will already be null in addition to newParent
+		/// being null - this is to avoid the temptation to access the dying parent.
 		///
 		/// Implementations should call the base class implementation
 		/// before doing their own thing.
@@ -224,6 +243,21 @@ class GraphComponent : public IECore::RunTimeTyped, public boost::signals::track
 		/// a protected signal is that there is less overhead in the virtual
 		/// function.
 		virtual void parentChanging( Gaffer::GraphComponent *newParent );
+		/// Called just after the parent of this GraphComponent is changed,
+		/// and just before `parentChangedSignal()` is emitted. This gives
+		/// derived classes a chance to make any necessary adjustments before
+		/// outside observers are notified of the change. In the special case
+		/// of a child being removed from the destructor of the parent,
+		/// `oldParent` will be null.
+		///
+		/// Implementations should call the base class implementation before
+		/// doing their own work.
+		///
+		/// The rationale for having this in addition to `parentChangedSignal()`
+		/// is that it has lower overhead than the signal, and allows GraphComponents
+		/// to maintain a consistent state even if badly behaved observers are
+		/// connected to the signal.
+		virtual void parentChanged( Gaffer::GraphComponent *oldParent );
 
 		/// It is common for derived classes to provide accessors for
 		/// constant-time access to specific children, as this can be
@@ -244,20 +278,14 @@ class GraphComponent : public IECore::RunTimeTyped, public boost::signals::track
 
 		void throwIfChildRejected( const GraphComponent *potentialChild ) const;
 		void setNameInternal( const IECore::InternedString &name );
-		void addChildInternal( GraphComponentPtr child );
+		void addChildInternal( GraphComponentPtr child, size_t index );
 		void removeChildInternal( GraphComponentPtr child, bool emitParentChanged );
+		size_t index() const;
 
-		/// \todo The memory overhead of all these signals may become too great.
-		/// At this point we need to reimplement the signal returning functions to
-		/// create the signals on the fly (and possibly to delete signals when they have
-		/// no connections). One method might be to store a static map from this to signal *.
-		/// Or alternatively we could make all the signals static. Both these trade off
-		/// reduced memory usage for slower execution.
-		UnarySignal m_nameChangedSignal;
-		BinarySignal m_childAddedSignal;
-		BinarySignal m_childRemovedSignal;
-		BinarySignal m_parentChangedSignal;
+		struct Signals;
+		Signals *signals();
 
+		std::unique_ptr<Signals> m_signals;
 		IECore::InternedString m_name;
 		GraphComponent *m_parent;
 		ChildContainer m_children;

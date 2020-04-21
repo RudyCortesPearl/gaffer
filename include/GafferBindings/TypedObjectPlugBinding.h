@@ -37,14 +37,12 @@
 #ifndef GAFFERBINDINGS_TYPEDOBJECTPLUGBINDING_H
 #define GAFFERBINDINGS_TYPEDOBJECTPLUGBINDING_H
 
-#include "Gaffer/TypedObjectPlug.h"
-
 #include "GafferBindings/PlugBinding.h"
+
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace GafferBindings
 {
-
-void bindTypedObjectPlug();
 
 template<typename T, typename TWrapper=T>
 class TypedObjectPlugClass : public PlugClass<T, TWrapper>
@@ -52,7 +50,7 @@ class TypedObjectPlugClass : public PlugClass<T, TWrapper>
 
 	public :
 
-		TypedObjectPlugClass( const char *docString = NULL );
+		TypedObjectPlugClass( const char *docString = nullptr );
 
 };
 

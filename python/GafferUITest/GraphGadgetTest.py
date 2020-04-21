@@ -37,6 +37,7 @@
 
 import unittest
 import threading
+import imath
 
 import IECore
 
@@ -375,11 +376,11 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 		script = Gaffer.ScriptNode()
 
 		script["n"] = NestedPlugTestNode()
-		script["n"]["c"] = Gaffer.CompoundPlug()
+		script["n"]["c"] = Gaffer.Plug()
 		script["n"]["c"]["i"] = Gaffer.IntPlug()
 
 		script["n2"] = NestedPlugTestNode()
-		script["n2"]["c"] = Gaffer.CompoundPlug(  direction = Gaffer.Plug.Direction.Out )
+		script["n2"]["c"] = Gaffer.Plug(  direction = Gaffer.Plug.Direction.Out )
 		script["n2"]["c"]["o"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
 
 		script["n"]["c"]["i"].setInput( script["n2"]["c"]["o"] )
@@ -495,16 +496,16 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 			g = GafferUI.GraphGadget( script )
 			c = g.connectionGadget( script["n2"]["i"] )
 
-			gb = IECore.Box3f()
+			gb = imath.Box3f()
 			gb.extendBy( g.nodeGadget( script["n1"] ).bound() )
 			gb.extendBy( g.nodeGadget( script["n2"] ).bound() )
-			gb.min -= IECore.V3f( 10 )
-			gb.max += IECore.V3f( 10 )
+			gb.setMin( gb.min() - imath.V3f( 10 ) )
+			gb.setMax( gb.max() + imath.V3f( 10 ) )
 
 			b = c.bound()
 			self.failIf( b.isEmpty() )
 
-			self.failUnless( gb.contains( b ) )
+			self.failUnless( IECore.BoxAlgo.contains( gb, b ) )
 
 	def testNoFilter( self ) :
 
@@ -599,8 +600,8 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 		g = GafferUI.GraphGadget( s )
 
 		self.assertFalse( g.hasNodePosition( s["n"] ) )
-		g.setNodePosition( s["n"], IECore.V2f( -100, 2000 ) )
-		self.assertEqual( g.getNodePosition( s["n"] ), IECore.V2f( -100, 2000 ) )
+		g.setNodePosition( s["n"], imath.V2f( -100, 2000 ) )
+		self.assertEqual( g.getNodePosition( s["n"] ), imath.V2f( -100, 2000 ) )
 		self.assertTrue( g.hasNodePosition( s["n"] ) )
 
 	def testPlugConnectionGadgets( self ) :
@@ -1023,7 +1024,7 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 		script["n"] = Gaffer.Node()
 
 		g = GafferUI.GraphGadget( script )
-		g.setNodePosition( script["n"], IECore.V2f( 1, 2 ) )
+		g.setNodePosition( script["n"], imath.V2f( 1, 2 ) )
 		self.assertTrue( g.hasNodePosition( script["n"] ) )
 
 		script.execute( script.serialise( script, Gaffer.StandardSet( [ script["n"] ] ) ) )
@@ -1253,7 +1254,7 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 		s["n"] = Gaffer.Node()
 		self.assertEqual( g.unpositionedNodeGadgets(), [ g.nodeGadget( s["n"] ) ] )
 
-		g.setNodePosition( s["n"], IECore.V2f( 0 ) )
+		g.setNodePosition( s["n"], imath.V2f( 0 ) )
 		self.assertEqual( g.unpositionedNodeGadgets(), [] )
 
 	def testInputConnectionMaintainedOnNoduleMove( self ) :
@@ -1372,6 +1373,38 @@ class GraphGadgetTest( GafferUITest.TestCase ) :
 		Gaffer.Metadata.registerValue( s["n1"], "nodeGadget:type", "GafferUI::StandardNodeGadget" )
 
 		assertBothVisible()
+
+	def testConnectionGadgetsIncludesDanglingConnections( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = Gaffer.Node()
+		s["n1"]["c"] = Gaffer.Color3fPlug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		s["n2"] = Gaffer.Node()
+		s["n2"]["c"] = Gaffer.Color3fPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["n2"]["c"]["r"].setInput( s["n1"]["c"]["r"] )
+
+		Gaffer.Metadata.registerValue( s["n2"]["c"], "compoundNumericNodule:childrenVisible", True )
+
+		g = GafferUI.GraphGadget( s )
+		c = g.connectionGadgets( s["n2"]["c"]["r"] )
+		self.assertEqual( len( c ), 1 )
+		self.assertEqual( c[0].dstNodule(), g.nodeGadget( s["n2"] ).nodule( s["n2"]["c"]["r"] ) )
+		self.assertIsNone( c[0].srcNodule() )
+
+	def testChangeNodeGadgetForUnviewedNode( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = Gaffer.Node()
+
+		g = GafferUI.GraphGadget( s )
+		self.assertIsNotNone( g.nodeGadget( s["b"] ) )
+		self.assertIsNone( g.nodeGadget( s["b"]["n"] ) )
+
+		Gaffer.Metadata.registerValue( s["b"]["n"], "nodeGadget:type", "GafferUI::AuxiliaryNodeGadget" )
+		self.assertIsNone( g.nodeGadget( s["b"]["n"] ) )
 
 if __name__ == "__main__":
 	unittest.main()

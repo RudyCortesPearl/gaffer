@@ -38,6 +38,7 @@
 import os
 import unittest
 import subprocess32 as subprocess
+import imath
 
 import IECore
 
@@ -58,12 +59,13 @@ class ColorSpaceTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.ColorSpace()
 		o["in"].setInput( n["out"] )
 
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 
 		o["inputSpace"].setValue( "linear" )
 		o["outputSpace"].setValue( "sRGB" )
 
-		self.assertNotEqual( n["out"].image(), o["out"].image() )
+		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), GafferImage.ImageAlgo.image( o["out"] ) )
 
 	def testHashPassThrough( self ) :
 
@@ -73,30 +75,43 @@ class ColorSpaceTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.ColorSpace()
 		o["in"].setInput( n["out"] )
 
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 
 		o["inputSpace"].setValue( "linear" )
 		o["outputSpace"].setValue( "sRGB" )
 
-		self.assertNotEqual( n["out"].image(), o["out"].image() )
+		self.assertNotEqual( GafferImage.ImageAlgo.image( n["out"] ), GafferImage.ImageAlgo.image( o["out"] ) )
 
 		o["enabled"].setValue( False )
 
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 		self.assertEqual( n["out"]['format'].hash(), o["out"]['format'].hash() )
 		self.assertEqual( n["out"]['dataWindow'].hash(), o["out"]['dataWindow'].hash() )
 		self.assertEqual( n["out"]["metadata"].getValue(), o["out"]["metadata"].getValue() )
 		self.assertEqual( n["out"]['channelNames'].hash(), o["out"]['channelNames'].hash() )
+		self.assertTrue(
+			o["out"].channelData( "R", imath.V2i( 0 ), _copy = False ).isSame(
+				n["out"].channelData( "R", imath.V2i( 0 ), _copy = False )
+			)
+		)
 
 		o["enabled"].setValue( True )
 
 		o["inputSpace"].setValue( "linear" )
 		o["outputSpace"].setValue( "linear" )
-		self.assertEqual( n["out"].image(), o["out"].image() )
+		self.assertImageHashesEqual( n["out"], o["out"] )
+		self.assertImagesEqual( n["out"], o["out"] )
 		self.assertEqual( n["out"]['format'].hash(), o["out"]['format'].hash() )
 		self.assertEqual( n["out"]['dataWindow'].hash(), o["out"]['dataWindow'].hash() )
 		self.assertEqual( n["out"]["metadata"].getValue(), o["out"]["metadata"].getValue() )
 		self.assertEqual( n["out"]['channelNames'].hash(), o["out"]['channelNames'].hash() )
+		self.assertTrue(
+			o["out"].channelData( "R", imath.V2i( 0 ), _copy = False ).isSame(
+				n["out"].channelData( "R", imath.V2i( 0 ), _copy = False )
+			)
+		)
 
 	def testImageHashPassThrough( self ) :
 
@@ -106,12 +121,12 @@ class ColorSpaceTest( GafferImageTest.ImageTestCase ) :
 		o = GafferImage.ColorSpace()
 		o["in"].setInput( i["out"] )
 
-		self.assertEqual( i["out"].imageHash(), o["out"].imageHash() )
+		self.assertEqual( GafferImage.ImageAlgo.imageHash( i["out"] ), GafferImage.ImageAlgo.imageHash( o["out"] ) )
 
 		o["inputSpace"].setValue( "linear" )
 		o["outputSpace"].setValue( "sRGB" )
 
-		self.assertNotEqual( i["out"].imageHash(), o["out"].imageHash() )
+		self.assertNotEqual( GafferImage.ImageAlgo.imageHash( i["out"] ), GafferImage.ImageAlgo.imageHash( o["out"] ) )
 
 	def testChannelsAreSeparate( self ) :
 
@@ -125,13 +140,13 @@ class ColorSpaceTest( GafferImageTest.ImageTestCase ) :
 		o["outputSpace"].setValue( "sRGB" )
 
 		self.assertNotEqual(
-			o["out"].channelDataHash( "R", IECore.V2i( 0 ) ),
-			o["out"].channelDataHash( "G", IECore.V2i( 0 ) )
+			o["out"].channelDataHash( "R", imath.V2i( 0 ) ),
+			o["out"].channelDataHash( "G", imath.V2i( 0 ) )
 		)
 
 		self.assertNotEqual(
-			o["out"].channelData( "R", IECore.V2i( 0 ) ),
-			o["out"].channelData( "G", IECore.V2i( 0 ) )
+			o["out"].channelData( "R", imath.V2i( 0 ) ),
+			o["out"].channelData( "G", imath.V2i( 0 ) )
 		)
 
 	def testPassThrough( self ) :
@@ -203,8 +218,8 @@ class ColorSpaceTest( GafferImageTest.ImageTestCase ) :
 
 		# override context
 		s["writer"]["fileName"].setValue( contextOverrideImageFile )
-		s["cs"]["context"].addOptionalMember("LUT", "cineon.spi1d", "LUT", enabled=True)
-		s["cs"]["context"].addOptionalMember("CDL", "rec709.spi1d", "CDL", enabled=True)
+		s["cs"]["context"].addChild( Gaffer.NameValuePlug("LUT", "cineon.spi1d", True, "LUT", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["cs"]["context"].addChild( Gaffer.NameValuePlug("CDL", "rec709.spi1d", True, "CDL", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		s.save()
 
 		subprocess.check_call(
@@ -225,6 +240,77 @@ class ColorSpaceTest( GafferImageTest.ImageTestCase ) :
 
 		# check override produce expected output
 		self.assertImagesEqual( expected, context, ignoreMetadata = True )
+
+	def testSingleChannelImage( self ) :
+
+		r = GafferImage.ImageReader()
+		r["fileName"].setValue( "${GAFFER_ROOT}/python/GafferImageTest/images/blurRange.exr" )
+		self.assertEqual( r["out"]["channelNames"].getValue(), IECore.StringVectorData( [ "R" ] ) )
+
+		s = GafferImage.Shuffle()
+		s["in"].setInput( r["out"] )
+		s["channels"].addChild( s.ChannelPlug( "G", "R" ) )
+		s["channels"].addChild( s.ChannelPlug( "B", "R" ) )
+
+		c1 = GafferImage.ColorSpace()
+		c1["in"].setInput( r["out"] )
+		c1["inputSpace"].setValue( "linear" )
+		c1["outputSpace"].setValue( "sRGB" )
+
+		c2 = GafferImage.ColorSpace()
+		c2["in"].setInput( s["out"] )
+		c2["inputSpace"].setValue( "linear" )
+		c2["outputSpace"].setValue( "sRGB" )
+
+		self.assertEqual( c2["out"].channelData( "R", imath.V2i( 0 ) ), c1["out"].channelData( "R", imath.V2i( 0 ) ) )
+
+	def testUnpremultiplied( self ) :
+
+		i = GafferImage.ImageReader()
+		i["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/circles.exr" ) )
+
+		shuffleAlpha = GafferImage.Shuffle()
+		shuffleAlpha["channels"].addChild( GafferImage.Shuffle.ChannelPlug( "channel" ) )
+		shuffleAlpha["in"].setInput( i["out"] )
+		shuffleAlpha["channels"]["channel"]["out"].setValue( 'A' )
+		shuffleAlpha["channels"]["channel"]["in"].setValue( 'R' )
+
+		gradeAlpha = GafferImage.Grade()
+		gradeAlpha["in"].setInput( shuffleAlpha["out"] )
+		gradeAlpha["channels"].setValue( '[RGBA]' )
+		gradeAlpha["offset"].setValue( imath.Color4f( 0, 0, 0, 0.1 ) )
+
+		unpremultipliedColorSpace = GafferImage.ColorSpace()
+		unpremultipliedColorSpace["in"].setInput( gradeAlpha["out"] )
+		unpremultipliedColorSpace["processUnpremultiplied"].setValue( True )
+		unpremultipliedColorSpace["inputSpace"].setValue( 'linear' )
+		unpremultipliedColorSpace["outputSpace"].setValue( 'sRGB' )
+
+		unpremultiply = GafferImage.Unpremultiply()
+		unpremultiply["in"].setInput( gradeAlpha["out"] )
+
+		bareColorSpace = GafferImage.ColorSpace()
+		bareColorSpace["in"].setInput( unpremultiply["out"] )
+		bareColorSpace["inputSpace"].setValue( 'linear' )
+		bareColorSpace["outputSpace"].setValue( 'sRGB' )
+
+		premultiply = GafferImage.Premultiply()
+		premultiply["in"].setInput( bareColorSpace["out"] )
+
+		# Assert that with a non-zero alpha, processUnpremultiplied is identical to:
+		# unpremult, colorSpace, and premult
+		self.assertImagesEqual( unpremultipliedColorSpace["out"], premultiply["out"] )
+
+		gradeAlpha["multiply"].setValue( imath.Color4f( 1, 1, 1, 0.0 ) )
+		gradeAlpha["offset"].setValue( imath.Color4f( 0, 0, 0, 0.0 ) )
+
+		# Assert that when alpha is zero, processUnpremultiplied doesn't affect the result
+		defaultColorSpace = GafferImage.ColorSpace()
+		defaultColorSpace["in"].setInput( gradeAlpha["out"] )
+		defaultColorSpace["inputSpace"].setValue( 'linear' )
+		defaultColorSpace["outputSpace"].setValue( 'sRGB' )
+
+		self.assertImagesEqual( unpremultipliedColorSpace["out"], defaultColorSpace["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

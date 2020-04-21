@@ -42,15 +42,15 @@
 namespace GafferScene
 {
 
-class StandardAttributes : public Attributes
+class GAFFERSCENE_API StandardAttributes : public Attributes
 {
 
 	public :
 
 		StandardAttributes( const std::string &name=defaultName<StandardAttributes>() );
-		virtual ~StandardAttributes();
+		~StandardAttributes() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::StandardAttributes, StandardAttributesTypeId, Attributes );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::StandardAttributes, StandardAttributesTypeId, Attributes );
 
 	private:
 

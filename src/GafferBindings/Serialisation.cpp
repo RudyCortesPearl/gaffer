@@ -36,21 +36,24 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
-#include "boost/python/suite/indexing/container_utils.hpp"
 
-#include "boost/tokenizer.hpp"
-#include "boost/format.hpp"
+#include "GafferBindings/Serialisation.h"
 
-#include "IECore/MessageHandler.h"
+#include "GafferBindings/GraphComponentBinding.h"
+#include "GafferBindings/MetadataBinding.h"
+
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/Plug.h"
+#include "Gaffer/Spreadsheet.h"
 
 #include "IECorePython/ScopedGILLock.h"
 
-#include "Gaffer/Context.h"
-#include "Gaffer/Plug.h"
+#include "IECore/MessageHandler.h"
 
-#include "GafferBindings/Serialisation.h"
-#include "GafferBindings/GraphComponentBinding.h"
-#include "GafferBindings/MetadataBinding.h"
+#include "boost/format.hpp"
+#include "boost/python/suite/indexing/container_utils.hpp"
+#include "boost/tokenizer.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -58,11 +61,36 @@ using namespace GafferBindings;
 using namespace boost::python;
 
 //////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+// Where a parent has dynamically changing numbers of children,
+// and no meaning is attached to their names, we want to
+// access the children by index rather than name. This is faster
+// and more readable, and opens the possibility of omitting the
+// overhead of the names entirely one day.
+/// \todo Consider an official way for GraphComponents to opt in
+/// to this behaviour.
+bool keyedByIndex( const GraphComponent *parent )
+{
+	return
+		runTimeCast<const Spreadsheet::RowsPlug>( parent ) ||
+		runTimeCast<const ArrayPlug>( parent )
+	;
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
 // Serialisation
 //////////////////////////////////////////////////////////////////////////
 
 Serialisation::Serialisation( const Gaffer::GraphComponent *parent, const std::string &parentName, const Gaffer::Set *filter )
-	:	m_parent( parent ), m_parentName( parentName ), m_filter( filter )
+	:	m_parent( parent ), m_parentName( parentName ), m_filter( filter ),
+		m_protectParentNamespace( Context::current()->get<bool>( "serialiser:protectParentNamespace", true ) )
 {
 	IECorePython::ScopedGILLock gilLock;
 	walk( parent, parentName, acquireSerialiser( parent ) );
@@ -96,10 +124,11 @@ std::string Serialisation::result() const
 	}
 
 	if(
-		runTimeCast<const Node>( m_parent )
+		runTimeCast<const Node>( m_parent ) &&
+		Context::current()->get<bool>( "serialiser:includeVersionMetadata", true )
 	)
 	{
-		boost::format formatter( "Gaffer.Metadata.registerNodeValue( %s, \"%s\", %d, persistent=False )\n" );
+		boost::format formatter( "Gaffer.Metadata.registerValue( %s, \"%s\", %d, persistent=False )\n" );
 
 		result += "\n";
 		result += boost::str( formatter % m_parentName % "serialiser:milestoneVersion" % GAFFER_MILESTONE_VERSION );
@@ -108,7 +137,10 @@ std::string Serialisation::result() const
 		result += boost::str( formatter % m_parentName % "serialiser:patchVersion" % GAFFER_PATCH_VERSION );
 	}
 
-	result += "\n__children = {}\n\n";
+	if( m_protectParentNamespace )
+	{
+		result += "\n__children = {}\n\n";
+	}
 
 	result += m_hierarchyScript;
 
@@ -116,7 +148,10 @@ std::string Serialisation::result() const
 
 	result += m_postScript;
 
-	result += "\n\ndel __children\n\n";
+	if( m_protectParentNamespace )
+	{
+		result += "\n\ndel __children\n\n";
+	}
 
 	return result;
 }
@@ -187,14 +222,32 @@ std::string Serialisation::classPath( boost::python::object &object )
 		result += ".";
 	}
 
+	boost::python::object cls;
 	if( PyType_Check( object.ptr() ) )
 	{
-		result += extract<std::string>( object.attr( "__name__" ) );
+		cls = object;
 	}
 	else
 	{
-		result += extract<std::string>( object.attr( "__class__" ).attr( "__name__" ) );
+		cls = object.attr( "__class__" );
 	}
+
+	if( PyObject_HasAttrString( cls.ptr(), "__qualname__" ) )
+	{
+		// In Python 3, __qualname__ will give us a qualified name
+		// for a nested class, which is exactly what we want.
+		// See https://www.python.org/dev/peps/pep-3155.
+		//
+		// In the meantime we still support __qualname__ in Python
+		// 2, so that nested classes can provide it manually where
+		// necessary.
+		result += extract<std::string>( cls.attr( "__qualname__" ) );
+	}
+	else
+	{
+		result += extract<std::string>( cls.attr( "__name__" ) );
+	}
+
 	return result;
 }
 
@@ -222,21 +275,28 @@ void Serialisation::walk( const Gaffer::GraphComponent *parent, const std::strin
 		}
 
 		std::string childIdentifier;
-		if( parent == m_parent && childConstructor.size() )
+		if( parent == m_parent && childConstructor.size() && m_protectParentNamespace )
 		{
-			childIdentifier = "__children[\"" + child->getName().string() + "\"]";
+			childIdentifier = this->childIdentifier( "__children", it );
 		}
 		else
 		{
-			childIdentifier = parentIdentifier + "[\"" + child->getName().string() + "\"]";
+			childIdentifier = this->childIdentifier( parentIdentifier, it );
 		}
 
 		if( childConstructor.size() )
 		{
-			if( parent == m_parent)
+			if( parent == m_parent )
 			{
-				m_hierarchyScript += childIdentifier + " = " + childConstructor + "\n";
-				m_hierarchyScript += parentIdentifier + ".addChild( " + childIdentifier + " )\n";
+				if( m_protectParentNamespace )
+				{
+					m_hierarchyScript += childIdentifier + " = " + childConstructor + "\n";
+					m_hierarchyScript += parentIdentifier + ".addChild( " + childIdentifier + " )\n";
+				}
+				else
+				{
+					m_hierarchyScript += childIdentifier + " = " + childConstructor + "\n";
+				}
 			}
 			else
 			{
@@ -254,31 +314,85 @@ void Serialisation::walk( const Gaffer::GraphComponent *parent, const std::strin
 
 std::string Serialisation::identifier( const Gaffer::GraphComponent *graphComponent ) const
 {
-	std::string result;
-	while( graphComponent )
+	if( !graphComponent )
 	{
-		const GraphComponent *parent = graphComponent->parent<GraphComponent>();
-		if( parent == m_parent )
-		{
-			if( m_filter && !m_filter->contains( graphComponent ) )
-			{
-				return "";
-			}
-			const Serialiser *parentSerialiser = acquireSerialiser( parent );
-			if( parentSerialiser->childNeedsConstruction( graphComponent, *this ) )
-			{
-				return "__children[\"" + graphComponent->getName().string() + "\"]" + result;
-			}
-			else
-			{
-				return m_parentName + "[\"" + graphComponent->getName().string() + "\"]" + result;
-			}
-		}
-		result = "[\"" + graphComponent->getName().string() + "\"]" + result;
-		graphComponent = parent;
+		return "";
 	}
 
-	return "";
+	std::string parentIdentifier;
+	const GraphComponent *parent = graphComponent->parent();
+	if( parent == m_parent )
+	{
+		if( m_filter && !m_filter->contains( graphComponent ) )
+		{
+			return "";
+		}
+		const Serialiser *parentSerialiser = acquireSerialiser( parent );
+		if( m_protectParentNamespace && parentSerialiser->childNeedsConstruction( graphComponent, *this ) )
+		{
+			parentIdentifier = "__children";
+		}
+		else
+		{
+			parentIdentifier = m_parentName;
+		}
+	}
+	else
+	{
+		parentIdentifier = identifier( parent );
+	}
+
+	return childIdentifier( parentIdentifier, graphComponent );
+}
+
+std::string Serialisation::childIdentifier( const std::string &parentIdentifier, const Gaffer::GraphComponent *child ) const
+{
+	if( parentIdentifier.empty() )
+	{
+		return "";
+	}
+
+	const GraphComponent *parent = child->parent();
+	std::string result = parentIdentifier;
+	if( keyedByIndex( parent ) )
+	{
+		result += "[";
+		result += boost::lexical_cast<std::string>(
+			std::find( parent->children().begin(), parent->children().end(), child ) - parent->children().begin()
+		);
+		result += "]";
+	}
+	else
+	{
+		result += "[\"";
+		result += child->getName().string();
+		result += "\"]";
+	}
+	return result;
+}
+
+std::string Serialisation::childIdentifier( const std::string &parentIdentifier, Gaffer::GraphComponent::ChildIterator child ) const
+{
+	if( parentIdentifier.empty() )
+	{
+		return "";
+	}
+
+	const GraphComponent *parent = (*child)->parent();
+	std::string result = parentIdentifier;
+	if( keyedByIndex( parent ) )
+	{
+		result += "[";
+		result += boost::lexical_cast<std::string>( child - parent->children().begin() );
+		result += "]";
+	}
+	else
+	{
+		result += "[\"";
+		result += (*child)->getName().string();
+		result += "\"]";
+	}
+	return result;
 }
 
 void Serialisation::registerSerialiser( IECore::TypeId targetType, SerialiserPtr serialiser )
@@ -301,7 +415,7 @@ const Serialisation::Serialiser *Serialisation::acquireSerialiser( const GraphCo
 	}
 
 	assert( false );
-	return NULL;
+	return nullptr;
 }
 
 Serialisation::SerialiserMap &Serialisation::serialiserMap()
@@ -320,7 +434,11 @@ Serialisation::SerialiserMap &Serialisation::serialiserMap()
 
 void Serialisation::Serialiser::moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const
 {
-	modules.insert( Serialisation::modulePath( graphComponent ) );
+	const std::string module = Serialisation::modulePath( graphComponent );
+	if( !module.empty() )
+	{
+		modules.insert( module );
+	}
 }
 
 std::string Serialisation::Serialiser::constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const
@@ -355,191 +473,3 @@ bool Serialisation::Serialiser::childNeedsConstruction( const Gaffer::GraphCompo
 	return false;
 }
 
-//////////////////////////////////////////////////////////////////////////
-// Python binding
-//////////////////////////////////////////////////////////////////////////
-
-namespace
-{
-
-class SerialiserWrapper : public IECorePython::RefCountedWrapper<Serialisation::Serialiser>
-{
-
-	public :
-
-		SerialiserWrapper( PyObject *self )
-			:	IECorePython::RefCountedWrapper<Serialisation::Serialiser>( self )
-		{
-		}
-
-		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "moduleDependencies" );
-				if( f )
-				{
-					object mo = f( GraphComponentPtr( const_cast<GraphComponent *>( graphComponent ) ), serialisation );
-					std::vector<std::string> mv;
-					container_utils::extend_container( mv, mo );
-					modules.insert( mv.begin(), mv.end() );
-					return;
-				}
-			}
-			Serialiser::moduleDependencies( graphComponent, modules, serialisation );
-		}
-
-		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "constructor" );
-				if( f )
-				{
-					return boost::python::extract<std::string>(
-						f( GraphComponentPtr( const_cast<GraphComponent *>( graphComponent ) ), serialisation )
-					);
-				}
-			}
-			return Serialiser::constructor( graphComponent, serialisation );
-		}
-
-		virtual std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "postConstructor" );
-				if( f )
-				{
-					return boost::python::extract<std::string>(
-						f( GraphComponentPtr( const_cast<GraphComponent *>( graphComponent ) ), identifier, serialisation )
-					);
-				}
-			}
-			return Serialiser::postConstructor( graphComponent, identifier, serialisation );
-		}
-
-		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "postHierarchy" );
-				if( f )
-				{
-					return boost::python::extract<std::string>(
-						f( GraphComponentPtr( const_cast<GraphComponent *>( graphComponent ) ), identifier, serialisation )
-					);
-				}
-			}
-			return Serialiser::postHierarchy( graphComponent, identifier, serialisation );
-		}
-
-		virtual std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "postScript" );
-				if( f )
-				{
-					return boost::python::extract<std::string>(
-						f( GraphComponentPtr( const_cast<GraphComponent *>( graphComponent ) ), identifier, serialisation )
-					);
-				}
-			}
-			return Serialiser::postScript( graphComponent, identifier, serialisation );
-		}
-
-		virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "childNeedsSerialisation" );
-				if( f )
-				{
-					return f( GraphComponentPtr( const_cast<GraphComponent *>( child ) ), serialisation );
-				}
-			}
-			return Serialiser::childNeedsSerialisation( child, serialisation );
-		}
-
-		virtual bool childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const
-		{
-			if( this->isSubclassed() )
-			{
-				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "childNeedsConstruction" );
-				if( f )
-				{
-					return f( GraphComponentPtr( const_cast<GraphComponent *>( child ) ), serialisation );
-				}
-			}
-			return Serialiser::childNeedsConstruction( child, serialisation );
-		}
-
-};
-
-GraphComponentPtr parent( const Serialisation &serialisation )
-{
-	return const_cast<GraphComponent *>( serialisation.parent() );
-}
-
-object moduleDependencies( Serialisation::Serialiser &serialiser, const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation )
-{
-	std::set<std::string> modules;
-	serialiser.moduleDependencies( graphComponent, modules, serialisation );
-	boost::python::list modulesList;
-	for( std::set<std::string>::const_iterator it = modules.begin(); it != modules.end(); ++it )
-	{
-		modulesList.append( *it );
-	}
-	PyObject *modulesSet = PySet_New( modulesList.ptr() );
-	return object( handle<>( modulesSet ) );
-}
-
-} // namespace
-
-void GafferBindings::bindSerialisation()
-{
-
-	scope s = boost::python::class_<Serialisation>( "Serialisation", no_init )
-		.def(
-			init<const Gaffer::GraphComponent *, const std::string &, const Gaffer::Set *>
-			(
-				(
-					arg( "parent" ),
-					arg( "parentName" ) = "parent",
-					arg( "filter" ) = object()
-				)
-			)
-		)
-		.def( "parent", &parent )
-		.def( "identifier", &Serialisation::identifier )
-		.def( "result", &Serialisation::result )
-		.def( "modulePath", (std::string (*)( object & ))&Serialisation::modulePath )
-		.staticmethod( "modulePath" )
-		.def( "classPath", (std::string (*)( object & ))&Serialisation::classPath )
-		.staticmethod( "classPath" )
-		.def( "registerSerialiser", &Serialisation::registerSerialiser )
-		.staticmethod( "registerSerialiser" )
-		.def( "acquireSerialiser", &Serialisation::acquireSerialiser, return_value_policy<reference_existing_object>() )
-		.staticmethod( "acquireSerialiser" )
-	;
-
-	IECorePython::RefCountedClass<Serialisation::Serialiser, IECore::RefCounted, SerialiserWrapper>( "Serialiser" )
-		.def( init<>() )
-		.def( "moduleDependencies", &moduleDependencies )
-		.def( "constructor", &Serialisation::Serialiser::constructor )
-		.def( "postConstructor", &Serialisation::Serialiser::postConstructor )
-		.def( "postHierarchy", &Serialisation::Serialiser::postHierarchy )
-		.def( "postScript", &Serialisation::Serialiser::postScript )
-		.def( "childNeedsSerialisation", &Serialisation::Serialiser::childNeedsSerialisation )
-		.def( "childNeedsConstruction", &Serialisation::Serialiser::childNeedsConstruction )
-	;
-
-}

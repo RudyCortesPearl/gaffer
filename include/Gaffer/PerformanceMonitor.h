@@ -37,16 +37,16 @@
 #ifndef GAFFER_PERFORMANCEMONITOR_H
 #define GAFFER_PERFORMANCEMONITOR_H
 
-#include <stack>
-
-#include "tbb/enumerable_thread_specific.h"
-
-#include "boost/unordered_map.hpp"
-#include "boost/chrono.hpp"
+#include "Gaffer/Monitor.h"
 
 #include "IECore/RefCounted.h"
 
-#include "Gaffer/Monitor.h"
+#include "boost/chrono.hpp"
+#include "boost/unordered_map.hpp"
+
+#include "tbb/enumerable_thread_specific.h"
+
+#include <stack>
 
 namespace Gaffer
 {
@@ -55,13 +55,15 @@ IE_CORE_FORWARDDECLARE( Plug )
 
 /// A monitor which collects statistics about the frequency
 /// and duration of hash and compute processes per plug.
-class PerformanceMonitor : public Monitor
+class GAFFER_API PerformanceMonitor : public Monitor
 {
 
 	public :
 
 		PerformanceMonitor();
-		virtual ~PerformanceMonitor();
+		~PerformanceMonitor() override;
+
+		IE_CORE_DECLAREMEMBERPTR( PerformanceMonitor )
 
 		struct Statistics
 		{
@@ -94,8 +96,8 @@ class PerformanceMonitor : public Monitor
 
 	protected :
 
-		virtual void processStarted( const Process *process );
-		virtual void processFinished( const Process *process );
+		void processStarted( const Process *process ) override;
+		void processFinished( const Process *process ) override;
 
 	private :
 
@@ -122,6 +124,8 @@ class PerformanceMonitor : public Monitor
 		mutable Statistics m_combinedStatistics;
 
 };
+
+IE_CORE_DECLAREPTR( PerformanceMonitor )
 
 } // namespace Gaffer
 

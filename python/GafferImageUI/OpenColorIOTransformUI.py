@@ -34,11 +34,22 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
 import GafferUI
 import GafferImage
+
+def colorSpacePresetNames( plug ) :
+
+	return IECore.StringVectorData( [ "None" ] + sorted( map( lambda x: "Roles/{0}".format( x.replace( "_", " ").title() ), GafferImage.OpenColorIOTransform.availableRoles() ) ) + sorted( GafferImage.OpenColorIOTransform.availableColorSpaces() )  )
+
+
+def colorSpacePresetValues( plug ) :
+
+	return IECore.StringVectorData( [ "" ] + sorted( GafferImage.OpenColorIOTransform.availableRoles() ) + sorted( GafferImage.OpenColorIOTransform.availableColorSpaces() ) )
 
 Gaffer.Metadata.registerNode(
 
@@ -89,7 +100,7 @@ class _ContextFooter( GafferUI.Widget ) :
 
 		with row :
 
-			GafferUI.Spacer( IECore.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
+			GafferUI.Spacer( imath.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
 
 			button = GafferUI.Button(
 				image = "plus.png",
@@ -97,11 +108,9 @@ class _ContextFooter( GafferUI.Widget ) :
 				toolTip = "Click to add variables",
 			)
 
-			self.__buttonClickedConnection = button.clickedSignal().connect(
-				Gaffer.WeakMethod( self.__clicked )
-			)
+			button.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ), scoped = False )
 
-			GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ), parenting = { "expand" : True } )
+			GafferUI.Spacer( imath.V2i( 1 ), imath.V2i( 999999, 1 ), parenting = { "expand" : True } )
 
 		self.__node = node
 
@@ -111,4 +120,4 @@ class _ContextFooter( GafferUI.Widget ) :
 			return
 
 		with Gaffer.UndoScope( self.__node.ancestor( Gaffer.ScriptNode ) ) :
-			self.__node["context"].addOptionalMember( "", "", enabled = True )
+			self.__node["context"].addChild( Gaffer.NameValuePlug( "", "", True, "member1", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )

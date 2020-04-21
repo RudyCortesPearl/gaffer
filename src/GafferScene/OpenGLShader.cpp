@@ -34,30 +34,46 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/algorithm/string/predicate.hpp"
+#include "GafferScene/OpenGLShader.h"
+
+#include "GafferImage/ImagePlug.h"
+#include "GafferImage/ImageAlgo.h"
+
+#include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/PlugAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/TypedPlug.h"
+
+#include "IECoreGL/IECoreGL.h"
+#include "IECoreGL/Shader.h"
+#include "IECoreGL/ShaderLoader.h"
+
+#include "IECoreScene/ShaderNetwork.h"
 
 #include "IECore/MessageHandler.h"
 
-#include "IECoreGL/Shader.h"
-#include "IECoreGL/ShaderLoader.h"
-#include "IECoreGL/IECoreGL.h"
-
-#include "Gaffer/CompoundDataPlug.h"
-#include "Gaffer/TypedPlug.h"
-#include "Gaffer/CompoundNumericPlug.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/PlugAlgo.h"
-
-#include "GafferImage/ImagePlug.h"
-
-#include "GafferScene/OpenGLShader.h"
+#include "boost/algorithm/string/predicate.hpp"
 
 using namespace std;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( OpenGLShader );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OpenGLShader );
+
+namespace
+{
+
+IECore::InternedString g_glVertexSource( "glVertexSource" );
+IECore::InternedString g_glNamespacedVertexSource( "gl:vertexSource" );
+IECore::InternedString g_glGeometrySource( "glGeometrySource" );
+IECore::InternedString g_glNamespacedGeometrySource( "gl:geometrySource" );
+IECore::InternedString g_glFragmentSource( "glFragmentSource" );
+IECore::InternedString g_glNamespacedFragmentSource( "gl:fragmentSource" );
+
+} // namespace
 
 OpenGLShader::OpenGLShader( const std::string &name )
 	:	GafferScene::Shader( name )
@@ -71,6 +87,28 @@ OpenGLShader::~OpenGLShader()
 
 void OpenGLShader::loadShader( const std::string &shaderName, bool keepExistingValues )
 {
+	if( const ScriptNode *script = scriptNode() )
+	{
+		if( script->isExecuting() )
+		{
+			// We're being called during the loading of a script.
+			// We might be on a headless farm blade with no GL available,
+			// so we can't use IECoreGL to load the shader. Just set the
+			// name and type correctly, and assume the dynamic plugs we
+			// created for the parameters originally are still correct.
+			/// \todo Investigate methods of loading shaders that don't
+			/// require GL calls. Candidates include :
+			///
+			/// - Manual parsing of the GL source looking for "uniform"
+			///   declarations.
+			/// - Adopting something like GLSLFX and using that to load
+			///   shaders.
+			namePlug()->setValue( shaderName );
+			typePlug()->setValue( "gl:surface" );
+			return;
+		}
+	}
+
 	IECoreGL::init( false );
 
 	IECoreGL::ShaderLoaderPtr loader = IECoreGL::ShaderLoader::defaultShaderLoader();
@@ -95,38 +133,38 @@ void OpenGLShader::loadShader( const std::string &shaderName, bool keepExistingV
 		}
 
 		const IECoreGL::Shader::Parameter *parameter = shader->uniformParameter( *it );
-		PlugPtr plug = NULL;
+		PlugPtr plug = nullptr;
 
 		const Plug *existingPlug = parametersPlug()->getChild<Plug>( *it );
 		const IECore::TypeId existingType = existingPlug ? (IECore::TypeId)existingPlug->typeId() : IECore::InvalidTypeId;
 		switch( parameter->type )
 		{
 			case GL_BOOL :
-				plug = existingType != (IECore::TypeId)BoolPlugTypeId ? new BoolPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)BoolPlugTypeId ? new BoolPlug( *it ) : nullptr;
 				break;
 			case GL_INT :
-				plug = existingType != (IECore::TypeId)IntPlugTypeId ? new IntPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)IntPlugTypeId ? new IntPlug( *it ) : nullptr;
 				break;
 			case GL_INT_VEC2 :
-				plug = existingType != (IECore::TypeId)V2iPlugTypeId ? new V2iPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)V2iPlugTypeId ? new V2iPlug( *it ) : nullptr;
 				break;
 			case GL_INT_VEC3 :
-				plug = existingType != (IECore::TypeId)V3iPlugTypeId ? new V3iPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)V3iPlugTypeId ? new V3iPlug( *it ) : nullptr;
 				break;
 			case GL_FLOAT :
-				plug = existingType != (IECore::TypeId)FloatPlugTypeId ? new FloatPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)FloatPlugTypeId ? new FloatPlug( *it ) : nullptr;
 				break;
 			case GL_FLOAT_VEC2 :
-				plug = existingType != (IECore::TypeId)V2fPlugTypeId ? new V2fPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)V2fPlugTypeId ? new V2fPlug( *it ) : nullptr;
 				break;
 			case GL_FLOAT_VEC3 :
 				// we don't know it's a colour any more than it's a point,
 				// but the colour ui is harmless for point types, and the point
 				// ui is useless for colour types.
-				plug = existingType != (IECore::TypeId)Color3fPlugTypeId ? new Color3fPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)Color3fPlugTypeId ? new Color3fPlug( *it ) : nullptr;
 				break;
 			case GL_FLOAT_VEC4 :
-				plug = existingType != (IECore::TypeId)Color4fPlugTypeId ? new Color4fPlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)Color4fPlugTypeId ? new Color4fPlug( *it ) : nullptr;
 				break;
 			case GL_SAMPLER_2D :
 				/// \todo This introduces a GafferImage dependency into GafferScene,
@@ -135,7 +173,7 @@ void OpenGLShader::loadShader( const std::string &shaderName, bool keepExistingV
 				/// but that might be a bit annoying for users. Keeping the dependency
 				/// might turn out to be useful for other nodes (Seeds perhaps?), so
 				/// revisit this at some point to see how things are working out.
-				plug = existingType != (IECore::TypeId)GafferImage::ImagePlugTypeId ? new GafferImage::ImagePlug( *it ) : NULL;
+				plug = existingType != (IECore::TypeId)GafferImage::ImagePlugTypeId ? new GafferImage::ImagePlug( *it ) : nullptr;
 				break;
 			default :
 				msg(
@@ -159,7 +197,7 @@ void OpenGLShader::parameterHash( const Gaffer::Plug *parameterPlug, IECore::Mur
 {
 	if( const GafferImage::ImagePlug *imagePlug = runTimeCast<const GafferImage::ImagePlug>( parameterPlug ) )
 	{
-		h.append( imagePlug->imageHash() );
+		h.append( GafferImage::ImageAlgo::imageHash( imagePlug ) );
 	}
 	else
 	{
@@ -171,26 +209,95 @@ IECore::DataPtr OpenGLShader::parameterValue( const Gaffer::Plug *parameterPlug 
 {
 	if( const GafferImage::ImagePlug *imagePlug = runTimeCast<const GafferImage::ImagePlug>( parameterPlug ) )
 	{
-		IECore::ImagePrimitivePtr image = imagePlug->image();
+		IECoreImage::ImagePrimitivePtr image = GafferImage::ImageAlgo::image( imagePlug );
 		if( image )
 		{
 			CompoundDataPtr value = new CompoundData;
 			value->writable()["displayWindow"] = new Box2iData( image->getDisplayWindow() );
 			value->writable()["dataWindow"] = new Box2iData( image->getDataWindow() );
-			CompoundDataPtr channelData = new CompoundData;
-			vector<string> channelNames;
-			image->channelNames( channelNames );
-			for( vector<string>::const_iterator cIt = channelNames.begin(), eCIt = channelNames.end(); cIt != eCIt; cIt++ )
-			{
-				channelData->writable()[*cIt] = image->variableData<Data>( *cIt );
-			}
+			CompoundDataPtr channelData = new CompoundData( CompoundDataMap( image->channels.begin(), image->channels.end() ) );
 			value->writable()["channels"] = channelData;
 			return value;
 		}
-		return NULL;
+		return nullptr;
 	}
 	else
 	{
 		return Shader::parameterValue( parameterPlug );
+	}
+}
+
+IECore::ConstCompoundObjectPtr OpenGLShader::attributes( const Gaffer::Plug *output ) const
+{
+	ConstCompoundObjectPtr original = Shader::attributes( output );
+	const IECoreScene::ShaderNetwork *network = original->member<const IECoreScene::ShaderNetwork>( "gl:surface" );
+	if( !network || !network->size() )
+	{
+		return original;
+	}
+
+	IECoreScene::ShaderNetworkPtr updatedNetwork = nullptr;
+
+	auto swapParameter = [network, &updatedNetwork]
+	(
+		const IECoreScene::Shader *oldShader,
+		IECoreScene::ShaderPtr &newShader,
+		const InternedString &oldParameterName,
+		const DataPtr oldParameterValue,
+		const InternedString &newParameterName
+	)
+	{
+		if( !updatedNetwork )
+		{
+			updatedNetwork = network->copy();
+		}
+
+		if( !newShader )
+		{
+			newShader = oldShader->copy();
+		}
+
+		newShader->parameters()[newParameterName] = oldParameterValue;
+		newShader->parameters().erase( oldParameterName );
+	};
+
+	for( const auto &s : network->shaders() )
+	{
+		InternedString handle = s.first;
+		const IECoreScene::Shader *shader = s.second.get();
+
+		IECoreScene::ShaderPtr updatedShader = nullptr;
+
+		for( auto &kv : shader->parameters() )
+		{
+			if( kv.first == g_glVertexSource )
+			{
+				swapParameter( shader, updatedShader, kv.first, kv.second, g_glNamespacedVertexSource );
+			}
+			else if( kv.first == g_glGeometrySource )
+			{
+				swapParameter( shader, updatedShader, kv.first, kv.second, g_glNamespacedGeometrySource );
+			}
+			else if( kv.first == g_glFragmentSource )
+			{
+				swapParameter( shader, updatedShader, kv.first, kv.second, g_glNamespacedFragmentSource );
+			}
+		}
+
+		if( updatedShader )
+		{
+			updatedNetwork->setShader( handle, std::move( updatedShader ) );
+		}
+	}
+
+	if( updatedNetwork )
+	{
+		CompoundObjectPtr result = original->copy();
+		result->members()["gl:surface"] = updatedNetwork;
+		return result;
+	}
+	else
+	{
+		return original;
 	}
 }

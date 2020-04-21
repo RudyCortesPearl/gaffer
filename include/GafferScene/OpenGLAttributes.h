@@ -42,15 +42,15 @@
 namespace GafferScene
 {
 
-class OpenGLAttributes : public GafferScene::Attributes
+class GAFFERSCENE_API OpenGLAttributes : public GafferScene::Attributes
 {
 
 	public :
 
 		OpenGLAttributes( const std::string &name=defaultName<OpenGLAttributes>() );
-		virtual ~OpenGLAttributes();
+		~OpenGLAttributes() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::OpenGLAttributes, OpenGLAttributesTypeId, Attributes );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::OpenGLAttributes, OpenGLAttributesTypeId, Attributes );
 
 };
 

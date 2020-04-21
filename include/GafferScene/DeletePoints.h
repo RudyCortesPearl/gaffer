@@ -38,7 +38,7 @@
 #ifndef GAFFERSCENE_DELETEPOINTS_H
 #define GAFFERSCENE_DELETEPOINTS_H
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "GafferScene/Deformer.h"
 
 namespace Gaffer
 {
@@ -50,29 +50,27 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 namespace GafferScene
 {
 
-class DeletePoints : public SceneElementProcessor
+class GAFFERSCENE_API DeletePoints : public Deformer
 {
 
 	public :
 
 		DeletePoints( const std::string &name = defaultName<DeletePoints>() );
-		virtual ~DeletePoints();
+		~DeletePoints() override;
 
 		Gaffer::StringPlug *pointsPlug();
 		const Gaffer::StringPlug *pointsPlug() const;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::DeletePoints, DeletePointsTypeId, SceneElementProcessor );
-		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::BoolPlug *invertPlug();
+		const Gaffer::BoolPlug *invertPlug() const;
+
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeletePoints, DeletePointsTypeId, Deformer );
 
 	protected :
 
-		virtual bool processesBound() const;
-		virtual void hashProcessedBound( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box3f computeProcessedBound( const ScenePath &path, const Gaffer::Context *context, const Imath::Box3f &inputBound ) const;
-
-		virtual bool processesObject() const;
-		virtual void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const;
+		bool affectsProcessedObject( const Gaffer::Plug *input ) const override;
+		void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const override;
 
 	private :
 

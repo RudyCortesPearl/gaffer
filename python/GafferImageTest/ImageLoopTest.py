@@ -36,6 +36,7 @@
 
 import unittest
 import inspect
+import imath
 
 import IECore
 
@@ -46,26 +47,22 @@ import GafferImageTest
 
 class ImageLoopTest( GafferImageTest.ImageTestCase ) :
 
-	def testDefaultName( self ) :
-
-		l = GafferImage.ImageLoop()
-		self.assertEqual( l.getName(), "ImageLoop" )
-
 	def testLoop( self ) :
 
 		script = Gaffer.ScriptNode()
 
 		script["c"] = GafferImage.Constant()
-		script["loop"] = GafferImage.ImageLoop()
+		script["loop"] = Gaffer.Loop()
+		script["loop"].setup( GafferImage.ImagePlug() )
 		script["loop"]["in"].setInput( script["c"]["out"] )
 
 		script["grade"] = GafferImage.Grade()
-		script["grade"]["offset"].setValue( IECore.Color3f( .1 ) )
+		script["grade"]["offset"].setValue( imath.Color3f( .1 ) )
 		script["grade"]["in"].setInput( script["loop"]["previous"] )
 		script["loop"]["next"].setInput( script["grade"]["out"] )
 
 		script["sampler"] = GafferImage.ImageSampler()
-		script["sampler"]["pixel"].setValue( IECore.V2f( 10 ) )
+		script["sampler"]["pixel"].setValue( imath.V2f( 10 ) )
 		script["sampler"]["image"].setInput( script["loop"]["out"] )
 
 		with script.context() :
@@ -92,16 +89,17 @@ class ImageLoopTest( GafferImageTest.ImageTestCase ) :
 		script = Gaffer.ScriptNode()
 
 		script["c"] = GafferImage.Constant()
-		script["loop"] = GafferImage.ImageLoop()
+		script["loop"] = Gaffer.Loop()
+		script["loop"].setup( GafferImage.ImagePlug() )
 		script["loop"]["in"].setInput( script["c"]["out"] )
 
 		script["grade"] = GafferImage.Grade()
-		script["grade"]["offset"].setValue( IECore.Color3f( .1 ) )
+		script["grade"]["offset"].setValue( imath.Color3f( .1 ) )
 		script["grade"]["in"].setInput( script["loop"]["previous"] )
 		script["loop"]["next"].setInput( script["grade"]["out"] )
 
 		script["sampler"] = GafferImage.ImageSampler()
-		script["sampler"]["pixel"].setValue( IECore.V2f( 10 ) )
+		script["sampler"]["pixel"].setValue( imath.V2f( 10 ) )
 		script["sampler"]["image"].setInput( script["loop"]["out"] )
 
 		script["expression"] = Gaffer.Expression()

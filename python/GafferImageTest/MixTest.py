@@ -36,6 +36,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
@@ -50,6 +51,8 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 	gPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/greenWithDataWindow.100x100.exr" )
 	checkerPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checkerboard.100x100.exr" )
 	checkerMixPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checkerMix.100x100.exr" )
+	representativeDeepImagePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/representativeDeepImage.exr" )
+	radialPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/radial.exr" )
 
 	# Do several tests to check the cache is working correctly:
 	def testHashes( self ) :
@@ -68,12 +71,12 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		mix["in"][0].setInput( r1["out"] )
 		mix["in"][1].setInput( r2["out"] )
-		h1 = mix["out"].imageHash()
+		h1 = GafferImage.ImageAlgo.imageHash( mix["out"] )
 
 		# Switch the inputs.
 		mix["in"][1].setInput( r1["out"] )
 		mix["in"][0].setInput( r2["out"] )
-		h2 = mix["out"].imageHash()
+		h2 = GafferImage.ImageAlgo.imageHash( mix["out"] )
 
 		self.assertNotEqual( h1, h2 )
 
@@ -87,7 +90,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		mix = GafferImage.Mix()
 
-		input1Hash = r["out"].imageHash()
+		input1Hash = GafferImage.ImageAlgo.imageHash( r["out"] )
 		mix["in"][0].setInput( r["out"] )
 		mix["in"][1].setInput( g["out"] )
 		mix["mix"].setValue( 0.5 )
@@ -97,16 +100,16 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		# and the data window is merged
 		##########################################
 
-		self.assertNotEqual( mix["out"].imageHash(), input1Hash )
-		self.assertEqual( mix["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 20 ), IECore.V2i( 75 ) ) )
+		self.assertNotEqual( GafferImage.ImageAlgo.imageHash( mix["out"] ), input1Hash )
+		self.assertEqual( mix["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 20 ), imath.V2i( 75 ) ) )
 
 		##########################################
 		# Test that if we disable the node the hash gets passed through.
 		##########################################
 
 		mix["enabled"].setValue(False)
-		self.assertEqual( mix["out"].imageHash(), input1Hash )
-		self.assertEqual( mix["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 20 ), IECore.V2i( 70 ) ) )
+		self.assertEqual( GafferImage.ImageAlgo.imageHash( mix["out"] ), input1Hash )
+		self.assertEqual( mix["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 20 ), imath.V2i( 70 ) ) )
 		self.assertImagesEqual( mix["out"], r["out"] )
 
 
@@ -116,8 +119,8 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		mix["enabled"].setValue( True )
 		mix["mix"].setValue( 0 )
-		self.assertEqual( mix["out"].imageHash(), input1Hash )
-		self.assertEqual( mix["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 20 ), IECore.V2i( 70 ) ) )
+		self.assertEqual( GafferImage.ImageAlgo.imageHash( mix["out"] ), input1Hash )
+		self.assertEqual( mix["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 20 ), imath.V2i( 70 ) ) )
 		self.assertImagesEqual( mix["out"], r["out"] )
 
 		##########################################
@@ -134,10 +137,10 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		# Just check the first tile of the data to make sure hashes are passing through
 		with Gaffer.Context() as c :
 			c[ "image:channelName" ] = IECore.StringData( "G" )
-			c[ "image:tileOrigin" ] = IECore.V2iData( IECore.V2i( 0, 0 ) )
+			c[ "image:tileOrigin" ] = IECore.V2iData( imath.V2i( 0, 0 ) )
 			self.assertEqual( mix["out"]["channelData"].hash(), g["out"]["channelData"].hash() )
 
-		self.assertEqual( mix["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 25 ), IECore.V2i( 75 ) ) )
+		self.assertEqual( mix["out"]["dataWindow"].getValue(), imath.Box2i( imath.V2i( 25 ), imath.V2i( 75 ) ) )
 		self.assertImagesEqual( mix["out"], g["out"], ignoreMetadata = True )
 
 	# Overlay a red and green tile of different data window sizes with a checkered mask and check the data window is expanded on the result and looks as we expect.
@@ -206,9 +209,9 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		c = GafferImage.Constant()
 		f = GafferImage.Resize()
 		f["in"].setInput( c["out"] )
-		f["format"].setValue( GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 10 ) ), 1 ) )
+		f["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 0 ), imath.V2i( 10 ) ), 1 ) )
 		d = GafferImage.ImageMetadata()
-		d["metadata"].addMember( "comment", IECore.StringData( "reformated and metadata updated" ) )
+		d["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "reformated and metadata updated" ) ) )
 		d["in"].setInput( f["out"] )
 
 		m = GafferImage.Mix()
@@ -234,20 +237,20 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		b = GafferImage.Constant()
 		b["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		b["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		b["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 
 		a = GafferImage.Constant()
 		a["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		a["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		a["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
 		mask = GafferImage.Constant()
 		mask["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		mask["color"].setValue( IECore.Color4f( 0.75 ) )
+		mask["color"].setValue( imath.Color4f( 0.75 ) )
 
 		aCrop = GafferImage.Crop()
 		aCrop["in"].setInput( a["out"] )
 		aCrop["areaSource"].setValue( aCrop.AreaSource.Area )
-		aCrop["area"].setValue( IECore.Box2i( IECore.V2i( 50 ), IECore.V2i( 162 ) ) )
+		aCrop["area"].setValue( imath.Box2i( imath.V2i( 50 ), imath.V2i( 162 ) ) )
 		aCrop["affectDisplayWindow"].setValue( False )
 
 		m = GafferImage.Mix()
@@ -261,7 +264,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		def sample( x, y ) :
 
-			return IECore.Color3f(
+			return imath.Color3f(
 				redSampler.sample( x, y ),
 				greenSampler.sample( x, y ),
 				blueSampler.sample( x, y ),
@@ -271,29 +274,29 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		# the data window of aCrop. But we still only take 25%
 		# of the red everywhere
 
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0.25, 0, 0 ) )
-		self.assertEqual( sample( 50, 50 ), IECore.Color3f( 0.25, 0.75, 0 ) )
-		self.assertEqual( sample( 161, 161 ), IECore.Color3f( 0.25, 0.75, 0 ) )
-		self.assertEqual( sample( 162, 162 ), IECore.Color3f( 0.25, 0, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0.25, 0, 0 ) )
+		self.assertEqual( sample( 50, 50 ), imath.Color3f( 0.25, 0.75, 0 ) )
+		self.assertEqual( sample( 161, 161 ), imath.Color3f( 0.25, 0.75, 0 ) )
+		self.assertEqual( sample( 162, 162 ), imath.Color3f( 0.25, 0, 0 ) )
 
 	def testLargeDataWindowAddedToSmall( self ) :
 
 		b = GafferImage.Constant()
 		b["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		b["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		b["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 
 		a = GafferImage.Constant()
 		a["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		a["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		a["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
 		mask = GafferImage.Constant()
 		mask["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		mask["color"].setValue( IECore.Color4f( 0.5 ) )
+		mask["color"].setValue( imath.Color4f( 0.5 ) )
 
 		bCrop = GafferImage.Crop()
 		bCrop["in"].setInput( b["out"] )
 		bCrop["areaSource"].setValue( bCrop.AreaSource.Area )
-		bCrop["area"].setValue( IECore.Box2i( IECore.V2i( 50 ), IECore.V2i( 162 ) ) )
+		bCrop["area"].setValue( imath.Box2i( imath.V2i( 50 ), imath.V2i( 162 ) ) )
 		bCrop["affectDisplayWindow"].setValue( False )
 
 		m = GafferImage.Mix()
@@ -307,7 +310,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		def sample( x, y ) :
 
-			return IECore.Color3f(
+			return imath.Color3f(
 				redSampler.sample( x, y ),
 				greenSampler.sample( x, y ),
 				blueSampler.sample( x, y ),
@@ -316,15 +319,15 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		# We should only have yellow in areas where the background exists,
 		# and should have just green everywhere else.
 
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0, 0.5, 0 ) )
-		self.assertEqual( sample( 50, 50 ), IECore.Color3f( 0.5, 0.5, 0 ) )
-		self.assertEqual( sample( 161, 161 ), IECore.Color3f( 0.5, 0.5, 0 ) )
-		self.assertEqual( sample( 162, 162 ), IECore.Color3f( 0, 0.5, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0, 0.5, 0 ) )
+		self.assertEqual( sample( 50, 50 ), imath.Color3f( 0.5, 0.5, 0 ) )
+		self.assertEqual( sample( 161, 161 ), imath.Color3f( 0.5, 0.5, 0 ) )
+		self.assertEqual( sample( 162, 162 ), imath.Color3f( 0, 0.5, 0 ) )
 
 	def testChannelRequest( self ) :
 
 		a = GafferImage.Constant()
-		a["color"].setValue( IECore.Color4f( 0.1, 0.2, 0.3, 0.4 ) )
+		a["color"].setValue( imath.Color4f( 0.1, 0.2, 0.3, 0.4 ) )
 
 		ad = GafferImage.DeleteChannels()
 		ad["in"].setInput( a["out"] )
@@ -332,7 +335,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		ad["channels"].setValue( IECore.StringVectorData( [ "R" ] ) )
 
 		b = GafferImage.Constant()
-		b["color"].setValue( IECore.Color4f( 1.0, 0.3, 0.1, 0.2 ) )
+		b["color"].setValue( imath.Color4f( 1.0, 0.3, 0.1, 0.2 ) )
 
 		bd = GafferImage.DeleteChannels()
 		bd["in"].setInput( b["out"] )
@@ -340,7 +343,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 		bd["channels"].setValue( IECore.StringVectorData( [ "G" ] ) )
 
 		m = GafferImage.Constant()
-		m["color"].setValue( IECore.Color4f( 0.5 ) )
+		m["color"].setValue( imath.Color4f( 0.5 ) )
 
 		mix = GafferImage.Mix()
 		mix["in"][0].setInput( ad["out"] )
@@ -349,7 +352,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		sampler = GafferImage.ImageSampler()
 		sampler["image"].setInput( mix["out"] )
-		sampler["pixel"].setValue( IECore.V2f( 10 ) )
+		sampler["pixel"].setValue( imath.V2f( 10 ) )
 
 		self.assertAlmostEqual( sampler["color"]["r"].getValue(), ( 0.0 + 1.0 ) * 0.5 )
 		self.assertAlmostEqual( sampler["color"]["g"].getValue(), ( 0.2 + 0.0 ) * 0.5 )
@@ -382,15 +385,15 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		b = GafferImage.Constant()
 		b["format"].setValue( GafferImage.Format( 50, 50, 1.0 ) )
-		b["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		b["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 
 		a = GafferImage.Constant()
 		a["format"].setValue( GafferImage.Format( 50, 50, 1.0 ) )
-		a["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		a["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
 		mask = GafferImage.Constant()
 		mask["format"].setValue( GafferImage.Format( 50, 50, 1.0 ) )
-		mask["color"].setValue( IECore.Color4f( 0.5 ) )
+		mask["color"].setValue( imath.Color4f( 0.5 ) )
 
 		m = GafferImage.Mix()
 		m["in"][0].setInput( b["out"] )
@@ -402,7 +405,7 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 			greenSampler = GafferImage.Sampler( m["out"], "G", m["out"]["format"].getValue().getDisplayWindow() )
 			blueSampler = GafferImage.Sampler( m["out"], "B", m["out"]["format"].getValue().getDisplayWindow() )
 
-			return IECore.Color3f(
+			return imath.Color3f(
 				redSampler.sample( x, y ),
 				greenSampler.sample( x, y ),
 				blueSampler.sample( x, y ),
@@ -410,17 +413,192 @@ class MixTest( GafferImageTest.ImageTestCase ) :
 
 		# Using just mix
 		m["mix"].setValue( 0.75 )
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0.25, 0.75, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0.25, 0.75, 0 ) )
 		m["mix"].setValue( 0.25 )
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0.75, 0.25, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0.75, 0.25, 0 ) )
 
 		# Using mask multiplied with mix
 		m["mask"].setInput( mask["out"] )
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0.875, 0.125, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0.875, 0.125, 0 ) )
 
 		# Using invalid channel of mask defaults to just mix
 		m["maskChannel"].setValue( "DOES_NOT_EXIST" )
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0.75, 0.25, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0.75, 0.25, 0 ) )
+
+	def testDeepWithFlatMask( self ) :
+
+		# Set up a mask
+		maskReader = GafferImage.ImageReader()
+		maskReader["fileName"].setValue( self.radialPath )
+
+		maskText = GafferImage.Text()
+		maskText["in"].setInput( maskReader["out"] )
+		maskText["area"].setValue( imath.Box2i( imath.V2i( 0, 0 ), imath.V2i( 256, 256 ) ) )
+		maskText["text"].setValue( 'Test\nTest\nTest\nTest' )
+
+		maskOffset = GafferImage.Offset()
+		maskOffset["in"].setInput( maskText["out"] )
+
+		representativeDeepImage = GafferImage.ImageReader()
+		representativeDeepImage["fileName"].setValue( self.representativeDeepImagePath )
+
+		deepGradeBlack = GafferImage.Grade()
+		deepGradeBlack["in"].setInput( representativeDeepImage["out"] )
+		deepGradeBlack["multiply"].setValue( imath.Color4f( 0, 0, 0, 1 ) )
+
+		deepMix = GafferImage.Mix()
+		deepMix["in"]["in0"].setInput( representativeDeepImage["out"] )
+		deepMix["in"]["in1"].setInput( deepGradeBlack["out"] )
+		deepMix["mask"].setInput( maskOffset["out"] )
+		deepMix["maskChannel"].setValue( 'R' )
+
+		postFlatten = GafferImage.DeepToFlat()
+		postFlatten["in"].setInput( deepMix["out"] )
+
+		preFlatten = GafferImage.DeepToFlat()
+		preFlatten["in"].setInput( representativeDeepImage["out"] )
+
+		flatGradeBlack = GafferImage.Grade()
+		flatGradeBlack["in"].setInput( preFlatten["out"] )
+		flatGradeBlack["multiply"].setValue( imath.Color4f( 0, 0, 0, 1 ) )
+
+		flatMix = GafferImage.Mix()
+		flatMix["in"]["in0"].setInput( preFlatten["out"] )
+		flatMix["in"]["in1"].setInput( flatGradeBlack["out"] )
+		flatMix["mask"].setInput( maskOffset["out"] )
+		flatMix["maskChannel"].setValue( 'R' )
+
+		for o in [ imath.V2i( 0, 0 ), imath.V2i( -3, -8 ), imath.V2i( -7, -79 ), imath.V2i( 12, 8 ) ]:
+			maskOffset["offset"].setValue( o )
+
+			self.assertImagesEqual( postFlatten["out"], flatMix["out"], maxDifference = 0.000003 )
+
+	def testDeepMix( self ):
+		representativeDeepImage = GafferImage.ImageReader()
+		representativeDeepImage["fileName"].setValue( self.representativeDeepImagePath )
+
+		# Easier to compare colors if we clamp - this requires unpremulting
+		unpremultiply = GafferImage.Unpremultiply()
+		unpremultiply["in"].setInput( representativeDeepImage["out"] )
+
+		clamp = GafferImage.Grade()
+		clamp["in"].setInput( unpremultiply["out"] )
+		clamp["whiteClamp"].setValue( True )
+
+		premultiply = GafferImage.Premultiply()
+		premultiply["in"].setInput( clamp["out"] )
+
+
+		# Create a deep image containing a mixture of samples from two offset copies, where
+		# the "offsetted" channel contains a mask showing which of the samples come from
+		# the offsetted copy
+		offset = GafferImage.Offset()
+		offset["in"].setInput( premultiply["out"] )
+		offset["offset"].setValue( imath.V2i( 33, -25 ) )
+
+		addOffsetMarker = GafferImage.Shuffle()
+		addOffsetMarker["channels"].addChild( GafferImage.Shuffle.ChannelPlug( "offsetted", "__white" ) )
+		addOffsetMarker["in"].setInput( offset["out"] )
+
+		deepMerge = GafferImage.DeepMerge()
+		deepMerge["in"].addChild( GafferImage.ImagePlug( "in2", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic, ) )
+		deepMerge["in"]["in0"].setInput( addOffsetMarker["out"] )
+		deepMerge["in"]["in1"].setInput( premultiply["out"] )
+
+		gradeBlack = GafferImage.Grade()
+		gradeBlack["in"].setInput( deepMerge["out"] )
+		gradeBlack["channels"].setValue( '[RGBA]' )
+		gradeBlack["multiply"].setValue( imath.Color4f( 0, 0, 0, 0 ) )
+
+		mix = GafferImage.Mix( "mix" )
+		mix["in"]["in0"].setInput( deepMerge["out"] )
+		mix["in"]["in1"].setInput( gradeBlack["out"] )
+		mix["mask"].setInput( deepMerge["out"] )
+		mix["maskChannel"].setValue( 'offsetted' )
+
+		mixedFlat = GafferImage.DeepToFlat()
+		mixedFlat["in"].setInput( mix["out"] )
+
+		mergeRef = GafferImage.DeepToFlat()
+		mergeRef["in"].setInput( deepMerge["out"] )
+
+		startRef = GafferImage.DeepToFlat()
+		startRef["in"].setInput( premultiply["out"] )
+
+		startDiff = GafferImage.Merge()
+		startDiff["in"]["in0"].setInput( startRef["out"] )
+		startDiff["in"]["in1"].setInput( mixedFlat["out"] )
+		startDiff["operation"].setValue( GafferImage.Merge.Operation.Difference )
+
+		startDiffStats = GafferImage.ImageStats( "startDiffStats" )
+		startDiffStats["in"].setInput( startDiff["out"] )
+		startDiffStats["area"].setValue( mix["out"].dataWindow() )
+
+		mergedDiff = GafferImage.Merge()
+		mergedDiff["in"]["in0"].setInput( mergeRef["out"] )
+		mergedDiff["in"]["in1"].setInput( mixedFlat["out"] )
+		mergedDiff["operation"].setValue( GafferImage.Merge.Operation.Difference )
+
+		mergedDiffStats = GafferImage.ImageStats( "mergedDiffStats" )
+		mergedDiffStats["in"].setInput( mergedDiff["out"] )
+		mergedDiffStats["area"].setValue( mix["out"].dataWindow() )
+
+		# With mix set to 0, the mix outputs the left input with everything
+		mix["mix"].setValue( 0.0 )
+		self.assertEqual( mergedDiffStats["average"].getValue(), imath.Color4f( 0 ) )
+		self.assertEqual( mergedDiffStats["max"].getValue(), imath.Color4f( 0 ) )
+		self.assertGreater( startDiffStats["average"].getValue()[3], 0.2 )
+		self.assertGreater( startDiffStats["max"].getValue()[3], 0.999  )
+		for i in range( 3 ):
+			self.assertGreater( startDiffStats["average"].getValue()[i], 0.1 )
+			self.assertGreater( startDiffStats["max"].getValue()[i], 0.8 )
+
+		# With mix set to 1, the mix blends the offsetted samples to 0, and outputs just the non-offset
+		# samples
+		mix["mix"].setValue( 1.0 )
+		for i in range( 4 ):
+			self.assertAlmostEqual( startDiffStats["average"].getValue()[i], 0 )
+			self.assertAlmostEqual( startDiffStats["max"].getValue()[i], 0, places = 5 )
+		self.assertGreater( mergedDiffStats["average"].getValue()[3], 0.2 )
+		self.assertGreater( mergedDiffStats["max"].getValue()[3], 0.999  )
+		for i in range( 3 ):
+			self.assertGreater( mergedDiffStats["average"].getValue()[i], 0.1 )
+			self.assertGreater( mergedDiffStats["max"].getValue()[i], 0.8 )
+
+		# With the mix in between, the result should be a bit closer to both than the farthest
+		# result at either extreme
+		mix["mix"].setValue( 0.75 )
+		self.assertLess( startDiffStats["average"].getValue()[3], 0.16 )
+		self.assertLess( startDiffStats["max"].getValue()[3], 0.8  )
+		self.assertLess( mergedDiffStats["average"].getValue()[3], 0.16 )
+		self.assertLess( mergedDiffStats["max"].getValue()[3], 0.8  )
+		for i in range( 3 ):
+			self.assertLess( startDiffStats["average"].getValue()[i], 0.08 )
+			self.assertLess( startDiffStats["max"].getValue()[i], 0.7 )
+			self.assertLess( mergedDiffStats["average"].getValue()[i], 0.08 )
+			self.assertLess( mergedDiffStats["max"].getValue()[i], 0.7 )
+
+	def testMismatchThrows( self ) :
+
+		deep = GafferImage.Empty()
+		flat = GafferImage.Constant()
+
+		mix = GafferImage.Mix()
+		mix["mix"].setValue( 0.5 )
+		mix["in"][0].setInput( flat["out"] )
+		mix["in"][1].setInput( flat["out"] )
+
+		self.assertNotEqual( GafferImage.ImageAlgo.imageHash( mix["out"] ), GafferImage.ImageAlgo.imageHash( flat["out"] ) )
+		GafferImage.ImageAlgo.tiles( mix["out"] )
+
+		mix["in"][0].setInput( deep["out"] )
+		self.assertRaisesRegexp( RuntimeError, 'Mix.out.deep : Cannot mix between deep and flat image.', GafferImage.ImageAlgo.tiles, mix["out"] )
+		mix["in"][0].setInput( flat["out"] )
+		mix["in"][1].setInput( deep["out"] )
+		self.assertRaisesRegexp( RuntimeError, 'Mix.out.deep : Cannot mix between deep and flat image.', GafferImage.ImageAlgo.tiles, mix["out"] )
+
+		mix["in"][0].setInput( deep["out"] )
+		GafferImage.ImageAlgo.tiles( mix["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

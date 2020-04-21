@@ -42,18 +42,18 @@
 namespace Gaffer
 {
 
-class Transform2DPlug : public ValuePlug
+class GAFFER_API Transform2DPlug : public ValuePlug
 {
 
 	public :
 
 		Transform2DPlug( const std::string &name = defaultName<Transform2DPlug>(), Direction direction=In, unsigned flags = Default );
-		virtual ~Transform2DPlug();
+		~Transform2DPlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Transform2DPlug, Transform2DPlugTypeId, ValuePlug );
+		GAFFER_PLUG_DECLARE_TYPE( Gaffer::Transform2DPlug, Transform2DPlugTypeId, ValuePlug );
 
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		V2fPlug *pivotPlug();
 		const V2fPlug *pivotPlug() const;

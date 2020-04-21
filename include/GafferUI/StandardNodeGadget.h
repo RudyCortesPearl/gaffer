@@ -38,16 +38,15 @@
 #ifndef GAFFERUI_STANDARDNODEGADGET_H
 #define GAFFERUI_STANDARDNODEGADGET_H
 
-#include "Gaffer/StringAlgo.h"
-
-#include "GafferUI/NodeGadget.h"
 #include "GafferUI/LinearContainer.h"
+#include "GafferUI/NodeGadget.h"
 
 namespace GafferUI
 {
 
 class PlugAdder;
 class NoduleLayout;
+class ConnectionCreator;
 
 /// The standard means of representing a Node in a GraphGadget.
 /// Nodes are represented as rectangular boxes with the name displayed
@@ -59,12 +58,12 @@ class NoduleLayout;
 /// - "nodeGadget:color" : Color3f
 /// - "nodeGadget:shape" : StringData containing "rectangle" or "oval"
 /// - "icon" : string naming an image to be used with ImageGadget
-class StandardNodeGadget : public NodeGadget
+class GAFFERUI_API StandardNodeGadget : public NodeGadget
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::StandardNodeGadget, StandardNodeGadgetTypeId, NodeGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::StandardNodeGadget, StandardNodeGadgetTypeId, NodeGadget );
 
 		enum Edge
 		{
@@ -79,11 +78,11 @@ class StandardNodeGadget : public NodeGadget
 		};
 
 		StandardNodeGadget( Gaffer::NodePtr node );
-		virtual ~StandardNodeGadget();
+		~StandardNodeGadget() override;
 
-		virtual Nodule *nodule( const Gaffer::Plug *plug );
-		virtual const Nodule *nodule( const Gaffer::Plug *plug ) const;
-		virtual Imath::V3f noduleTangent( const Nodule *nodule ) const;
+		Nodule *nodule( const Gaffer::Plug *plug ) override;
+		const Nodule *nodule( const Gaffer::Plug *plug ) const override;
+		Imath::V3f connectionTangent( const ConnectionCreator *creator ) const override;
 
 		/// The central content of the Gadget may be customised. By default
 		/// the contents is a simple NameGadget for the node, but any Gadget or
@@ -100,11 +99,12 @@ class StandardNodeGadget : public NodeGadget
 		void setLabelsVisibleOnHover( bool labelsVisible );
 		bool getLabelsVisibleOnHover() const;
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
+		bool hasLayer( Layer layer ) const override;
 
 		const Imath::Color3f *userColor() const;
 
@@ -136,15 +136,13 @@ class StandardNodeGadget : public NodeGadget
 		bool dragLeave( GadgetPtr gadget, const DragDropEvent &event );
 		bool drop( GadgetPtr gadget, const DragDropEvent &event );
 
-		Gadget *closestDragDestinationProxy( const DragDropEvent &event ) const;
-		bool noduleIsCompatible( const Nodule *nodule, const DragDropEvent &event ) const;
-		bool plugAdderIsCompatible( const PlugAdder *plugAdder, const DragDropEvent &event ) const;
+		ConnectionCreator *closestDragDestination( const DragDropEvent &event ) const;
 
 		void nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Gaffer::Node *node );
 
 		bool updateUserColor();
 		void updatePadding();
-		void updateNodeEnabled( const Gaffer::Plug *dirtiedPlug = NULL );
+		void updateNodeEnabled( const Gaffer::Plug *dirtiedPlug = nullptr );
 		void updateIcon();
 		bool updateShape();
 
@@ -155,12 +153,12 @@ class StandardNodeGadget : public NodeGadget
 
 		bool m_nodeEnabled;
 		bool m_labelsVisibleOnHover;
-		// We accept drags onto the node itself and
-		// forward them to the nearest compatible
-		// Nodule or PlugAdder. This provides the user
-		// with a bigger drag target that is easier
+		// We accept drags onto the NodeGadget itself and
+		// use them to create a connection to the
+		// nearest Nodule or PlugAdder child. This provides
+		// the user with a bigger drag target that is easier
 		// to hit.
-		Gadget *m_dragDestinationProxy;
+		ConnectionCreator *m_dragDestination;
 		boost::optional<Imath::Color3f> m_userColor;
 		bool m_oval;
 

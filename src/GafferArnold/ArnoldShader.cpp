@@ -35,21 +35,22 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/format.hpp"
+#include "GafferArnold/ArnoldShader.h"
 
-#include "ai.h"
+#include "GafferArnold/ParameterHandler.h"
 
-#include "IECore/MessageHandler.h"
-#include "IECore/LRUCache.h"
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/Private/IECorePreview/LRUCache.h"
 
 #include "IECoreArnold/UniverseBlock.h"
 
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/CompoundNumericPlug.h"
-#include "Gaffer/StringPlug.h"
+#include "IECore/MessageHandler.h"
 
-#include "GafferArnold/ArnoldShader.h"
-#include "GafferArnold/ParameterHandler.h"
+#include "boost/format.hpp"
+
+#include "ai.h"
 
 using namespace std;
 using namespace boost;
@@ -59,7 +60,7 @@ using namespace GafferScene;
 using namespace GafferArnold;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( ArnoldShader );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ArnoldShader );
 
 ArnoldShader::ArnoldShader( const std::string &name )
 	:	GafferScene::Shader( name )
@@ -88,20 +89,20 @@ const Gaffer::Plug *ArnoldShader::correspondingInput( const Gaffer::Plug *output
 	const CompoundData *metadata = ArnoldShader::metadata();
 	if( !metadata )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	const StringData *primaryInput = static_cast<const StringData*>( metadata->member<IECore::CompoundData>( "shader" )->member<IECore::Data>( "primaryInput" ) );
 	if( !primaryInput )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	const Plug *result = parametersPlug()->getChild<Plug>( primaryInput->readable() );
 	if( !result )
 	{
 		IECore::msg( IECore::Msg::Error, "ArnoldShader::correspondingInput", boost::format( "Parameter \"%s\" does not exist" ) % primaryInput->readable() );
-		return NULL;
+		return nullptr;
 	}
 
 	return result;
@@ -111,15 +112,17 @@ void ArnoldShader::loadShader( const std::string &shaderName, bool keepExistingV
 {
 	IECoreArnold::UniverseBlock arnoldUniverse( /* writable = */ false );
 
-	const AtNodeEntry *shader = AiNodeEntryLookUp( shaderName.c_str() );
+	const AtNodeEntry *shader = AiNodeEntryLookUp( AtString( shaderName.c_str() ) );
 	if( !shader )
 	{
 		throw Exception( str( format( "Shader \"%s\" not found" ) % shaderName ) );
 	}
 
+	Plug *parametersPlug = this->parametersPlug()->source<Plug>();
+
 	if( !keepExistingValues )
 	{
-		parametersPlug()->clearChildren();
+		parametersPlug->clearChildren();
 		if( Plug *out = outPlug() )
 		{
 			removeChild( out );
@@ -128,12 +131,37 @@ void ArnoldShader::loadShader( const std::string &shaderName, bool keepExistingV
 
 	const bool isLightShader = AiNodeEntryGetType( shader ) == AI_NODE_LIGHT;
 	namePlug()->setValue( AiNodeEntryGetName( shader ) );
-	typePlug()->setValue(
-		isLightShader ? "ai:light" : "ai:surface"
-	);
 
-	ParameterHandler::setupPlugs( shader, parametersPlug() );
-	ParameterHandler::setupPlug( "out", isLightShader ? AI_TYPE_POINTER : AiNodeEntryGetOutputType( shader ), this, Plug::Out );
+	int aiOutputType = AI_TYPE_POINTER;
+	string type = "ai:light";
+	if( !isLightShader )
+	{
+		const CompoundData *metadata = ArnoldShader::metadata();
+		const StringData *shaderTypeData = static_cast<const StringData*>( metadata->member<IECore::CompoundData>( "shader" )->member<IECore::Data>( "shaderType" ) );
+		if( shaderTypeData )
+		{
+			type = "ai:" + shaderTypeData->readable();
+		}
+		else
+		{
+			type = "ai:surface";
+		}
+
+		if( type == "ai:surface" )
+		{
+			aiOutputType = AiNodeEntryGetOutputType( shader );
+		}
+	}
+
+	if( !keepExistingValues && type == "ai:lightFilter" )
+	{
+		attributeSuffixPlug()->setValue( shaderName );
+	}
+
+	typePlug()->setValue( type );
+
+	ParameterHandler::setupPlugs( shader, parametersPlug );
+	ParameterHandler::setupPlug( "out", aiOutputType, this, Plug::Out );
 
 }
 
@@ -141,11 +169,17 @@ void ArnoldShader::loadShader( const std::string &shaderName, bool keepExistingV
 // Metadata loading code
 //////////////////////////////////////////////////////////////////////////
 
+namespace {
+	const AtString g_nullArnoldString( nullptr );
+	const AtString g_primaryInputArnoldString( "primaryInput" );
+	const AtString g_shaderTypeArnoldString( "shaderType" );
+}
+
 static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size_t &cost )
 {
 	IECoreArnold::UniverseBlock arnoldUniverse( /* writable = */ false );
 
-	const AtNodeEntry *shader = AiNodeEntryLookUp( key.c_str() );
+	const AtNodeEntry *shader = AiNodeEntryLookUp( AtString( key.c_str() ) );
 	if( !shader )
 	{
 		throw Exception( str( format( "Shader \"%s\" not found" ) % key ) );
@@ -162,16 +196,22 @@ static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size
 	CompoundDataPtr parameterMetadata = new CompoundData;
 	metadata->writable()["parameter"] = parameterMetadata;
 
-	const char* value;
-	if( AiMetaDataGetStr( shader, /* look up metadata on node, not on parameter */ NULL , "primaryInput", &value ) )
+	AtString value;
+	if( AiMetaDataGetStr( shader, /* look up metadata on node, not on parameter */ g_nullArnoldString , g_primaryInputArnoldString, &value ) )
 	{
-		shaderMetadata->writable()["primaryInput"] = new StringData( value );
+		shaderMetadata->writable()["primaryInput"] = new StringData( value.c_str() );
+	}
+
+	AtString shaderType;
+	if( AiMetaDataGetStr( shader, /* look up metadata on node, not on parameter */ g_nullArnoldString , g_shaderTypeArnoldString, &shaderType ) )
+	{
+		shaderMetadata->writable()["shaderType"] = new StringData( shaderType.c_str() );
 	}
 
 	return metadata;
 }
 
-typedef LRUCache<std::string, IECore::ConstCompoundDataPtr> MetadataCache;
+typedef IECorePreview::LRUCache<std::string, IECore::ConstCompoundDataPtr> MetadataCache;
 MetadataCache g_arnoldMetadataCache( metadataGetter, 10000 );
 
 const IECore::CompoundData *ArnoldShader::metadata() const

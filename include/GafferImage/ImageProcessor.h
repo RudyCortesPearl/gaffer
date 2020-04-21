@@ -52,7 +52,7 @@ namespace GafferImage
 
 /// A base class for nodes which will take a number of input images and
 /// process them in some way to generate an output image.
-class ImageProcessor : public ImageNode
+class GAFFERIMAGE_API ImageProcessor : public ImageNode
 {
 
 	public :
@@ -65,9 +65,9 @@ class ImageProcessor : public ImageNode
 		/// convenience for accessing the first child in the array, and use
 		/// inPlugs() to access the array itself.
 		ImageProcessor( const std::string &name, size_t minInputs, size_t maxInputs = Imath::limits<size_t>::max() );
-		virtual ~ImageProcessor();
+		~ImageProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageProcessor, ImageProcessorTypeId, ImageNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::ImageProcessor, ImageProcessorTypeId, ImageNode );
 
 		/// Returns the primary image input. For nodes with multiple inputs
 		/// this will be the first child of the inPlugs() array. For nodes
@@ -77,19 +77,19 @@ class ImageProcessor : public ImageNode
 		const ImagePlug *inPlug() const;
 
 		/// For nodes with multiple inputs, returns the ArrayPlug which
-		/// hosts them. For single input nodes, returns NULL;
+		/// hosts them. For single input nodes, returns null.
 		Gaffer::ArrayPlug *inPlugs();
 		const Gaffer::ArrayPlug *inPlugs() const;
 
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override;
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override;
 
 	protected :
 
 		/// Reimplemented to pass through the hashes of the inPlug() when the node is disabled.
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		/// Reimplemented from ImageNode to pass through the inPlug() computations when the node is disabled.
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 	private :
 

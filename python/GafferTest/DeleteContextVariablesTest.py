@@ -34,8 +34,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import unittest
 
 import IECore
@@ -49,21 +47,18 @@ class DeleteContextVariablesTest( GafferTest.TestCase ) :
 
 		n = GafferTest.StringInOutNode()
 
-		d = Gaffer.DeleteContextVariablesComputeNode()
-		d["in"] = Gaffer.StringPlug()
-		d["out"] = Gaffer.StringPlug( direction = Gaffer.Plug.Direction.Out )
+		d = Gaffer.DeleteContextVariables()
+		d.setup( Gaffer.StringPlug() )
 		d["in"].setInput( n["out"] )
 
-		c = Gaffer.ContextVariablesComputeNode()
-		c["in"] = Gaffer.StringPlug()
-		c["out"] = Gaffer.StringPlug( direction = Gaffer.Plug.Direction.Out )
+		c = Gaffer.ContextVariables()
+		c.setup( Gaffer.StringPlug() )
 		c["in"].setInput( d["out"] )
-
 
 		n["in"].setValue( "$a" )
 		self.assertEqual( c["out"].getValue(), "" )
 
-		c["variables"].addMember( "a", IECore.StringData( "A" ) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "a", IECore.StringData( "A" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 		self.assertEqual( c["out"].getValue(), "A" )
 
 		d["variables"].setValue( "a" )
@@ -74,48 +69,42 @@ class DeleteContextVariablesTest( GafferTest.TestCase ) :
 		n = GafferTest.StringInOutNode()
 		self.assertHashesValid( n )
 
-		d = Gaffer.DeleteContextVariablesComputeNode()
-		d["in"] = Gaffer.StringPlug()
-		d["out"] = Gaffer.StringPlug( direction = Gaffer.Plug.Direction.Out )
+		d = Gaffer.DeleteContextVariables()
+		d.setup( Gaffer.StringPlug() )
 		d["in"].setInput( n["out"] )
 
-		c = Gaffer.ContextVariablesComputeNode()
-		c["in"] = Gaffer.StringPlug()
-		c["out"] = Gaffer.StringPlug( direction = Gaffer.Plug.Direction.Out )
+		c = Gaffer.ContextVariables()
+		c.setup( Gaffer.StringPlug() )
 		c["in"].setInput( d["out"] )
 
 
 		n["in"].setValue( "$a1_$a2_$b1_$b2_$c1_$c2" )
 		self.assertEqual( c["out"].getValue(), "_____" )
 
-		c["variables"].addMember( "a1", IECore.StringData( "A1" ) )
-		c["variables"].addMember( "a2", IECore.StringData( "A2" ) )
-		c["variables"].addMember( "b1", IECore.StringData( "B1" ) )
-		c["variables"].addMember( "b2", IECore.StringData( "B2" ) )
-		c["variables"].addMember( "c1", IECore.StringData( "C1" ) )
-		c["variables"].addMember( "c2", IECore.StringData( "C2" ) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "a1", IECore.StringData( "A1" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "a2", IECore.StringData( "A2" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "b1", IECore.StringData( "B1" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "b2", IECore.StringData( "B2" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "c1", IECore.StringData( "C1" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
+		c["variables"].addChild( Gaffer.NameValuePlug( "c2", IECore.StringData( "C2" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic) )
 		self.assertEqual( c["out"].getValue(), "A1_A2_B1_B2_C1_C2" )
 
 		d["variables"].setValue( "a* c*" )
 
 		self.assertEqual( c["out"].getValue(), "__B1_B2__" )
 
-
-
 	def testDirtyPropagation( self ) :
 
 		n = GafferTest.StringInOutNode()
 
-		d = Gaffer.DeleteContextVariablesComputeNode()
-		d["in"] = Gaffer.StringPlug()
-		d["out"] = Gaffer.StringPlug( direction = Gaffer.Plug.Direction.Out )
+		d = Gaffer.DeleteContextVariables()
+		d.setup( Gaffer.StringPlug() )
 		d["in"].setInput( n["out"] )
 
 		# deleting a variable should dirty the output:
 		dirtied = GafferTest.CapturingSlot( d.plugDirtiedSignal() )
 		d["variables"].setValue( "a" )
 		self.failUnless( d["out"] in [ p[0] for p in dirtied ] )
-
 
 if __name__ == "__main__":
 	unittest.main()

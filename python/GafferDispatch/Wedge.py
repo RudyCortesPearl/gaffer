@@ -35,6 +35,7 @@
 ##########################################################################
 
 import math
+import imath
 
 import IECore
 
@@ -73,14 +74,12 @@ class Wedge( GafferDispatch.TaskContextProcessor ) :
 		# color range
 
 		self["ramp"] = Gaffer.SplinefColor3fPlug(
-			defaultValue = IECore.SplinefColor3f(
-				IECore.CubicBasisf.catmullRom(),
+			defaultValue = Gaffer.SplineDefinitionfColor3f(
 				(
-					( 0, IECore.Color3f( 0 ) ),
-					( 0, IECore.Color3f( 0 ) ),
-					( 1, IECore.Color3f( 1 ) ),
-					( 1, IECore.Color3f( 1 ) ),
-				)
+					( 0, imath.Color3f( 0 ) ),
+					( 1, imath.Color3f( 1 ) ),
+				),
+				Gaffer.SplineDefinitionInterpolation.CatmullRom
 			)
 		)
 
@@ -129,7 +128,7 @@ class Wedge( GafferDispatch.TaskContextProcessor ) :
 
 		elif mode == self.Mode.ColorRange :
 
-			spline = self["ramp"].getValue()
+			spline = self["ramp"].getValue().spline()
 			steps = self["colorSteps"].getValue()
 			values = [ spline( i / float( steps - 1 ) ) for i in range( 0, steps ) ]
 

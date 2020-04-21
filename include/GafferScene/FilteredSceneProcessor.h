@@ -38,34 +38,39 @@
 #ifndef GAFFERSCENE_FILTEREDSCENEPROCESSOR_H
 #define GAFFERSCENE_FILTEREDSCENEPROCESSOR_H
 
-#include "GafferScene/SceneProcessor.h"
 #include "GafferScene/Filter.h"
 #include "GafferScene/FilterPlug.h"
+#include "GafferScene/SceneProcessor.h"
+
+#include <limits>
 
 namespace GafferScene
 {
 
 /// The FilteredSceneProcessor provides a base class for limiting the processing of scenes
 /// to certain locations using a Filter node.
-class FilteredSceneProcessor : public SceneProcessor
+class GAFFERSCENE_API FilteredSceneProcessor : public SceneProcessor
 {
 
 	public :
 
-		FilteredSceneProcessor( const std::string &name=defaultName<FilteredSceneProcessor>(), Filter::Result filterDefault = Filter::EveryMatch );
-		virtual ~FilteredSceneProcessor();
+		FilteredSceneProcessor( const std::string &name=defaultName<FilteredSceneProcessor>(), IECore::PathMatcher::Result filterDefault = IECore::PathMatcher::EveryMatch );
+		~FilteredSceneProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FilteredSceneProcessor, FilteredSceneProcessorTypeId, SceneProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::FilteredSceneProcessor, FilteredSceneProcessorTypeId, SceneProcessor );
 
 		FilterPlug *filterPlug();
 		const FilterPlug *filterPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		/// \deprecated Use FilterPlug::FilterScope instead
-		Gaffer::ContextPtr filterContext( const Gaffer::Context *context ) const;
+		/// Constructs with an ArrayPlug called "in". Use inPlug() as a
+		/// convenience for accessing the first child in the array, and use
+		/// inPlugs() to access the array itself.
+		FilteredSceneProcessor( const std::string &name, size_t minInputs, size_t maxInputs = std::numeric_limits<size_t>::max() );
+
 		/// Convenience method for appending filterPlug() to a hash. This simply
 		/// calls filterPlug()->hash() using a FilterPlug::SceneScope. Note that
 		/// if you need to make multiple queries, it is more efficient to make your
@@ -75,7 +80,7 @@ class FilteredSceneProcessor : public SceneProcessor
 		/// cast to the appropriate result type, using a using a FilterPlug::SceneScope.
 		/// Note that if you need to make multiple queries, it is more efficient to
 		/// make your own SceneScope and then query the filter directly multiple times.
-		Filter::Result filterValue( const Gaffer::Context *context ) const;
+		IECore::PathMatcher::Result filterValue( const Gaffer::Context *context ) const;
 
 		static size_t g_firstPlugIndex;
 

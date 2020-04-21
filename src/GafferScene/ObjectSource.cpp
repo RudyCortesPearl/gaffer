@@ -34,22 +34,23 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "OpenEXR/ImathBoxAlgo.h"
+#include "GafferScene/ObjectSource.h"
 
-#include "IECore/NullObject.h"
+#include "GafferScene/SceneAlgo.h"
 
 #include "Gaffer/StringPlug.h"
 #include "Gaffer/TransformPlug.h"
-#include "Gaffer/StringAlgo.h"
 
-#include "GafferScene/ObjectSource.h"
-#include "GafferScene/SceneAlgo.h"
+#include "IECore/NullObject.h"
+#include "IECore/StringAlgo.h"
+
+#include "OpenEXR/ImathBoxAlgo.h"
 
 using namespace GafferScene;
 
 static IECore::InternedString g_emptyString( "" );
 
-IE_CORE_DEFINERUNTIMETYPED( ObjectSource );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ObjectSource );
 
 size_t ObjectSource::g_firstPlugIndex = 0;
 
@@ -114,6 +115,7 @@ void ObjectSource::affects( const Gaffer::Plug *input, Gaffer::DependencyNode::A
 	else if( transformPlug()->isAncestorOf( input ) )
 	{
 		outputs.push_back( outPlug()->transformPlug() );
+		outputs.push_back( outPlug()->boundPlug() );
 	}
 	else if( input == setsPlug() )
 	{
@@ -280,7 +282,7 @@ void ObjectSource::hashSetNames( const Gaffer::Context *context, const ScenePlug
 IECore::ConstInternedStringVectorDataPtr ObjectSource::computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	IECore::InternedStringVectorDataPtr result = new IECore::InternedStringVectorData;
-	Gaffer::StringAlgo::tokenize( setsPlug()->getValue(), ' ', result->writable() );
+	IECore::StringAlgo::tokenize( setsPlug()->getValue(), ' ', result->writable() );
 	IECore::ConstInternedStringVectorDataPtr setNames = computeStandardSetNames();
 	for(unsigned int i = 0; i < setNames->readable().size(); ++i)
 	{
@@ -302,11 +304,11 @@ void ObjectSource::hashSet( const IECore::InternedString &setName, const Gaffer:
 	}
 }
 
-GafferScene::ConstPathMatcherDataPtr ObjectSource::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr ObjectSource::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	if( setNameValid( setName ) )
 	{
-		PathMatcherDataPtr result = new PathMatcherData;
+		IECore::PathMatcherDataPtr result = new IECore::PathMatcherData;
 		result->writable().addPath( namePlug()->getValue() );
 		return result;
 	}
@@ -331,6 +333,6 @@ bool ObjectSource::setNameValid( const IECore::InternedString &setName ) const
 	}
 
 	std::vector<IECore::InternedString> setNames;
-	Gaffer::StringAlgo::tokenize( setsPlug()->getValue(), ' ', setNames );
+	IECore::StringAlgo::tokenize( setsPlug()->getValue(), ' ', setNames );
 	return std::find( setNames.begin(), setNames.end(), setName ) != setNames.end();
 }

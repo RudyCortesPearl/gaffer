@@ -34,21 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/tbb.h"
-#include "tbb/tbb_thread.h"
-#include "tbb/tbb_config.h"
-
-#if TBB_IMPLEMENT_CPP0X
-#include "tbb/compat/thread"
-#else
-#include <thread>
-#endif
-
-#include "IECore/Timer.h"
+#include "GafferTest/ComputeNodeTest.h"
 
 #include "GafferTest/Assert.h"
 #include "GafferTest/MultiplyNode.h"
-#include "GafferTest/ComputeNodeTest.h"
+
+#include "IECore/Timer.h"
+
+#include "tbb/tbb.h"
+
+#include <thread>
 
 using namespace tbb;
 using namespace Gaffer;

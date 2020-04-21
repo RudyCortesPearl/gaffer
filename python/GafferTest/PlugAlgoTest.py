@@ -35,6 +35,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
@@ -73,7 +74,7 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		s["b"] = Gaffer.Box()
 		s["b"]["n"] = Gaffer.Node()
 		s["b"]["n"]["c"] = Gaffer.Color3fPlug()
-		s["b"]["n"]["c"].setValue( IECore.Color3f( 1, 0, 1 ) )
+		s["b"]["n"]["c"].setValue( imath.Color3f( 1, 0, 1 ) )
 
 		self.assertTrue( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"] ) )
 		self.assertFalse( Gaffer.PlugAlgo.isPromoted( s["b"]["n"]["c"] ) )
@@ -85,7 +86,7 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		self.assertTrue( s["b"]["n"]["c"]["r"].getInput().isSame( p["r"] ) )
 		self.assertTrue( s["b"]["n"]["c"]["g"].getInput().isSame( p["g"] ) )
 		self.assertTrue( s["b"]["n"]["c"]["b"].getInput().isSame( p["b"] ) )
-		self.assertEqual( p.getValue(), IECore.Color3f( 1, 0, 1 ) )
+		self.assertEqual( p.getValue(), imath.Color3f( 1, 0, 1 ) )
 
 	def testPromoteCompoundPlugAndSerialise( self ) :
 
@@ -128,7 +129,7 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		s["b"]["n"] = Gaffer.Random()
 
 		p = Gaffer.PlugAlgo.promote( s["b"]["n"]["baseColor"] )
-		p.setValue( IECore.Color3f( 1, 2, 3 ) )
+		p.setValue( imath.Color3f( 1, 2, 3 ) )
 		p.setName( "c" )
 
 		self.assertTrue( isinstance( s["b"]["c"], Gaffer.Color3fPlug ) )
@@ -136,7 +137,7 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		self.assertTrue( s["b"]["n"]["baseColor"]["r"].getInput().isSame( s["b"]["c"]["r"] ) )
 		self.assertTrue( s["b"]["n"]["baseColor"]["g"].getInput().isSame( s["b"]["c"]["g"] ) )
 		self.assertTrue( s["b"]["n"]["baseColor"]["b"].getInput().isSame( s["b"]["c"]["b"] ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 1, 2, 3 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 1, 2, 3 ) )
 
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s.serialise() )
@@ -146,7 +147,7 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		self.assertTrue( s2["b"]["n"]["baseColor"]["r"].getInput().isSame( s2["b"]["c"]["r"] ) )
 		self.assertTrue( s2["b"]["n"]["baseColor"]["g"].getInput().isSame( s2["b"]["c"]["g"] ) )
 		self.assertTrue( s2["b"]["n"]["baseColor"]["b"].getInput().isSame( s2["b"]["c"]["b"] ) )
-		self.assertEqual( s2["b"]["c"].getValue(), IECore.Color3f( 1, 2, 3 ) )
+		self.assertEqual( s2["b"]["c"].getValue(), imath.Color3f( 1, 2, 3 ) )
 
 	def testCantPromoteNonSerialisablePlugs( self ) :
 
@@ -232,87 +233,6 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		self.assertFalse( Gaffer.PlugAlgo.isPromoted( s["b"]["n"]["c"]["b"] ) )
 		self.assertTrue( p.node() is None )
 
-	def testCantPromoteReadOnlyPlug( self ) :
-
-		s = Gaffer.ScriptNode()
-
-		s["b"] = Gaffer.Box()
-		s["b"]["n"] = Gaffer.Node()
-		s["b"]["n"]["i"] = Gaffer.IntPlug()
-		s["b"]["n"]["c"] = Gaffer.Color3fPlug()
-
-		self.assertTrue( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["i"] ) )
-		self.assertTrue( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"] ) )
-		self.assertTrue( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"]["r"] ) )
-
-		s["b"]["n"]["i"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		s["b"]["n"]["c"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		s["b"]["n"]["c"]["r"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-		self.assertFalse( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["i"] ) )
-		self.assertFalse( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"] ) )
-		self.assertFalse( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"]["r"] ) )
-
-		self.assertRaises( RuntimeError, Gaffer.PlugAlgo.promote, s["b"]["n"]["i"] )
-		self.assertRaises( RuntimeError, Gaffer.PlugAlgo.promote, s["b"]["n"]["c"] )
-		self.assertRaises( RuntimeError, Gaffer.PlugAlgo.promote, s["b"]["n"]["c"]["r"] )
-
-		k = s["b"].keys()
-		uk = s["b"]["user"].keys()
-		try :
-			Gaffer.PlugAlgo.promote( s["b"]["n"]["i"] )
-		except Exception, e :
-			self.assertTrue( "Cannot promote" in str( e ) )
-			self.assertTrue( "read only" in str( e ) )
-			self.assertEqual( s["b"].keys(), k )
-			self.assertEqual( s["b"]["user"].keys(), uk )
-
-	def testCantPromotePlugWithReadOnlyChildren( self ) :
-
-		s = Gaffer.ScriptNode()
-
-		s["b"] = Gaffer.Box()
-		s["b"]["n"] = Gaffer.Node()
-		s["b"]["n"]["c"] = Gaffer.Color3fPlug()
-
-		self.assertTrue( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"] ) )
-		self.assertTrue( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"]["r"] ) )
-
-		s["b"]["n"]["c"]["r"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-		self.assertFalse( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"] ) )
-		self.assertFalse( Gaffer.PlugAlgo.canPromote( s["b"]["n"]["c"]["r"] ) )
-
-		self.assertRaises( RuntimeError, Gaffer.PlugAlgo.promote, s["b"]["n"]["c"] )
-		self.assertRaises( RuntimeError, Gaffer.PlugAlgo.promote, s["b"]["n"]["c"]["r"] )
-
-		k = s["b"].keys()
-		uk = s["b"]["user"].keys()
-		try :
-			Gaffer.PlugAlgo.promote( s["b"]["n"]["c"] )
-		except Exception, e :
-			self.assertTrue( "Cannot promote" in str( e ) )
-			self.assertTrue( "read only" in str( e ) )
-			self.assertEqual( s["b"].keys(), k )
-			self.assertEqual( s["b"]["user"].keys(), uk )
-
-	def testMakePlugReadOnlyAfterPromoting( self ) :
-
-		s = Gaffer.ScriptNode()
-
-		s["b"] = Gaffer.Box()
-		s["b"]["n"] = GafferTest.AddNode()
-		s["b"]["n"]["op1"].setValue( 0 )
-		s["b"]["n"]["op2"].setValue( 0 )
-
-		self.assertEqual( s["b"]["n"]["sum"].getValue(), 0 )
-
-		op1 = Gaffer.PlugAlgo.promote( s["b"]["n"]["op1"] )
-		s["b"]["n"]["op1"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-		op1.setValue( 1 )
-		self.assertEqual( s["b"]["n"]["sum"].getValue(), 1 )
-
 	def testPromoteOutputPlug( self ) :
 
 		b = Gaffer.Box()
@@ -346,14 +266,14 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		s["b"]["n"]["p"] = Gaffer.Box2iPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 
 		p = Gaffer.PlugAlgo.promote( s["b"]["n"]["p"] )
-		p.setValue( IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) ) )
+		p.setValue( imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) ) )
 		p.setName( "c" )
 
 		self.assertTrue( isinstance( s["b"]["c"], Gaffer.Box2iPlug ) )
 		self.assertTrue( s["b"]["n"]["p"].getInput().isSame( s["b"]["c"] ) )
 		self.assertTrue( s["b"]["n"]["p"]["min"].getInput().isSame( s["b"]["c"]["min"] ) )
 		self.assertTrue( s["b"]["n"]["p"]["max"].getInput().isSame( s["b"]["c"]["max"] ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) ) )
 
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s.serialise() )
@@ -362,7 +282,7 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		self.assertTrue( s2["b"]["n"]["p"].getInput().isSame( s2["b"]["c"] ) )
 		self.assertTrue( s2["b"]["n"]["p"]["min"].getInput().isSame( s2["b"]["c"]["min"] ) )
 		self.assertTrue( s2["b"]["n"]["p"]["max"].getInput().isSame( s2["b"]["c"]["max"] ) )
-		self.assertEqual( s2["b"]["c"].getValue(), IECore.Box2i( IECore.V2i( 1, 2 ), IECore.V2i( 3, 4 ) ) )
+		self.assertEqual( s2["b"]["c"].getValue(), imath.Box2i( imath.V2i( 1, 2 ), imath.V2i( 3, 4 ) ) )
 
 	def testPromoteStaticPlugsWithChildren( self ) :
 
@@ -549,6 +469,64 @@ class PlugAlgoTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Metadata.value( p, "testPersistence" ), 10 )
 		self.assertTrue( "testPersistence" in Gaffer.Metadata.registeredValues( p ) )
 		self.assertTrue( "testPersistence" not in Gaffer.Metadata.registeredValues( p, persistentOnly = True ) )
+
+	def testPromoteWithName( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["n1"] = GafferTest.AddNode()
+
+		p = Gaffer.PlugAlgo.promoteWithName( s["b"]["n1"]["op1"], 'newName' )
+
+		self.assertEqual( p.getName(), 'newName' )
+
+	def testPromotePlugWithDescendantValues( self ) :
+
+		n = Gaffer.Node()
+		n["a"] = Gaffer.Node()
+		n["a"]["p"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["a"]["p"]["c"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["a"]["p"]["c"]["i"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["a"]["p"]["c"]["v"] = Gaffer.V3fPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		n["a"]["p"]["c"]["i"].setValue( 10 )
+		n["a"]["p"]["c"]["v"].setValue( imath.V3f( 1, 2, 3 ) )
+
+		p = Gaffer.PlugAlgo.promote( n["a"]["p"] )
+
+		self.assertEqual( n["a"]["p"]["c"]["i"].getValue(), 10 )
+		self.assertEqual( n["a"]["p"]["c"]["v"].getValue(), imath.V3f( 1, 2, 3 ) )
+
+	def testPromoteNonSerialisableOutput( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["a"] = GafferTest.AddNode()
+		s["b"]["a"]["sum"].setFlags( Gaffer.Plug.Flags.Serialisable, False )
+
+		Gaffer.PlugAlgo.promote( s["b"]["a"]["sum"] )
+		self.assertTrue( s["b"]["sum"].getInput().isSame( s["b"]["a"]["sum"] ) )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertTrue( s2["b"]["sum"].getInput().isSame( s2["b"]["a"]["sum"] ) )
+
+	def testNonBoxDoublePromote( self ) :
+
+		s = Gaffer.ScriptNode()
+		s['a'] = Gaffer.SubGraph()
+		s['a']['b'] = Gaffer.SubGraph()
+		s['a']['b']['c'] = GafferTest.AddNode()
+		Gaffer.Metadata.registerValue( s['a']['b']['c']["op1"], "test", 10 )
+
+		Gaffer.PlugAlgo.promote( s['a']['b']['c']['op1'] )
+		Gaffer.PlugAlgo.promote( s['a']['b']['op1'] )
+
+		self.assertEqual( Gaffer.Metadata.value( s['a']['b']['c']['op1'], "test" ), 10 )
+		self.assertEqual( Gaffer.Metadata.value( s['a']['b']['op1'], "test" ), 10 )
+		self.assertEqual( Gaffer.Metadata.value( s['a']['op1'], "test" ), 10 )
 
 if __name__ == "__main__":
 	unittest.main()

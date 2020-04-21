@@ -181,10 +181,39 @@ Gaffer.Metadata.registerNode(
 			"""
 			The lights to be linked to this object. Accepts a
 			set expression or a space separated list of lights.
+			Use \"defaultLights\" to refer to all lights that
+			contribute to illumination by default.
 			""",
 
 			"layout:section", "Light Linking",
 			"label", "Linked Lights",
+
+		],
+
+		"attributes.linkedLights.value" : [
+
+			"ui:scene:acceptsSetExpression", True,
+
+		],
+
+		"attributes.filteredLights" : [
+
+			"description",
+			"""
+			The lights to be filtered by this light filter. Accepts a
+			set expression or a space separated list of lights.
+			Use \"defaultLights\" to refer to all lights that
+			contribute to illumination by default.
+			""",
+
+			"layout:section", "Light Linking",
+			"label", "Filtered Lights",
+
+		],
+
+		"attributes.filteredLights.value" : [
+
+			"ui:scene:acceptsSetExpression", True,
 
 		],
 

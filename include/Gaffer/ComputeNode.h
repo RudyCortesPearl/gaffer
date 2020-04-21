@@ -38,9 +38,9 @@
 #ifndef GAFFER_COMPUTENODE_H
 #define GAFFER_COMPUTENODE_H
 
-#include "IECore/MurmurHash.h"
-
 #include "Gaffer/DependencyNode.h"
+
+#include "IECore/MurmurHash.h"
 
 namespace Gaffer
 {
@@ -53,15 +53,15 @@ IE_CORE_FORWARDDECLARE( Context )
 /// methods defined by the ComputeNode. ComputeNode computations are threadsafe (multiple
 /// threads may call getValue() with multiple Contexts concurrently) and make use
 /// of an in-memory caching mechanism to avoid repeated computations of the same thing.
-class ComputeNode : public DependencyNode
+class GAFFER_API ComputeNode : public DependencyNode
 {
 
 	public :
 
 		ComputeNode( const std::string &name=defaultName<ComputeNode>() );
-		virtual ~ComputeNode();
+		~ComputeNode() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ComputeNode, ComputeNodeTypeId, DependencyNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::ComputeNode, ComputeNodeTypeId, DependencyNode );
 
 	protected :
 
@@ -77,6 +77,13 @@ class ComputeNode : public DependencyNode
 		/// Called to compute the values for output Plugs. Must be implemented to compute
 		/// an appropriate value and apply it using output->setValue().
 		virtual void compute( ValuePlug *output, const Context *context ) const = 0;
+
+		/// Called to determine how calls to `hash()` should be cached. If `hash( output )`
+		/// will spawn TBB tasks then one of the task-based policies _must_ be used.
+		virtual ValuePlug::CachePolicy hashCachePolicy( const ValuePlug *output ) const;
+		/// Called to determine how calls to `compute()` should be cached. If `compute( output )`
+		/// will spawn TBB tasks then one of the task-based policies _must_ be used.
+		virtual ValuePlug::CachePolicy computeCachePolicy( const ValuePlug *output ) const;
 
 	private :
 

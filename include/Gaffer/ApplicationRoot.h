@@ -45,20 +45,20 @@ namespace Gaffer
 
 IE_CORE_FORWARDDECLARE( Preferences )
 
-class ApplicationRoot : public GraphComponent
+class GAFFER_API ApplicationRoot : public GraphComponent
 {
 
 	public :
 
 		ApplicationRoot( const std::string &name = defaultName<ApplicationRoot>() );
-		virtual ~ApplicationRoot();
+		~ApplicationRoot() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ApplicationRoot, ApplicationRootTypeId, GraphComponent );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::ApplicationRoot, ApplicationRootTypeId, GraphComponent );
 
 		/// Accepts no user added children.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
 		/// Accepts no parent.
-		virtual bool acceptsParent( const GraphComponent *potentialParent ) const;
+		bool acceptsParent( const GraphComponent *potentialParent ) const override;
 
 		ScriptContainer *scripts();
 		const ScriptContainer *scripts() const;

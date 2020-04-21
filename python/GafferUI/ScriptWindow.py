@@ -46,31 +46,35 @@ class ScriptWindow( GafferUI.Window ) :
 
 	def __init__( self, script, **kw ) :
 
+		self.__titleChangedSignal = GafferUI.WidgetEventSignal()
+
 		GafferUI.Window.__init__( self, **kw )
 
 		self.__script = script
 
-		self.__listContainer = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 2 )
+		self.__titleBehaviour = _WindowTitleBehaviour( self, script )
+
+		self.__listContainer = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 0 )
 
 		menuDefinition = self.menuDefinition( script.applicationRoot() ) if script.applicationRoot() else IECore.MenuDefinition()
 		self.__listContainer.append( GafferUI.MenuBar( menuDefinition ) )
 
 		applicationRoot = self.__script.ancestor( Gaffer.ApplicationRoot )
 		layouts = GafferUI.Layouts.acquire( applicationRoot ) if applicationRoot is not None else None
-		if layouts is not None and "Default" in layouts.names() :
-			self.setLayout( layouts.create( "Default", script ) )
+		if layouts is not None :
+			self.setLayout( layouts.createDefault( script ) )
 		else :
 			self.setLayout( GafferUI.CompoundEditor( script ) )
 
 		self.setChild( self.__listContainer )
 
-		self.__closedConnection = self.closedSignal().connect( Gaffer.WeakMethod( self.__closed ) )
-
-		self.__scriptPlugSetConnection = script.plugSetSignal().connect( Gaffer.WeakMethod( self.__scriptPlugChanged ) )
-
-		self.__updateTitle()
+		self.closedSignal().connect( Gaffer.WeakMethod( self.__closed ), scoped = False )
 
 		ScriptWindow.__instances.append( weakref.ref( self ) )
+
+	def menuBar( self ) :
+
+		return self.__listContainer[0]
 
 	def scriptNode( self ) :
 
@@ -87,6 +91,22 @@ class ScriptWindow( GafferUI.Window ) :
 	def getLayout( self ) :
 
 		return self.__listContainer[1]
+
+	# Calling this will disable automatic title updates when the script state
+	# changes name/dirty state.
+	def setTitle( self, title ) :
+
+		self.__titleBehaviour = None
+		self._setTitle( title )
+
+	def _setTitle( self, title ) :
+
+		GafferUI.Window.setTitle( self, title )
+		self.__titleChangedSignal( self, title )
+
+	def titleChangedSignal( self ) :
+
+		return self.__titleChangedSignal
 
 	def _acceptsClose( self ) :
 
@@ -108,25 +128,6 @@ class ScriptWindow( GafferUI.Window ) :
 		scriptParent = self.__script.parent()
 		if scriptParent is not None :
 			scriptParent.removeChild( self.__script )
-
-	def __scriptPlugChanged( self, plug ) :
-
-		if plug.isSame( self.__script["fileName"] ) or plug.isSame( self.__script["unsavedChanges"] ) :
-			self.__updateTitle()
-
-	def __updateTitle( self ) :
-
-		f = self.__script["fileName"].getValue()
-		if not f :
-			f = "untitled"
-			d = ""
-		else :
-			d, n, f = f.rpartition( "/" )
-			d = " - " + d
-
-		u = " *" if self.__script["unsavedChanges"].getValue() else ""
-
-		self.setTitle( "Gaffer : %s%s%s" % ( f, u, d ) )
 
 	__instances = [] # weak references to all instances - used by acquire()
 	## Returns the ScriptWindow for the specified script, creating one
@@ -166,13 +167,11 @@ class ScriptWindow( GafferUI.Window ) :
 	# the UI. Once called, new ScriptWindows will be instantiated for each
 	# script added to the application, and EventLoop.mainEventLoop().stop() will
 	# be called when the last script is removed.
-	__scriptAddedConnections = []
-	__scriptRemovedConnections = []
 	@classmethod
 	def connect( cls, applicationRoot ) :
 
-		cls.__scriptAddedConnections.append( applicationRoot["scripts"].childAddedSignal().connect( ScriptWindow.__scriptAdded ) )
-		cls.__scriptRemovedConnections.append( applicationRoot["scripts"].childRemovedSignal().connect( ScriptWindow.__staticScriptRemoved ) )
+		applicationRoot["scripts"].childAddedSignal().connect( 0, ScriptWindow.__scriptAdded, scoped = False )
+		applicationRoot["scripts"].childRemovedSignal().connect( ScriptWindow.__staticScriptRemoved, scoped = False )
 
 	__automaticallyCreatedInstances = [] # strong references to instances made by __scriptAdded()
 	@staticmethod
@@ -180,6 +179,7 @@ class ScriptWindow( GafferUI.Window ) :
 
 		w = ScriptWindow( script )
 		w.setVisible( True )
+		w.getLayout().restoreWindowState()
 		ScriptWindow.__automaticallyCreatedInstances.append( w )
 
 	@staticmethod
@@ -191,3 +191,46 @@ class ScriptWindow( GafferUI.Window ) :
 
 		if not len( scriptContainer.children() ) and GafferUI.EventLoop.mainEventLoop().running() :
 			GafferUI.EventLoop.mainEventLoop().stop()
+
+
+class _WindowTitleBehaviour :
+
+	def __init__( self, window, script ) :
+
+		self.__window = weakref.ref( window )
+		self.__script = weakref.ref( script )
+
+		self.__scriptPlugSetConnection = script.plugSetSignal().connect( Gaffer.WeakMethod( self.__scriptPlugChanged ) )
+		self.__metadataChangedConnection = Gaffer.Metadata.nodeValueChangedSignal().connect( Gaffer.WeakMethod( self.__metadataChanged ) )
+
+		self.__updateTitle()
+
+	def __updateTitle( self ) :
+
+		w = self.__window()
+		if not w :
+			return
+
+		f = self.__script()["fileName"].getValue()
+		if not f :
+			f = "untitled"
+			d = ""
+		else :
+			d, n, f = f.rpartition( "/" )
+			d = " - " + d
+
+		u = " *" if self.__script()["unsavedChanges"].getValue() else ""
+		ro = " (read only) " if Gaffer.MetadataAlgo.readOnly( self.__script() ) else ""
+
+		w._setTitle( "Gaffer %s : %s%s%s%s" % ( Gaffer.About.versionString(), f, ro, u, d ) )
+
+	def __scriptPlugChanged( self, plug ) :
+
+		if plug.isSame( self.__script()["fileName"] ) or plug.isSame( self.__script()["unsavedChanges"] ) :
+			self.__updateTitle()
+
+	def __metadataChanged( self, nodeTypeId, key, node ) :
+
+		if Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__script(), nodeTypeId, key, node ) :
+			self.__updateTitle()
+

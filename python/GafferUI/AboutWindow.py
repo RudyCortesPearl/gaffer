@@ -36,6 +36,7 @@
 ##########################################################################
 
 import os
+import imath
 
 import IECore
 
@@ -47,8 +48,6 @@ class AboutWindow( GafferUI.Window ) :
 	def __init__( self, about, **kw ) :
 
 		GafferUI.Window.__init__( self, title = "About " + about.name(), sizeMode=GafferUI.Window.SizeMode.Manual, borderWidth = 6, **kw )
-
-		self.__linkActivatedConnections = []
 
 		with self :
 
@@ -62,7 +61,7 @@ class AboutWindow( GafferUI.Window ) :
 				) :
 
 					GafferUI.Spacer(
-						IECore.V2i( 1 ),
+						imath.V2i( 1 ),
 						parenting = { "expand" : True }
 					)
 
@@ -84,7 +83,7 @@ class AboutWindow( GafferUI.Window ) :
 					)
 
 					GafferUI.Spacer(
-						IECore.V2i( 1 ),
+						imath.V2i( 1 ),
 						parenting = { "expand" : True }
 					)
 
@@ -102,8 +101,8 @@ class AboutWindow( GafferUI.Window ) :
 
 					license = "".join( open( os.path.expandvars( about.license() ) ).readlines() )
 					with GafferUI.ScrolledContainer(
-						horizontalMode=GafferUI.ScrolledContainer.ScrollMode.Never,
-						verticalMode=GafferUI.ScrolledContainer.ScrollMode.Automatic,
+						horizontalMode=GafferUI.ScrollMode.Never,
+						verticalMode=GafferUI.ScrollMode.Automatic,
 						borderWidth = 5
 					) :
 						self.__label( "<pre>" + license + "</pre>" )
@@ -119,8 +118,8 @@ class AboutWindow( GafferUI.Window ) :
 					) :
 
 						with GafferUI.ScrolledContainer(
-							horizontalMode=GafferUI.ScrolledContainer.ScrollMode.Never,
-							verticalMode=GafferUI.ScrolledContainer.ScrollMode.Always,
+							horizontalMode=GafferUI.ScrollMode.Never,
+							verticalMode=GafferUI.ScrollMode.Always,
 							borderWidth = 5
 						) :
 
@@ -161,7 +160,7 @@ class AboutWindow( GafferUI.Window ) :
 		text = header + text + footer
 
 		label = GafferUI.Label( text, **kw )
-		self.__linkActivatedConnections.append( label.linkActivatedSignal().connect( Gaffer.WeakMethod( self.__linkActivated ) ) )
+		label.linkActivatedSignal().connect( Gaffer.WeakMethod( self.__linkActivated ), scoped = False )
 		return label
 
 	def __linkActivated( self, label, url ) :

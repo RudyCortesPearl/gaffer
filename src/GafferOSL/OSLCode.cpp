@@ -34,23 +34,24 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <fstream>
+#include "GafferOSL/OSLCode.h"
 
-#include "boost/filesystem.hpp"
-#include "boost/bind.hpp"
+#include "GafferOSL/Private/CapturingErrorHandler.h"
+
+#include "Gaffer/Metadata.h"
+#include "Gaffer/Process.h"
+#include "Gaffer/SplinePlug.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECore/Exception.h"
+#include "IECore/StringAlgo.h"
 
 #include "OSL/oslcomp.h"
 
-#include "IECore/Exception.h"
+#include "boost/bind.hpp"
+#include "boost/filesystem.hpp"
 
-#include "Gaffer/StringAlgo.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/Metadata.h"
-#include "Gaffer/SplinePlug.h"
-#include "Gaffer/Process.h"
-
-#include "GafferOSL/Private/CapturingErrorHandler.h"
-#include "GafferOSL/OSLCode.h"
+#include <fstream>
 
 using namespace std;
 using namespace IECore;
@@ -84,7 +85,7 @@ string parameter( const Plug *plug )
 
 	string type;
 	string defaultValue;
-	switch( plugType )
+	switch( (int)plugType )
 	{
 		case FloatPlugTypeId :
 			defaultValue = "0.0";
@@ -110,7 +111,7 @@ string parameter( const Plug *plug )
 			defaultValue = "\"\"";
 			type = "string";
 			break;
-		case PlugTypeId :
+		case ClosurePlugTypeId :
 			defaultValue = "0";
 			type = "closure color";
 			break;
@@ -346,7 +347,7 @@ InternedString CompileProcess::g_type( "oslCode:compile" );
 // OSLCode
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( OSLCode );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OSLCode );
 
 size_t OSLCode::g_firstPlugIndex;
 

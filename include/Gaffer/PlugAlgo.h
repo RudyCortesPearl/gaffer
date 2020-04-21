@@ -38,19 +38,30 @@
 #ifndef GAFFER_PLUGALGO_H
 #define GAFFER_PLUGALGO_H
 
-#include "IECore/RefCounted.h"
+#include "Gaffer/Export.h"
+#include "Gaffer/Plug.h"
 
-#include "Gaffer/StringAlgo.h"
+#include "IECore/Data.h"
+#include "IECore/InternedString.h"
+#include "IECore/RefCounted.h"
+#include "IECore/StringAlgo.h"
 
 namespace Gaffer
 {
 
-IE_CORE_FORWARDDECLARE( Plug )
+IE_CORE_FORWARDDECLARE( GraphComponent )
+IE_CORE_FORWARDDECLARE( ValuePlug )
 
 namespace PlugAlgo
 {
 
-void replacePlug( GraphComponent *parent, PlugPtr plug );
+GAFFER_API void replacePlug( GraphComponent *parent, PlugPtr plug );
+
+/// Creates an appropriate plug to hold the specified data.
+GAFFER_API ValuePlugPtr createPlugFromData( const std::string &name, Plug::Direction direction, unsigned flags, const IECore::Data *value );
+
+/// Extracts a Data value from a plug previously created with createPlugFromData().
+GAFFER_API IECore::DataPtr extractDataFromPlug( const ValuePlug *plug );
 
 /// Promotion
 /// =========
@@ -62,7 +73,7 @@ void replacePlug( GraphComponent *parent, PlugPtr plug );
 
 /// Returns true if a call to `promote( plug, parent )` would
 /// succeed, false otherwise.
-bool canPromote( const Plug *plug, const Plug *parent = NULL );
+GAFFER_API bool canPromote( const Plug *plug, const Plug *parent = nullptr );
 /// Promotes an internal plug, returning the newly created
 /// external plug. By default the external plug is parented
 /// directly to the node, but the `parent` argument
@@ -72,13 +83,17 @@ bool canPromote( const Plug *plug, const Plug *parent = NULL );
 /// plug - this can be controlled with the `excludeMetadata`
 /// argument.
 /// \undoable
-Plug *promote( Plug *plug, Plug *parent = NULL, const StringAlgo::MatchPattern &excludeMetadata = "layout:*" );
+GAFFER_API Plug *promote( Plug *plug, Plug *parent = nullptr, const IECore::StringAlgo::MatchPattern &excludeMetadata = "layout:*" );
+/// As `promote` but by providing the name argument, you can skip an additional
+/// renaming step after promoting.
+/// \undoable
+GAFFER_API Plug *promoteWithName( Plug *plug, const IECore::InternedString &name, Plug *parent = nullptr, const IECore::StringAlgo::MatchPattern &excludeMetadata = "layout:*" );
 /// Returns true if the plug appears to have been promoted.
-bool isPromoted( const Plug *plug );
+GAFFER_API bool isPromoted( const Plug *plug );
 /// Unpromotes a previously promoted plug, removing the
 /// external plug where possible.
 /// \undoable
-void unpromote( Plug *plug );
+GAFFER_API void unpromote( Plug *plug );
 
 } // namespace PlugAlgo
 

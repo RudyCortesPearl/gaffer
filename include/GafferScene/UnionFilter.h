@@ -43,22 +43,22 @@ namespace GafferScene
 {
 
 /// \todo Investigate whether or not caching is actually beneficial for this node
-class UnionFilter : public FilterProcessor
+class GAFFERSCENE_API UnionFilter : public FilterProcessor
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::UnionFilter, UnionFilterTypeId, FilterProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::UnionFilter, UnionFilterTypeId, FilterProcessor );
 
 		UnionFilter( const std::string &name=defaultName<UnionFilter>() );
-		virtual ~UnionFilter();
+		~UnionFilter() override;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const;
+		void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const override;
 
 };
 

@@ -35,7 +35,6 @@
 #
 ##########################################################################
 
-import re
 import ctypes
 import functools
 import collections
@@ -43,6 +42,7 @@ import collections
 import arnold
 
 import IECore
+import imath
 import IECoreArnold
 
 import Gaffer
@@ -56,9 +56,9 @@ import GafferArnold
 
 def __aiMetadataGetStr( nodeEntry, paramName, name, defaultValue = None ) :
 
-	value = arnold.AtString()
+	value = arnold.AtStringReturn()
 	if arnold.AiMetaDataGetStr( nodeEntry, paramName, name, value ) :
-		return value.value
+		return arnold.AtStringToStr( value )
 
 	return defaultValue
 
@@ -69,6 +69,111 @@ def __aiMetadataGetBool( nodeEntry, paramName, name, defaultValue = None ) :
 		return bool( value )
 
 	return defaultValue
+
+def __aiMetadataGetInt( nodeEntry, paramName, name, defaultValue = None ) :
+
+	value = ctypes.c_int()
+	if arnold.AiMetaDataGetInt( nodeEntry, paramName, name, value ) :
+		return int( value.value )
+
+	return defaultValue
+
+def __aiMetadataGetFlt( nodeEntry, paramName, name, defaultValue = None ) :
+
+	value = ctypes.c_float()
+	if arnold.AiMetaDataGetFlt( nodeEntry, paramName, name, value ) :
+		return float( value.value )
+
+	return defaultValue
+
+def __aiMetadataGetRGB( nodeEntry, paramName, name, defaultValue = None ) :
+
+	value = arnold.AtRGB()
+	if arnold.AiMetaDataGetRGB( nodeEntry, paramName, name, value ) :
+		return imath.Color3f( value.r, value.g, value.b )
+
+	return defaultValue
+
+# SolidAngle does not appear to have wrapped AiMetaDataGetRGBA in Python, so we don't
+# support the RGBA case
+"""
+def __aiMetadataGetRGBA( nodeEntry, paramName, name, defaultValue = None ) :
+
+	value = arnold.AtRGBA()
+	if arnold.AiMetaDataGetRGBA( nodeEntry, paramName, name, value ) :
+		return imath.Color4f( value.r, value.g, value.b, value.a )
+
+	return defaultValue
+"""
+
+def __aiMetadataGetVec2( nodeEntry, paramName, name, defaultValue = None ) :
+
+	value = arnold.AtVector2()
+	if arnold.AiMetaDataGetVec2( nodeEntry, paramName, name, value ) :
+		return imath.V2f( value.x, value.y )
+
+	return defaultValue
+
+def __aiMetadataGetVec( nodeEntry, paramName, name, defaultValue = None ) :
+
+	value = arnold.AtVector()
+	if arnold.AiMetaDataGetVec( nodeEntry, paramName, name, value ) :
+		return imath.V3f( value.x, value.y, value.z )
+
+	return defaultValue
+
+def __enumPresetValues( param ):
+
+	presets = IECore.StringVectorData()
+
+	enum = arnold.AiParamGetEnum( param )
+	while True :
+		preset = arnold.AiEnumGetString( enum, len( presets ) )
+		if not preset :
+			break
+		presets.append( preset )
+
+	return presets
+
+def __plugPresetNames( nodeEntry, paramName ) :
+
+	# options STRING "name:value|..."
+
+	options = __aiMetadataGetStr( nodeEntry, paramName, "options" )
+	if options :
+		return IECore.StringVectorData( [ o.partition( ":" )[0] for o in options.split( "|" ) if o ] )
+
+def __plugPresetValues( nodeEntry, paramName, paramType ) :
+
+	# options STRING "name:value|..."
+
+	options = __aiMetadataGetStr( nodeEntry, paramName, "options" )
+	if not options :
+		return None
+
+	values = [ o.rpartition( ":" )[2] for o in options.split( "|" ) if o ]
+
+	if paramType == arnold.AI_TYPE_STRING :
+		return IECore.StringVectorData( values )
+	elif paramType in ( arnold.AI_TYPE_INT, arnold.AI_TYPE_BYTE ) :
+		return IECore.IntVectorData( [ int( v ) for v in values ] )
+	elif paramType == arnold.AI_TYPE_UINT :
+		return IECore.UIntVectorData( [ int( v ) for v in values ] )
+	elif paramType == arnold.AI_TYPE_FLOAT :
+		return IECore.FloatVectorData( [ float( v ) for v in values ] )
+	elif paramType == arnold.AI_TYPE_BOOLEAN :
+		falseVals = ( "false", "no", "0" )
+		return IECore.BoolVectorData( [ False if v.lower() in falseVals else True for v in values ] )
+	elif paramType == arnold.AI_TYPE_RGB :
+		return IECore.Color3fVectorData( [ imath.Color3f( *[ float( x ) for x in v.split( "," ) ]) for v in values ] )
+	elif paramType == arnold.AI_TYPE_RGBA :
+		return IECore.Color4fVectorData( [ imath.Color4f( *[ float( x ) for x in v.split( "," ) ]) for v in values ] )
+	elif paramType in ( arnold.AI_TYPE_VECTOR, arnold.AI_TYPE_POINT ):
+		return IECore.V3fVectorData( [ imath.V3f( *[ float( x ) for x in v.split( "," ) ]) for v in values ] )
+	elif paramType == arnold.AI_TYPE_POINT2 :
+		return IECore.V2fVectorData( [ imath.V2f( *[ float( x ) for x in v.split( "," ) ]) for v in values ] )
+
+	return None
 
 ##########################################################################
 # Build a registry of information retrieved from Arnold metadata. We fill this
@@ -83,9 +188,6 @@ def __aiMetadataGetBool( nodeEntry, paramName, name, defaultValue = None ) :
 #   us min/max/desc/linkable.
 # - The OSL metadata convention. This gives us a bit more, and is also
 #   the convention we support already for RSL and OSL shaders.
-# - Houdini's metadata convention. We support this so that we can pull
-#   otherwise unavailable information out of 3rd party shaders - AlShaders
-#   in particular.
 #
 # The alternative to this would be to add one more "standard" by defining
 # a Gaffer-specific convention, and then contribute to the AlShaders
@@ -108,16 +210,12 @@ def __translateNodeMetadata( nodeEntry ) :
 	if description is not None :
 		__metadata[nodeName]["description"] = description
 
-	# Documentation URL. We support OSL-style "URL" and
-	# Houdini-style "help_url".
+	# Documentation URL. We support OSL-style "URL"
 
-	url = __aiMetadataGetStr( nodeEntry, None, "URL",
-		defaultValue = __aiMetadataGetStr( nodeEntry, None, "houdini.help_url" )
-	)
+	url = __aiMetadataGetStr( nodeEntry, None, "URL" )
 	if url is not None :
 		__metadata[nodeName]["documentation:url"] = url
 
-	havePages = False
 	paramIt = arnold.AiNodeEntryGetParamIterator( nodeEntry )
 	while not arnold.AiParamIteratorFinished( paramIt ) :
 
@@ -126,6 +224,7 @@ def __translateNodeMetadata( nodeEntry ) :
 		param = arnold.AiParamIteratorGetNext( paramIt )
 		paramName = arnold.AiParamGetName( param )
 		paramPath = nodeName + ".parameters." + paramName
+		paramType = arnold.AiParamGetType( param )
 
 		# Parameter description
 
@@ -133,22 +232,21 @@ def __translateNodeMetadata( nodeEntry ) :
 		if description is not None :
 			__metadata[paramPath]["description"] = description
 
-		# Parameter presets from enum values
+		# Presets
 
-		paramType = arnold.AiParamGetType( param )
 		if paramType == arnold.AI_TYPE_ENUM :
+			# Parameter presets from enum values
+			presetValues = __enumPresetValues( param )
+			presetNames = presetValues
+		else :
+			# Manually specified presets for other types
+			presetValues = __plugPresetValues( nodeEntry, paramName, paramType )
+			presetNames = __plugPresetNames( nodeEntry, paramName )
 
-			enum = arnold.AiParamGetEnum( param )
-			presets = IECore.StringVectorData()
-			while True :
-				preset = arnold.AiEnumGetString( enum, len( presets ) )
-				if not preset :
-					break
-				presets.append( preset )
-
+		if presetValues :
 			__metadata[paramPath]["plugValueWidget:type"] = "GafferUI.PresetsPlugValueWidget"
-			__metadata[paramPath]["presetNames"] = presets
-			__metadata[paramPath]["presetValues"] = presets
+			__metadata[paramPath]["presetValues"] = presetValues
+			__metadata[paramPath]["presetNames"] = presetNames
 
 		# Nodule type from linkable metadata and parameter type
 
@@ -159,13 +257,10 @@ def __translateNodeMetadata( nodeEntry ) :
 				arnold.AI_TYPE_BOOLEAN, arnold.AI_TYPE_ENUM, arnold.AI_TYPE_STRING
 			)
 		)
-		__metadata[paramPath]["nodule:type"] = "GafferUI::StandardNodule" if linkable else ""
+		__metadata[paramPath]["nodule:type"] = None if linkable else ""
 
-		# PlugValueWidget type from OSL "widget" or "houdini.type".
-
+		# PlugValueWidget type from OSL "widget"
 		widget = None
-		if __aiMetadataGetStr( nodeEntry, paramName, "houdini.type" ) == "file:image" :
-			widget = "filename"
 		widget = __aiMetadataGetStr( nodeEntry, paramName, "widget", widget )
 		if widget is not None :
 			__metadata[paramPath]["plugValueWidget:type"] = {
@@ -183,148 +278,77 @@ def __translateNodeMetadata( nodeEntry ) :
 
 		page = __aiMetadataGetStr( nodeEntry, paramName, "page" )
 		if page is not None :
-			havePages = True
 			__metadata[paramPath]["layout:section"] = page
 
-		# Label from OSL "label" or "houdini.label".
+			# Uncollapse sections if desired
 
-		label = __aiMetadataGetStr( nodeEntry, paramName, "houdini.label" )
-		label = __aiMetadataGetStr( nodeEntry, paramName, "label", label )
-		if label is not None :
-			__metadata[paramPath]["label"] = label
+			collapsed = __aiMetadataGetBool( nodeEntry, None, "gaffer.layout.section.%s.collapsed" % page )
+			if collapsed == False :
+				parent = paramPath.rsplit( '.', 1 )[0]
+				__metadata[parent]["layout:section:%s:collapsed" % page] = collapsed
 
-		# NodeGraph visibility from Gaffer-specific metadata
+		# Label from OSL "label"
+		label = __aiMetadataGetStr( nodeEntry, paramName, "label" )
+		if label is None :
+			# Label from Arnold naming convention
+			# Arnold uses snake_case rather than camelCase for naming, so translate this into
+			# nice looking names
+			label = " ".join( [ i.capitalize() for i in paramName.split( "_" ) ] )
 
-		visible = __aiMetadataGetBool( nodeEntry, None, "gaffer.nodeGraphLayout.defaultVisibility" )
-		visible = __aiMetadataGetBool( nodeEntry, paramName, "gaffer.nodeGraphLayout.visible", visible )
+		__metadata[paramPath]["label"] = label
+		__metadata[paramPath]["noduleLayout:label"] = label
+
+		childComponents = {
+			arnold.AI_TYPE_VECTOR2 : "xy",
+			arnold.AI_TYPE_VECTOR : "xyz",
+			arnold.AI_TYPE_RGB : "rgb",
+			arnold.AI_TYPE_RGBA : "rgba",
+		}.get( paramType )
+		if childComponents is not None :
+			for c in childComponents :
+				__metadata["{}.{}".format( paramPath, c )]["noduleLayout:label"] = "{}.{}".format( label, c )
+
+		# NodeEditor layout from other Gaffer-specific metadata
+
+		divider = __aiMetadataGetBool( nodeEntry, paramName, "gaffer.layout.divider" )
+		if divider :
+			__metadata[paramPath]["layout:divider"] = True
+
+		index = __aiMetadataGetInt( nodeEntry, paramName, "gaffer.layout.index" )
+		if index is not None :
+			__metadata[paramPath]["layout:index"] = index
+
+		# GraphEditor visibility from Gaffer-specific metadata
+
+		visible = __aiMetadataGetBool( nodeEntry, None, "gaffer.graphEditorLayout.defaultVisibility" )
+		visible = __aiMetadataGetBool( nodeEntry, paramName, "gaffer.graphEditorLayout.visible", visible )
 		if visible is not None :
 			__metadata[paramPath]["noduleLayout:visible"] = visible
 
-	# If we haven't seen any nice sane OSL "page" metadata, then have
-	# a go at translating the houdini layout metadata. Surely one of the
-	# most tortured ways of defining a UI ever.
-	if not havePages :
-		__translateHoudiniLayout( nodeEntry )
+		userDefault = None
+		if paramType in [ arnold.AI_TYPE_BYTE, arnold.AI_TYPE_INT, arnold.AI_TYPE_UINT ]:
+			userDefault = __aiMetadataGetInt( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_BOOLEAN:
+			userDefault = __aiMetadataGetBool( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_FLOAT:
+			userDefault = __aiMetadataGetFlt( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_RGB:
+			userDefault = __aiMetadataGetRGB( nodeEntry, paramName, "gaffer.userDefault" )
+		#elif paramType == arnold.AI_TYPE_RGBA:
+		#	userDefault = __aiMetadataGetRGBA( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_VECTOR:
+			userDefault = __aiMetadataGetVec( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_VECTOR2:
+			userDefault = __aiMetadataGetVec2( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_STRING:
+			userDefault = __aiMetadataGetStr( nodeEntry, paramName, "gaffer.userDefault" )
+		elif paramType == arnold.AI_TYPE_ENUM:
+			userDefault = __aiMetadataGetStr( nodeEntry, paramName, "gaffer.userDefault" )
 
-def __translateHoudiniLayout( nodeEntry ) :
+		if userDefault:
+			nodeName, _, plugName = paramPath.split( "." )
+			Gaffer.Metadata.registerValue( "ai:surface:%s:%s" % ( nodeName, plugName ), "userDefault", userDefault )
 
-	# Houdini defines UI groupings through the use of extra
-	# parameters with special types, which HtoA allows the
-	# user to define via metadata on the Arnold shader. Grab
-	# all those extra parameters.
-
-	Parameter = collections.namedtuple( "Parameter", [ "name", "type", "contents" ] )
-	parameters = collections.OrderedDict()
-
-	metaIt = arnold.AiNodeEntryGetMetaDataIterator( nodeEntry )
-	while not arnold.AiMetaDataIteratorFinished( metaIt ) :
-
-		metadata = arnold.AiMetaDataIteratorGetNext( metaIt )
-		m = re.match( "houdini\.parm\.([^.]*)\.([^.]+)", metadata.contents.name )
-		if m :
-			parameters[m.group(2)] = Parameter( m.group(2), m.group(1), __aiMetadataGetStr( nodeEntry, None, m.group(0) ) )
-
-	arnold.AiMetaDataIteratorDestroy( metaIt )
-
-	# Add on all the regular Arnold parameters.
-
-	paramIt = arnold.AiNodeEntryGetParamIterator( nodeEntry )
-	while not arnold.AiParamIteratorFinished( paramIt ) :
-		parameterName = arnold.AiParamGetName( arnold.AiParamIteratorGetNext( paramIt ) )
-		if parameterName != "name" :
-			parameters[parameterName] = Parameter( parameterName, "arnold", "" )
-
-	arnold.AiParamIteratorDestroy( paramIt )
-
-	# Now, reorder the parameters according to the
-	# houdini.order metadata. There seem to be two
-	# different styles for doing this. For instance,
-	# the HtoA metadata for "image" and "barndoor"
-	# orders everything once with a single "order"
-	# entry, even though different parameters are
-	# destined for different tabs. The AlShader and
-	# other HtoA metadata on the other hand seems
-	# to use "order", "order2" ... "orderN" where
-	# the numeric suffices map to tabs. So we try
-	# to support both.
-
-	orderedParameters = []
-	i = 1
-	while True :
-
-		order = __aiMetadataGetStr( nodeEntry, None, "houdini.order%s" % ( str( i ) if i > 1 else "" ) )
-		if order is None :
-			break
-
-		for parameterName in order.split() :
-			parameter = parameters.pop( parameterName, None )
-			if parameter is not None :
-				orderedParameters.append( parameter )
-			else :
-				# Tolerate non-existent parameters being listed
-				# in the order metadata, for the sake of AlShaders.
-				pass
-
-		i += 1
-
-	# Any parameters not ordered explicitly go on the end.
-
-	orderedParameters.extend( parameters.values() )
-
-	# Now we can set up the layout:index metadata from
-	# the parameter order.
-
-	nodeName = arnold.AiNodeEntryGetName( nodeEntry )
-	for i, parameter in enumerate( orderedParameters ) :
-		__metadata[nodeName+".parameters."+parameter.name]["layout:index"] = i
-
-	# Finally, we can recurse over all the parameters,
-	# using the special parameters to figure out the section
-	# metadata that applies to the regular parameters.
-
-	__walkHoudiniParameters( nodeEntry, orderedParameters, sectionName = "" )
-
-def __walkHoudiniParameters( nodeEntry, parameters, sectionName ) :
-
-	nodeName = arnold.AiNodeEntryGetName( nodeEntry )
-
-	# Iterate over our parameters, recursing if we
-	# hit new sections, and adding metadata to regular
-	# parameters.
-
-	sectionNameWithHeading = sectionName
-	parameterIndex = 0
-	while parameterIndex < len( parameters ) :
-
-		parameter = parameters[parameterIndex]
-		parameterIndex += 1
-
-		if parameter.type == "folder" :
-
-			# A folder is actually a tab bar, grouping
-			# parameters into different tabs below it.
-			# It is specified as a series of NAME;N; pairs
-			# in a string, where NAME is the name of a tab,
-			# and N is how many parameters it should include.
-
-			tabs = parameter.contents.strip( ";" ).split( ";" )
-			for tabName, tabSize in [ ( tabs[i], int( tabs[i+1] ) ) for i in range( 0, len( tabs ), 2 ) ] :
-				tabSectionName = sectionNameWithHeading + ( "." if sectionNameWithHeading else "" ) + tabName
-				__walkHoudiniParameters( nodeEntry, parameters[parameterIndex:parameterIndex+tabSize], tabSectionName )
-				parameterIndex += tabSize
-
-		elif parameter.type == "heading" :
-
-			# A heading is a horizontal rule with a label.
-			# We don't have those, so we map them to a
-			# collapsible section.
-
-			sectionNameWithHeading = sectionName + ( "." if sectionName else "" ) + parameter.contents
-			__metadata[nodeName + ".parameters"]["layout:section:"+sectionNameWithHeading+":collapsed"] = False
-
-		elif parameter.type == "arnold" :
-
-			__metadata[nodeName + ".parameters." + parameter.name]["layout:section"] = sectionNameWithHeading
 
 with IECoreArnold.UniverseBlock( writable = False ) :
 
@@ -346,7 +370,7 @@ def __nodeDescription( node ) :
 			"""Loads shaders for use in Arnold renders. Use the ShaderAssignment node to assign shaders to objects in the scene.""",
 		)
 	else :
-		return __metadata[node["__shaderName"].getValue()].get(
+		return __metadata[node["__shader"]["name"].getValue()].get(
 			"description",
 			"""Loads an Arnold light shader and uses it to output a scene with a single light."""
 		)
@@ -356,38 +380,41 @@ def __nodeMetadata( node, name ) :
 	if isinstance( node, GafferArnold.ArnoldShader ) :
 		key = node["name"].getValue()
 	else :
-		# Node type is ArnoldLight.
-		key = node["__shaderName"].getValue()
+		# Other nodes hold an internal shader
+		key = node["__shader"]["name"].getValue()
 
 	return __metadata[key].get( name )
 
 def __plugMetadata( plug, name ) :
 
-	if name == "noduleLayout:visible" and plug.getInput() is not None :
+	if name == "noduleLayout:visible" and plug.getInput() is not None and not plug.node().getName().startswith( "__" ) :
 		# Before the introduction of nodule visibility controls,
 		# users may have made connections to plugs which are now
 		# hidden by default. Make sure we continue to show them
 		# by default - they can still be hidden explicitly by
 		# adding an instance metadata value.
+		# For private nodes this behaviour is skipped as their
+		# inputs might be driven by the parent.
 		return True
 
 	node = plug.node()
 	if isinstance( node, GafferArnold.ArnoldShader ) :
 		key = plug.node()["name"].getValue() + "." + plug.relativeName( node )
 	else :
-		# Node type is ArnoldLight.
-		key = plug.node()["__shaderName"].getValue() + "." + plug.relativeName( node )
+		# Other nodes hold an internal shader
+		key = plug.node()["__shader"]["name"].getValue() + "." + plug.relativeName( node )
 
 	return __metadata[key].get( name )
 
-for nodeType in ( GafferArnold.ArnoldShader, GafferArnold.ArnoldLight ) :
+for nodeType in ( GafferArnold.ArnoldShader, GafferArnold.ArnoldLight, GafferArnold.ArnoldMeshLight ) :
 
 	nodeKeys = set()
 	parametersPlugKeys = set()
 	parameterPlugKeys = set()
+	parameterPlugComponentKeys = set()
 
 	for name, metadata in __metadata.items() :
-		keys = ( nodeKeys, parametersPlugKeys, parameterPlugKeys )[name.count( ".")]
+		keys = ( nodeKeys, parametersPlugKeys, parameterPlugKeys, parameterPlugComponentKeys )[name.count( "." )]
 		keys.update( metadata.keys() )
 
 	for key in nodeKeys :
@@ -399,4 +426,11 @@ for nodeType in ( GafferArnold.ArnoldShader, GafferArnold.ArnoldLight ) :
 	for key in parameterPlugKeys :
 		Gaffer.Metadata.registerValue( nodeType, "parameters.*", key, functools.partial( __plugMetadata, name = key ) )
 
+	for key in parameterPlugComponentKeys :
+		Gaffer.Metadata.registerValue( nodeType, "parameters.*.[xyzrgb]", key, functools.partial( __plugMetadata, name = key ) )
+
 	Gaffer.Metadata.registerValue( nodeType, "description", __nodeDescription )
+
+Gaffer.Metadata.registerValue( GafferArnold.ArnoldShader, "attributeSuffix", "plugValueWidget:type", "GafferUI.StringPlugValueWidget" )
+Gaffer.Metadata.registerValue( GafferArnold.ArnoldShader, "layout:activator:suffixActivator", lambda parent : parent["type"].getValue() == "ai:lightFilter" )
+Gaffer.Metadata.registerValue( GafferArnold.ArnoldShader, "attributeSuffix", "layout:visibilityActivator", "suffixActivator" )

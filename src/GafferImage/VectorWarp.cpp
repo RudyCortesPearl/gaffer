@@ -34,13 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "OpenEXR/ImathFun.h"
+#include "GafferImage/VectorWarp.h"
+
+#include "GafferImage/FilterAlgo.h"
+#include "GafferImage/ImageAlgo.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferImage/ImageAlgo.h"
-#include "GafferImage/VectorWarp.h"
-#include "GafferImage/FilterAlgo.h"
+#include "OpenEXR/ImathFun.h"
+
+#include <cmath>
 
 using namespace Imath;
 using namespace IECore;
@@ -68,7 +71,7 @@ struct VectorWarp::Engine : public Warp::Engine
 	{
 	}
 
-	virtual Imath::V2f inputPixel( const Imath::V2f &outputPixel ) const
+	Imath::V2f inputPixel( const Imath::V2f &outputPixel ) const override
 	{
 		const V2i outputPixelI( (int)floorf( outputPixel.x ), (int)floorf( outputPixel.y ) );
 		const size_t i = BufferAlgo::index( outputPixelI, m_tileBound );
@@ -79,11 +82,16 @@ struct VectorWarp::Engine : public Warp::Engine
 		else
 		{
 			V2f result = m_vectorMode == Relative ? outputPixel : V2f( 0.0f );
-			
+
 			result += m_vectorUnits == Screen ?
 				screenToPixel( V2f( m_x[i], m_y[i] ) ) :
 				V2f( m_x[i], m_y[i] );
-				
+
+			if( !std::isfinite( result[0] ) || !std::isfinite( result[1] ) )
+			{
+				return black;
+			}
+
 			return result;
 		}
 	}
@@ -118,7 +126,7 @@ struct VectorWarp::Engine : public Warp::Engine
 // VectorWarp implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( VectorWarp );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( VectorWarp );
 
 size_t VectorWarp::g_firstPlugIndex = 0;
 
@@ -166,6 +174,16 @@ IntPlug *VectorWarp::vectorUnitsPlug()
 const IntPlug *VectorWarp::vectorUnitsPlug() const
 {
 	return getChild<IntPlug>( g_firstPlugIndex + 2 );
+}
+
+void VectorWarp::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+{
+	Warp::affects( input, outputs );
+
+	if( input == vectorPlug()->deepPlug() )
+	{
+		outputs.push_back( outPlug()->deepPlug() );
+	}
 }
 
 bool VectorWarp::affectsEngine( const Gaffer::Plug *input ) const
@@ -223,7 +241,7 @@ const Warp::Engine *VectorWarp::computeEngine( const Imath::V2i &tileOrigin, con
 {
 	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
 
-	
+
 	Box2i validTileBound;
 	ConstStringVectorDataPtr channelNames;
 	Box2i displayWindow;
@@ -258,6 +276,13 @@ const Warp::Engine *VectorWarp::computeEngine( const Imath::V2i &tileOrigin, con
 		aData = vectorPlug()->channelDataPlug()->getValue();
 	}
 
+	if( xData->readable().size() != (unsigned int)ImagePlug::tilePixels() ||
+		yData->readable().size() != (unsigned int)ImagePlug::tilePixels() ||
+		aData->readable().size() != (unsigned int)ImagePlug::tilePixels() )
+	{
+		throw IECore::Exception( "VectorWarp::computeEngine : Bad channel data size on vector plug.  Maybe it's deep?" );
+	}
+
 	return new Engine(
 		displayWindow,
 		tileBound,
@@ -269,3 +294,19 @@ const Warp::Engine *VectorWarp::computeEngine( const Imath::V2i &tileOrigin, con
 		(VectorUnits)vectorUnitsPlug()->getValue()
 	);
 }
+
+void VectorWarp::hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	FlatImageProcessor::hashDeep( parent, context, h );
+	h.append( vectorPlug()->deepPlug()->hash() );
+}
+
+bool VectorWarp::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	if( vectorPlug()->deepPlug()->getValue() )
+	{
+		throw IECore::Exception( "Deep data not supported in input \"vector\"" );
+	}
+	return false;
+}
+

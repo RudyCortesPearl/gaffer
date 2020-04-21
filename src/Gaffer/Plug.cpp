@@ -35,28 +35,29 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/enumerable_thread_specific.h"
+#include "Gaffer/Plug.h"
 
-#include "boost/format.hpp"
-#include "boost/bind.hpp"
-#include "boost/graph/adjacency_list.hpp"
-#include "boost/graph/topological_sort.hpp"
-#include "boost/unordered_map.hpp"
+#include "Gaffer/Action.h"
+#include "Gaffer/DependencyNode.h"
+#include "Gaffer/DownstreamIterator.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/ScriptNode.h"
 
 #include "IECore/Exception.h"
 
-#include "Gaffer/Plug.h"
-#include "Gaffer/DependencyNode.h"
-#include "Gaffer/Action.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Metadata.h"
-#include "Gaffer/DownstreamIterator.h"
+#include "boost/bind.hpp"
+#include "boost/format.hpp"
+#include "boost/graph/adjacency_list.hpp"
+#include "boost/graph/depth_first_search.hpp"
+#include "boost/unordered_map.hpp"
+
+#include "tbb/enumerable_thread_specific.h"
 
 using namespace boost;
 using namespace Gaffer;
 
 //////////////////////////////////////////////////////////////////////////
-// ScopedAssignment utility class
+// Internal utilities
 //////////////////////////////////////////////////////////////////////////
 
 namespace
@@ -87,30 +88,41 @@ class ScopedAssignment : boost::noncopyable
 
 };
 
+bool allDescendantInputsAreNull( const Plug *plug )
+{
+	for( RecursivePlugIterator it( plug ); !it.done(); ++it )
+	{
+		if( (*it)->getInput() )
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // Plug implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Plug );
+GAFFER_PLUG_DEFINE_TYPE( Plug );
 
 Plug::Plug( const std::string &name, Direction direction, unsigned flags )
-	:	GraphComponent( name ), m_direction( direction ), m_input( 0 ), m_flags( None ), m_skipNextUpdateInputFromChildInputs( false )
+	:	GraphComponent( name ), m_direction( direction ), m_input( nullptr ), m_flags( None ), m_skipNextUpdateInputFromChildInputs( false )
 {
 	setFlags( flags );
-	parentChangedSignal().connect( boost::bind( &Plug::parentChanged, this ) );
 }
 
 Plug::~Plug()
 {
-	setInputInternal( 0, false );
+	setInputInternal( nullptr, false );
 	for( OutputContainer::iterator it=m_outputs.begin(); it!=m_outputs.end(); )
 	{
 	 	// get the next iterator now, as the call to setInputInternal invalidates
 		// the current iterator.
 		OutputContainer::iterator next = it; next++;
-		(*it)->setInputInternal( 0, true );
+		(*it)->setInputInternal( nullptr, true );
 		it = next;
 	}
 	Metadata::clearInstanceMetadata( this );
@@ -176,11 +188,6 @@ void Plug::setFlags( unsigned flags )
 	if( flags == m_flags )
 	{
 		return;
-	}
-
-	if( (flags & ReadOnly) && direction() == Out )
-	{
-		throw IECore::Exception( "Output plug cannot be read only" );
 	}
 
 	if( !refCount() )
@@ -307,7 +314,7 @@ bool Plug::acceptsInput( const Plug *input ) const
 
 bool Plug::acceptsInputInternal( const Plug *input ) const
 {
-	if( !getFlags( AcceptsInputs ) || getFlags( ReadOnly ) )
+	if( !getFlags( AcceptsInputs ) )
 	{
 		return false;
 	}
@@ -324,7 +331,7 @@ bool Plug::acceptsInputInternal( const Plug *input ) const
 	}
 
 	// If we accepted it previously, we can't change our minds now.
-	if( input == getInput<Plug>() )
+	if( input == getInput() )
 	{
 		return true;
 	}
@@ -364,6 +371,11 @@ bool Plug::acceptsInputInternal( const Plug *input ) const
 	return true;
 }
 
+/// \todo Make this non-virtual - it is too error prone to allow derived classes to
+/// modify the mechanics of making connections. We could add a protected
+/// `virtual inputChanging()` method that ValuePlug uses to do what it currently does
+/// in `setInput()`, and we could rewrite ArrayPlug so that it only adds new plugs on
+/// explicit request, not automatically in `plugInputChanged()`.
 void Plug::setInput( PlugPtr input )
 {
 	setInput( input, /* setChildInputs = */ true, /* updateParentInput = */ true );
@@ -373,7 +385,21 @@ void Plug::setInput( PlugPtr input, bool setChildInputs, bool updateParentInput 
 {
 	if( input.get()==m_input )
 	{
-		return;
+		if(
+			// If the current input is non-null, we know that our
+			// children have the appropriate corresponding
+			// inputs too, so can exit early.
+			m_input ||
+			// But if the input is null, our children might
+			// still have inputs of their own that we're meant
+			// to be clearing, so we need to be careful about
+			// when we take the shortcut.
+			!setChildInputs ||
+			allDescendantInputsAreNull( this )
+		)
+		{
+			return;
+		}
 	}
 
 	if( input && !acceptsInput( input.get() ) )
@@ -398,7 +424,7 @@ void Plug::setInput( PlugPtr input, bool setChildInputs, bool updateParentInput 
 		{
 			for( PlugIterator it( this ); !it.done(); ++it )
 			{
-				(*it)->setInput( NULL, /* setChildInputs = */ true, /* updateParentInput = */ false );
+				(*it)->setInput( nullptr, /* setChildInputs = */ true, /* updateParentInput = */ false );
 			}
 		}
 		else
@@ -511,10 +537,10 @@ void Plug::updateInputFromChildInputs( Plug *checkFirst )
 		checkFirst = static_cast<Plug *>( children().front().get() );
 	}
 
-	Plug *input = checkFirst->getInput<Plug>();
+	Plug *input = checkFirst->getInput();
 	if( !input || !input->parent<Plug>() )
 	{
-		setInput( NULL, /* setChildInputs = */ false, /* updateParentInput = */ true );
+		setInput( nullptr, /* setChildInputs = */ false, /* updateParentInput = */ true );
 		return;
 	}
 
@@ -524,15 +550,15 @@ void Plug::updateInputFromChildInputs( Plug *checkFirst )
 		// if we're never going to accept the candidate input anyway, then
 		// don't even bother checking to see if all the candidate's children
 		// are connected to our children.
-		setInput( NULL, /* setChildInputs = */ false, /* updateParentInput = */ true );
+		setInput( nullptr, /* setChildInputs = */ false, /* updateParentInput = */ true );
 		return;
 	}
 
 	for( PlugIterator it1( this ), it2( candidateInput ); !it1.done(); ++it1, ++it2 )
 	{
-		if( (*it1)->getInput<Plug>() != it2->get() )
+		if( (*it1)->getInput() != it2->get() )
 		{
-			setInput( NULL, /* setChildInputs = */ false, /* updateParentInput = */ true );
+			setInput( nullptr, /* setChildInputs = */ false, /* updateParentInput = */ true );
 			return;
 		}
 	}
@@ -545,7 +571,7 @@ void Plug::removeOutputs()
 	for( OutputContainer::iterator it = m_outputs.begin(); it!=m_outputs.end();  )
 	{
 		Plug *p = *it++;
-		p->setInput( 0 );
+		p->setInput( nullptr );
 	}
 }
 
@@ -593,7 +619,7 @@ void Plug::parentChanging( Gaffer::GraphComponent *newParent )
 	// So here we early out if we're in such an Undo/Redo situation.
 
 	ScriptNode *scriptNode = ancestor<ScriptNode>();
-	scriptNode = scriptNode ? scriptNode : ( newParent ? newParent->ancestor<ScriptNode>() : NULL );
+	scriptNode = scriptNode ? scriptNode : ( newParent ? newParent->ancestor<ScriptNode>() : nullptr );
 	if( scriptNode && ( scriptNode->currentActionStage() == Action::Undo || scriptNode->currentActionStage() == Action::Redo ) )
 	{
 		return;
@@ -607,7 +633,7 @@ void Plug::parentChanging( Gaffer::GraphComponent *newParent )
 		// We're losing our parent - remove all our connections first.
 		// this must be done here (rather than in a parentChangedSignal() slot)
 		// because we need a current parent for the operation to be undoable.
-		setInput( 0 );
+		setInput( nullptr );
 		// Deal with outputs whose parent is an output of our parent.
 		// For these we actually remove the destination plug itself,
 		// so that the parent plugs may remain connected.
@@ -617,7 +643,7 @@ void Plug::parentChanging( Gaffer::GraphComponent *newParent )
 			{
 				Plug *output = *it++;
 				Plug *outputParent = output->parent<Plug>();
-				if( outputParent && outputParent->getInput<Plug>() == oldParent )
+				if( outputParent && outputParent->getInput() == oldParent )
 				{
 					// We're removing the child precisely so that the parent connection
 					// remains valid, so we can block its updateInputFromChildInputs() call.
@@ -661,8 +687,10 @@ void Plug::parentChanging( Gaffer::GraphComponent *newParent )
 
 }
 
-void Plug::parentChanged()
+void Plug::parentChanged( Gaffer::GraphComponent *oldParent )
 {
+	GraphComponent::parentChanged( oldParent );
+
 	if( getFlags( Dynamic ) )
 	{
 		if( node() )
@@ -784,12 +812,13 @@ class Plug::DirtyPlugs
 		// We use this graph structure to keep track of the dirty propagation.
 		// Vertices in the graph represent plugs which have been dirtied, and
 		// edges represent the relationships that caused the dirtying - an
-		// edge U,V indicates that U was dirtied by V. We do a topological
-		// sort on the graph to give us an appropriate order to emit the dirty
+		// edge U,V indicates that U was dirtied by V. We do a depth_first_search
+		// on the graph to give us an appropriate order to emit the dirty
 		// signals in, so that dirtiness is only signalled for an affected plug
 		// after it has been signalled for all upstream dirty plugs.
 		typedef boost::adjacency_list<vecS, vecS, directedS, PlugPtr> Graph;
 		typedef Graph::vertex_descriptor VertexDescriptor;
+		typedef Graph::edge_descriptor EdgeDescriptor;
 
 		typedef std::map<const Plug *, VertexDescriptor> PlugMap;
 
@@ -842,6 +871,30 @@ class Plug::DirtyPlugs
 			return InsertedVertex( result, true );
 		}
 
+		struct EmitVisitor : public default_dfs_visitor
+		{
+
+			void back_edge( const EdgeDescriptor &e, const Graph &graph )
+			{
+				throw IECore::Exception( boost::str(
+					boost::format( "Cycle detected between %1% and %2%" ) %
+					graph[boost::target( e, graph )]->fullName() %
+					graph[boost::source( e, graph )]->fullName()
+				) );
+			}
+
+			void finish_vertex( const VertexDescriptor &u, const Graph &graph )
+			{
+				Plug *plug = graph[u].get();
+				plug->dirty();
+				if( Node *node = plug->node() )
+				{
+					node->plugDirtiedSignal()( plug );
+				}
+			}
+
+		};
+
 		void emit()
 		{
 			// Because we hold a reference to the plugs via m_graph,
@@ -866,24 +919,13 @@ class Plug::DirtyPlugs
 
 			ScopedAssignment<bool> scopedAssignment( m_emitting, true );
 
-			std::vector<VertexDescriptor> sorted;
 			try
 			{
-				topological_sort( m_graph, std::back_inserter( sorted ) );
+				depth_first_search( m_graph, visitor( EmitVisitor() ) );
 			}
 			catch( const std::exception &e )
 			{
 				IECore::msg( IECore::Msg::Error, "Plug dirty propagation", e.what() );
-			}
-
-			for( std::vector<VertexDescriptor>::const_iterator it = sorted.begin(), eIt = sorted.end(); it != eIt; ++it )
-			{
-				Plug *plug = m_graph[*it].get();
-				plug->dirty();
-				if( Node *node = plug->node() )
-				{
-					node->plugDirtiedSignal()( plug );
-				}
 			}
 
 			m_graph.clear();

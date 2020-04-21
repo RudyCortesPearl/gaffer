@@ -35,17 +35,21 @@
 #
 ##########################################################################
 
-import IECore
+import os
 
+import IECore
+import IECoreScene
+
+import Gaffer
 import GafferScene
-import GafferImageUI
+import GafferImage
 
 # Add standard beauty output that should be supported by
 # all renderers.
 
 GafferScene.Outputs.registerOutput(
 	"Interactive/Beauty",
-	IECore.Display(
+	IECoreScene.Output(
 		"beauty",
 		"ieDisplay",
 		"rgba",
@@ -61,7 +65,7 @@ GafferScene.Outputs.registerOutput(
 
 GafferScene.Outputs.registerOutput(
 	"Batch/Beauty",
-	IECore.Display(
+	IECoreScene.Output(
 		"${project:rootDirectory}/renders/${script:name}/beauty/beauty.####.exr",
 		"exr",
 		"rgba",
@@ -80,36 +84,89 @@ with IECore.IgnoredExceptions( ImportError ) :
 	import GafferArnold
 
 	for aov in [
-		"diffuse_color",
-		"direct_diffuse",
-		"indirect_diffuse",
-		"direct_specular",
-		"indirect_specular",
-		"direct_specular_2",
-		"indirect_specular_2",
-		"reflection",
-		"refraction",
-		"refraction_opacity",
+		"direct",
+		"indirect",
 		"emission",
-		"single_scatter",
+		"background",
+		"diffuse",
+		"specular",
+		"coat",
+		"transmission",
 		"sss",
-		"direct_sss",
-		"indirect_sss",
-		"light_group_1",
-		"light_group_2",
-		"light_group_3",
-		"light_group_4",
-		"light_group_5",
-		"light_group_6",
-		"light_group_7",
-		"light_group_8",
+		"volume",
+		"albedo",
+		"diffuse_direct",
+		"diffuse_indirect",
+		"diffuse_albedo",
+		"specular_direct",
+		"specular_indirect",
+		"specular_albedo",
+		"coat_direct",
+		"coat_indirect",
+		"coat_albedo",
+		"transmission_direct",
+		"transmission_indirect",
+		"transmission_albedo",
+		"sss_direct",
+		"sss_indirect",
+		"sss_albedo",
+		"volume_direct",
+		"volume_indirect",
+		"volume_albedo",
+		"light_groups",
 	] :
 
 		label = aov.replace( "_", " " ).title().replace( " ", "_" )
 
+		data = aov
+		if data == "light_groups":
+			data = "RGBA_*"
+
 		GafferScene.Outputs.registerOutput(
 			"Interactive/Arnold/" + label,
-			IECore.Display(
+			IECoreScene.Output(
+				aov,
+				"ieDisplay",
+				"color " + data,
+				{
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : "${image:catalogue:port}",
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+				}
+			)
+		)
+
+		GafferScene.Outputs.registerOutput(
+			"Batch/Arnold/" + label,
+			IECoreScene.Output(
+				"${project:rootDirectory}/renders/${script:name}/%s/%s.####.exr" % ( aov, aov ),
+				"exr",
+				"color " + data,
+			)
+		)
+
+# Add standard AOVs as they are defined in the 3Delight shaders
+
+with IECore.IgnoredExceptions( ImportError ) :
+
+	# If 3Delight isn't available for any reason, this will fail
+	# and we won't add any unnecessary output definitions.
+	import GafferDelight
+
+	for aov in [
+		"diffuse",
+		"subsurface",
+		"reflection",
+		"refraction",
+		"incandescence",
+	] :
+
+		label = aov.title()
+
+		GafferScene.Outputs.registerOutput(
+			"Interactive/3Delight/" + label,
+			IECoreScene.Output(
 				aov,
 				"ieDisplay",
 				"color " + aov,
@@ -123,13 +180,75 @@ with IECore.IgnoredExceptions( ImportError ) :
 		)
 
 		GafferScene.Outputs.registerOutput(
-			"Batch/Arnold/" + label,
-			IECore.Display(
+			"Batch/3Delight/" + label,
+			IECoreScene.Output(
 				"${project:rootDirectory}/renders/${script:name}/%s/%s.####.exr" % ( aov, aov ),
 				"exr",
 				"color " + aov,
 			)
 		)
+
+
+# Add standard appleseed AOVs
+
+if os.environ.get( "GAFFERAPPLESEED_HIDE_UI", "" ) != "1" :
+
+	with IECore.IgnoredExceptions( ImportError ) :
+
+		# If appleseed isn't available for any reason, this will fail
+		# and we won't add any unnecessary output definitions.
+		import GafferAppleseed
+
+		for aov in [
+			"diffuse",
+			"glossy",
+			"emission",
+			"direct_diffuse",
+			"indirect_diffuse",
+			"direct_glossy",
+			"indirect_glossy",
+			"albedo",
+
+			"npr_contour",
+			"npr_shading",
+
+			"depth",
+			"normal",
+			"position",
+			"uv",
+
+			"pixel_variation",
+			"pixel_sample_count",
+			"pixel_time",
+			"invalid_samples"
+		] :
+
+			label = aov.replace( "_", " " ).title().replace( " ", "_" )
+			aovModel = aov + "_aov"
+
+			GafferScene.Outputs.registerOutput(
+				"Interactive/Appleseed/" + label,
+				IECoreScene.Output(
+					aov,
+					"ieDisplay",
+					aovModel,
+					{
+						"driverType" : "ClientDisplayDriver",
+						"displayHost" : "localhost",
+						"displayPort" : "${image:catalogue:port}",
+						"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					}
+				)
+			)
+
+			GafferScene.Outputs.registerOutput(
+				"Batch/Appleseed/" + label,
+				IECoreScene.Output(
+					"${project:rootDirectory}/renders/${script:name}/%s/%s.####.exr" % ( aov, aov ),
+					"exr",
+					aovModel
+				)
+			)
 
 # Publish the Catalogue port number as a context variable, so we can refer
 # to it easily in output definitions.
@@ -137,7 +256,8 @@ with IECore.IgnoredExceptions( ImportError ) :
 def __scriptAdded( parent, script ) :
 
 	if "imageCataloguePort" not in script["variables"] :
-		portNumberPlug = script["variables"].addMember( "image:catalogue:port", 0, "imageCataloguePort" )
+		portNumberPlug = Gaffer.NameValuePlug( "image:catalogue:port", 0, "imageCataloguePort", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		script["variables"].addChild( portNumberPlug )
 		Gaffer.MetadataAlgo.setReadOnly( portNumberPlug, True )
 	else :
 		portNumberPlug = script["variables"]["imageCataloguePort"]

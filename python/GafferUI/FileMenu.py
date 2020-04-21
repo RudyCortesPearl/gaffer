@@ -35,8 +35,9 @@
 #
 ##########################################################################
 
-import re
 import os
+import functools
+import imath
 
 import IECore
 
@@ -86,30 +87,72 @@ def open( menu ) :
 
 	__open( scriptWindow.scriptNode(), str( path ) )
 
-def __open( currentScript, fileName ) :
+## Opens a script and adds it to the application, as if the user
+# had done so via the File Open dialogue.
+#
+# :param asNew When true, the scripts file name/dirty state will be reset
+#    upon load. Effectively creating an untitled copy.
+def addScript( application, fileName, asNew = False ) :
 
-	application = currentScript.ancestor( Gaffer.ApplicationRoot )
+	return __addScript( application, fileName, asNew = asNew )
+
+def __addScript( application, fileName, dialogueParentWindow = None, asNew = False ) :
+
+	recoveryFileName = None
+	backups = GafferUI.Backups.acquire( application, createIfNecessary = False )
+	if backups is not None :
+		recoveryFileName = backups.recoveryFile( fileName )
+		if recoveryFileName :
+			dialogue = GafferUI.ConfirmationDialogue(
+				title = "Backup Available",
+				message = "A more recent backup is available. Open backup instead?",
+				confirmLabel = "Open Backup",
+				cancelLabel = "Open",
+			)
+			useBackup = dialogue.waitForConfirmation( parentWindow = dialogueParentWindow )
+			if useBackup is None :
+				return
+			elif not useBackup :
+				recoveryFileName = None
+			dialogue.setVisible( False )
 
 	script = Gaffer.ScriptNode()
-	script["fileName"].setValue( fileName )
+	script["fileName"].setValue( recoveryFileName or fileName )
 
 	with GafferUI.ErrorDialogue.ErrorHandler(
 		title = "Errors Occurred During Loading",
 		closeLabel = "Oy vey",
-		parentWindow = GafferUI.ScriptWindow.acquire( currentScript )
+		parentWindow = dialogueParentWindow
 	) :
 		script.load( continueOnError = True )
 
+	if asNew or recoveryFileName :
+		# If we loaded a backup (or as new), rename the script to the old
+		# filename (or nothing) so the user can resave and continue as before.
+		script["fileName"].setValue( "" if asNew else fileName )
+		script["unsavedChanges"].setValue( True )
+
 	application["scripts"].addChild( script )
 
-	addRecentFile( application, fileName )
+	if not asNew:
+		addRecentFile( application, fileName )
+
+	return script
+
+def __open( currentScript, fileName ) :
+
+	application = currentScript.ancestor( Gaffer.ApplicationRoot )
+	currentWindow = GafferUI.ScriptWindow.acquire( currentScript )
+
+	script = __addScript( application, fileName, dialogueParentWindow = currentWindow )
+	if not script :
+		return
 
 	removeCurrentScript = False
 	if not currentScript["fileName"].getValue() and not currentScript["unsavedChanges"].getValue() :
 		# the current script is empty - the user will think of the operation as loading
 		# the new script into the current window, rather than adding a new window. so make it
 		# look like that.
-		currentWindow = GafferUI.ScriptWindow.acquire( currentScript )
 		newWindow = GafferUI.ScriptWindow.acquire( script )
 		## \todo We probably want a way of querying and setting geometry in the public API
 		newWindow._qtWidget().restoreGeometry( currentWindow._qtWidget().saveGeometry() )
@@ -120,7 +163,7 @@ def __open( currentScript, fileName ) :
 	# in PySide - I think this is because the menu item that invokes us is a child of
 	# currentWindow, and that will get deleted immediately when the script is removed.
 	if removeCurrentScript :
-		GafferUI.EventLoop.addIdleCallback( IECore.curry( __removeScript, application, currentScript ) )
+		GafferUI.EventLoop.addIdleCallback( functools.partial( __removeScript, application, currentScript ) )
 
 def __removeScript( application, script ) :
 
@@ -146,7 +189,7 @@ def openRecent( menu ) :
 				"/" + str( index ),
 				{
 					"label": os.path.basename( fileName ),
-					"command" : IECore.curry( __open, currentScript, fileName ),
+					"command" : functools.partial( __open, currentScript, fileName ),
 					"description" : fileName,
 					"active" : os.path.isfile( fileName )
 				}
@@ -226,9 +269,23 @@ def saveAs( menu ) :
 def revertToSaved( menu ) :
 
 	scriptWindow = menu.ancestor( GafferUI.ScriptWindow )
-	script = scriptWindow.scriptNode()
 
-	script.load()
+	dialogue = GafferUI.ConfirmationDialogue(
+		title = "Discard Unsaved Changes?",
+		message = "There are unsaved changes which will be lost."
+			"Discard them and revert?",
+		confirmLabel = "Revert",
+		cancelLabel = "Cancel",
+	)
+	if not dialogue.waitForConfirmation( parentWindow = scriptWindow ) :
+		return
+
+	with GafferUI.ErrorDialogue.ErrorHandler(
+		title = "Errors Occurred During Loading",
+		closeLabel = "Oy vey",
+		parentWindow = scriptWindow
+	) :
+		scriptWindow.scriptNode().load( continueOnError = True )
 
 def __revertToSavedAvailable( menu ) :
 
@@ -271,28 +328,46 @@ def exportSelection( menu ) :
 # has a ScriptWindow in its ancestry.
 def importFile( menu ) :
 
-	scriptWindow = menu.ancestor( GafferUI.ScriptWindow )
-	script = scriptWindow.scriptNode()
-	path, bookmarks = __pathAndBookmarks( scriptWindow )
+	scope = GafferUI.EditMenu.scope( menu )
+	path, bookmarks = __pathAndBookmarks( scope.scriptWindow )
 
 	dialogue = GafferUI.PathChooserDialogue( path, title="Import script", confirmLabel="Import", valid=True, leaf=True, bookmarks=bookmarks )
-	path = dialogue.waitForPath( parentWindow = scriptWindow )
+	path = dialogue.waitForPath( parentWindow = scope.scriptWindow )
 
 	if path is None :
 		return
 
-	newChildren = []
-	c = script.childAddedSignal().connect( lambda parent, child : newChildren.append( child ) )
-	with Gaffer.UndoScope( script ) :
-		## \todo We need to prevent the ScriptNode plugs themselves getting clobbered
-		# when importing an entire script.
-		script.executeFile( str( path ) )
+	errorHandler = GafferUI.ErrorDialogue.ErrorHandler(
+		title = "Errors Occurred During Loading",
+		closeLabel = "Oy vey",
+		parentWindow = scope.scriptWindow
+	)
 
-	newNodes = [ c for c in newChildren if isinstance( c, Gaffer.Node ) ]
-	script.selection().clear()
-	script.selection().add( newNodes )
+	with Gaffer.UndoScope( scope.script ), errorHandler :
 
-	## \todo Position the nodes somewhere sensible if there's a Node Graph available
+		newChildren = []
+		c = scope.parent.childAddedSignal().connect( lambda parent, child : newChildren.append( child ) )
+
+		scope.script.importFile( str( path ), parent = scope.parent, continueOnError = True )
+
+		newNodes = [ c for c in newChildren if isinstance( c, Gaffer.Node ) ]
+		scope.script.selection().clear()
+		scope.script.selection().add( newNodes )
+
+		if scope.graphEditor :
+
+			fallbackPosition = scope.graphEditor.bound().size() / 2
+			fallbackPosition = scope.graphEditor.graphGadgetWidget().getViewportGadget().rasterToGadgetSpace(
+				imath.V2f( fallbackPosition.x, fallbackPosition.y ),
+				gadget = scope.graphEditor.graphGadget()
+			).p0
+			fallbackPosition = imath.V2f( fallbackPosition.x, fallbackPosition.y )
+
+			scope.graphEditor.graphGadget().getLayout().positionNodes(
+				scope.graphEditor.graphGadget(), scope.script.selection(), fallbackPosition
+			)
+
+			scope.graphEditor.frame( scope.script.selection(), extend = True )
 
 ## A function suitable as the command for a File/Settings... menu item.
 def showSettings( menu ) :

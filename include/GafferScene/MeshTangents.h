@@ -37,20 +37,30 @@
 #ifndef GAFFERSCENE_MESHTANGENTS_H
 #define GAFFERSCENE_MESHTANGENTS_H
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "GafferScene/ObjectProcessor.h"
+
 #include "Gaffer/StringPlug.h"
 #include "Gaffer/TypedPlug.h"
 
 namespace GafferScene
 {
 
-class MeshTangents : public SceneElementProcessor
+class GAFFERSCENE_API MeshTangents : public ObjectProcessor
 {
 
 	public :
 
 		MeshTangents( const std::string &name=defaultName<MeshTangents>() );
-		virtual ~MeshTangents();
+		~MeshTangents() override;
+
+		enum Mode
+		{
+			UV,
+			FirstEdge,
+			TwoEdges,
+			PrimitiveCentroid,
+			NumberOfModes
+		};
 
 		Gaffer::StringPlug *uvSetPlug();
 		const Gaffer::StringPlug *uvSetPlug() const;
@@ -67,15 +77,28 @@ class MeshTangents : public SceneElementProcessor
 		Gaffer::BoolPlug *orthogonalPlug();
 		const Gaffer::BoolPlug *orthogonalPlug() const;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::MeshTangents, MeshTangentsTypeId, SceneElementProcessor );
+		Gaffer::IntPlug *modePlug();
+		const Gaffer::IntPlug *modePlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::BoolPlug *leftHandedPlug();
+		const Gaffer::BoolPlug *leftHandedPlug() const;
+
+		Gaffer::StringPlug *normalPlug();
+		const Gaffer::StringPlug *normalPlug() const;
+
+		Gaffer::StringPlug *tangentPlug();
+		const Gaffer::StringPlug *tangentPlug() const;
+
+		Gaffer::StringPlug *biTangentPlug();
+		const Gaffer::StringPlug *biTangentPlug() const;
+
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::MeshTangents, MeshTangentsTypeId, ObjectProcessor );
 
 	protected :
 
-		virtual bool processesObject() const;
-		virtual void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const;
+		bool affectsProcessedObject( const Gaffer::Plug *input ) const override;
+		void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const override;
 
 	private :
 

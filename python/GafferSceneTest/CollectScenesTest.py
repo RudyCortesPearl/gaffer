@@ -35,6 +35,7 @@
 ##########################################################################
 
 import inspect
+import os
 import unittest
 
 import IECore
@@ -61,7 +62,9 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 		script["group"]["in"][0].setInput( script["sphere"]["out"] )
 		script["group"]["in"][1].setInput( script["cube"]["out"] )
 
-		script["switch"] = GafferScene.SceneSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferScene.ScenePlug() )
+
 		script["switch"]["in"][0].setInput( script["sphere"]["out"] )
 		script["switch"]["in"][1].setInput( script["cube"]["out"] )
 		script["switch"]["in"][2].setInput( script["group"]["out"] )
@@ -95,10 +98,10 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 		script["subTree"]["in"].setInput( script["collect"]["out"] )
 
 		script["subTree"]["root"].setValue( "/sphere" )
-		self.assertScenesEqual( script["subTree"]["out"], script["sphere"]["out"] )
+		self.assertScenesEqual( script["subTree"]["out"], script["sphere"]["out"], checks = self.allSceneChecks - { "sets" } )
 
 		script["subTree"]["root"].setValue( "/cube" )
-		self.assertScenesEqual( script["subTree"]["out"], script["cube"]["out"] )
+		self.assertScenesEqual( script["subTree"]["out"], script["cube"]["out"], checks = self.allSceneChecks - { "sets" } )
 
 		script["subTree"]["root"].setValue( "/group" )
 		self.assertScenesEqual( script["subTree"]["out"], script["group"]["out"] )
@@ -109,14 +112,14 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertEqual(
 			script["collect"]["out"].set( "spheres" ).value,
-			GafferScene.PathMatcher(
+			IECore.PathMatcher(
 				[ "/sphere/sphere", "/group/group/sphere" ]
 			)
 		)
 
 		self.assertEqual(
 			script["collect"]["out"].set( "cubes" ).value,
-			GafferScene.PathMatcher(
+			IECore.PathMatcher(
 				[ "/cube/cube", "/group/group/cube" ]
 			)
 		)
@@ -124,7 +127,7 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 	def testGlobals( self ) :
 
 		options = GafferScene.CustomOptions()
-		options["options"].addMember( "user:test", "${collect:rootName}" )
+		options["options"].addChild( Gaffer.NameValuePlug( "user:test", "${collect:rootName}" ) )
 		self.assertTrue( "option:user:test" in options["out"]["globals"].getValue() )
 
 		collect = GafferScene.CollectScenes()
@@ -139,7 +142,7 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 
 		primitiveVariables = GafferScene.PrimitiveVariables()
 		primitiveVariables["in"].setInput( sphere["out"] )
-		primitiveVariables["primitiveVariables"].addMember( "color", "${collect:rootName}" )
+		primitiveVariables["primitiveVariables"].addChild( Gaffer.NameValuePlug( "color", "${collect:rootName}" ) )
 
 		collect = GafferScene.CollectScenes()
 		collect["in"].setInput( primitiveVariables["out"] )
@@ -161,6 +164,166 @@ class CollectScenesTest( GafferSceneTest.SceneTestCase ) :
 			sphere["out"].object( "/sphere", _copy = False ).isSame(
 				collect["out"].object( "/test/sphere", _copy = False )
 			)
+		)
+
+	def testCollectObject( self ) :
+
+		sphere = GafferScene.Sphere()
+		sphere["sets"].setValue( "sphereSet" )
+
+		collect = GafferScene.CollectScenes()
+		collect["in"].setInput( sphere["out"] )
+		collect["rootNames"].setValue( IECore.StringVectorData( [ "test" ] ) )
+		collect["sourceRoot"].setValue( "sphere" )
+
+		self.assertPathHashesEqual( sphere["out"], "/sphere", collect["out"], "/test" )
+		self.assertEqual( sphere["out"].object( "/sphere" ), collect["out"].object( "/test" ) )
+
+		self.assertEqual( collect["out"].set( "sphereSet" ).value.paths(), [ "/test" ] )
+
+	def testRoot( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["sphere"] = GafferScene.Sphere()
+		script["sphere"]["sets"].setValue( "sphereSet" )
+
+		script["group"] = GafferScene.Group()
+		script["group"]["in"][0].setInput( script["sphere"]["out"] )
+
+		script["cube"] = GafferScene.Cube()
+		script["cube"]["sets"].setValue( "cubeSet" )
+
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferScene.ScenePlug() )
+
+		script["switch"]["in"][0].setInput( script["group"]["out"] )
+		script["switch"]["in"][1].setInput( script["cube"]["out"] )
+
+		script["collect"] = GafferScene.CollectScenes()
+		script["collect"]["in"].setInput( script["switch"]["out"] )
+		script["collect"]["rootNames"].setValue( IECore.StringVectorData( [ "0", "1", "2", "3" ] ) )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+			"""
+			root = context.get( "collect:rootName", "0" )
+			parent["switch"]["index"] = int( root ) > 1
+			parent["collect"]["sourceRoot"] = {
+				"0" : "",
+				"1" : "/group",
+				"2" : "/",
+				"3" : "/cube"
+			}[root]
+			"""
+		) )
+
+		self.assertEqual( script["collect"]["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "0", "1", "2", "3" ] ) )
+
+		self.assertEqual( script["collect"]["out"].childNames( "/0" ), IECore.InternedStringVectorData( [ "group" ] ) )
+		self.assertEqual( script["collect"]["out"].childNames( "/1" ), IECore.InternedStringVectorData( [ "sphere" ] ) )
+		self.assertEqual( script["collect"]["out"].childNames( "/2" ), IECore.InternedStringVectorData( [ "cube" ] ) )
+		self.assertEqual( script["collect"]["out"].childNames( "/3" ), IECore.InternedStringVectorData() )
+
+		self.assertEqual( script["collect"]["out"].object( "/0" ), IECore.NullObject() )
+		self.assertEqual( script["collect"]["out"].object( "/1" ), IECore.NullObject() )
+		self.assertEqual( script["collect"]["out"].object( "/2" ), IECore.NullObject() )
+		self.assertEqual( script["collect"]["out"].object( "/3" ), script["cube"]["out"].object( "/cube" ) )
+
+		self.assertEqual( script["collect"]["out"].childNames( "/0/group" ), IECore.InternedStringVectorData( [ "sphere" ] ) )
+		self.assertEqual( script["collect"]["out"].childNames( "/1/sphere" ), IECore.InternedStringVectorData() )
+		self.assertEqual( script["collect"]["out"].childNames( "/2/cube" ), IECore.InternedStringVectorData() )
+
+		self.assertEqual( script["collect"]["out"].object( "/0/group" ), IECore.NullObject() )
+		self.assertEqual( script["collect"]["out"].object( "/1/sphere" ), script["sphere"]["out"].object( "/sphere" ) )
+		self.assertEqual( script["collect"]["out"].object( "/2/cube" ), script["cube"]["out"].object( "/cube" ) )
+
+		self.assertEqual( script["collect"]["out"].childNames( "/0/group/sphere" ), IECore.InternedStringVectorData() )
+		self.assertEqual( script["collect"]["out"].object( "/0/group/sphere" ), script["sphere"]["out"].object( "/sphere" ) )
+
+		self.assertEqual( script["collect"]["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "sphereSet", "cubeSet" ] ) )
+
+		self.assertEqual(
+			set( script["collect"]["out"].set( "sphereSet" ).value.paths() ),
+			{
+				"/0/group/sphere",
+				"/1/sphere",
+			}
+		)
+
+		self.assertEqual(
+			set( script["collect"]["out"].set( "cubeSet" ).value.paths() ),
+			{
+				"/2/cube",
+				"/3",
+			}
+		)
+
+	def testInPlug( self ) :
+
+		c = GafferScene.CollectScenes()
+		self.assertIsInstance( c["in"], GafferScene.ScenePlug )
+
+	def testLoadFromVersion0_48( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/collectScenes-0.48.0.0.gfr" )
+		s.load()
+
+		self.assertTrue( s["CollectScenes"]["in"].getInput(), s["Sphere"]["out"] )
+
+	def testCollectInvalidLocation( self ) :
+
+		sphere = GafferScene.Sphere()
+		sphere["sets"].setValue( "set1" )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( sphere["out"] )
+
+		collect = GafferScene.CollectScenes()
+		collect["rootNames"].setValue( IECore.StringVectorData( [ "A" ] ) )
+		collect["in"].setInput( group["out"] )
+
+		self.assertSceneValid( collect["out"] )
+		self.assertEqual( collect["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "A" ] ) )
+		self.assertEqual( collect["out"].childNames( "/A" ), IECore.InternedStringVectorData( [ "group" ] ) )
+		self.assertEqual( collect["out"].childNames( "/A/group" ), IECore.InternedStringVectorData( [ "sphere" ] ) )
+		self.assertEqual( collect["out"].childNames( "/A/group/sphere" ), IECore.InternedStringVectorData() )
+
+		collect["sourceRoot"].setValue( "iDontExist" )
+
+		self.assertSceneValid( collect["out"] )
+		self.assertEqual( collect["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "A" ] ) )
+		self.assertEqual( collect["out"].childNames( "/A" ), IECore.InternedStringVectorData() )
+
+	def testSetRespectsRootName( self ) :
+
+		light = GafferSceneTest.TestLight()
+
+		collect1 = GafferScene.CollectScenes()
+		collect1["in"].setInput( light["out"] )
+		collect1["rootNames"].setValue( IECore.StringVectorData( [ "a", "b" ] ) )
+		self.assertEqual( collect1["out"].set( "__lights" ).value, IECore.PathMatcher( [ "/a/light", "/b/light" ] ) )
+
+		collect2 = GafferScene.CollectScenes()
+		collect2["in"].setInput( light["out"] )
+		collect2["rootNames"].setValue( IECore.StringVectorData( [ "c", "d" ] ) )
+		self.assertEqual( collect2["out"].set( "__lights" ).value, IECore.PathMatcher( [ "/c/light", "/d/light" ] ) )
+
+	def testRanges( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["collect"] = GafferScene.CollectScenes()
+		script["box"] = Gaffer.Box()
+		script["box"]["collect"] = GafferScene.CollectScenes()
+
+		self.assertEqual(
+			list( GafferScene.CollectScenes.Range( script ) ),
+			[ script["collect"] ],
+		)
+		self.assertEqual(
+			list( GafferScene.CollectScenes.RecursiveRange( script ) ),
+			[ script["collect"], script["box"]["collect"] ],
 		)
 
 if __name__ == "__main__":

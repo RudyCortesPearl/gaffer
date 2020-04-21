@@ -35,6 +35,9 @@
 #
 ##########################################################################
 
+import functools
+import imath
+
 import IECore
 
 import Gaffer
@@ -54,54 +57,59 @@ class PathChooserWidget( GafferUI.Widget ) :
 		tmpPath = Gaffer.DictPath( {}, "/" )
 		with self.__column :
 
-			# row for manipulating current directory
-			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) :
+			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 4 ) as browserFrame :
 
-				self.__displayModeButton = GafferUI.Button( image = "pathListingTree.png", hasFrame=False )
-				self.__displayModeButton.setToolTip( "Toggle between list and tree views" )
-				self.__displayModeButtonClickedConnection = self.__displayModeButton.clickedSignal().connect( Gaffer.WeakMethod( self.__displayModeButtonClicked ) )
+				# Override this so we can customise the appearance of only this list container
+				browserFrame._qtWidget().setObjectName( "gafferPathListingContainer" )
 
-				self.__bookmarksButton = GafferUI.MenuButton(
-					image = "bookmarks.png",
-					hasFrame=False,
-					menu = GafferUI.Menu( Gaffer.WeakMethod( self.__bookmarksMenuDefinition ) ),
-				)
-				self.__bookmarksButton.setToolTip( "Bookmarks" )
-				self.__bookmarksButtonDragEnterConnection = self.__bookmarksButton.dragEnterSignal().connect( Gaffer.WeakMethod( self.__bookmarksButtonDragEnter ) )
-				self.__bookmarksButtonDragLeaveConnection = self.__bookmarksButton.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__bookmarksButtonDragLeave ) )
-				self.__bookmarksButtonDropConnection = self.__bookmarksButton.dropSignal().connect( Gaffer.WeakMethod( self.__bookmarksButtonDrop ) )
+				# row for manipulating current directory
+				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4, borderWidth = 8 ) :
 
-				reloadButton = GafferUI.Button( image = "refresh.png", hasFrame=False )
-				reloadButton.setToolTip( "Refresh view" )
-				self.__reloadButtonClickedConnection = reloadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__reloadButtonClicked ) )
+					self.__displayModeButton = GafferUI.Button( image = "pathListingTree.png", hasFrame=False )
+					self.__displayModeButton.setToolTip( "Toggle between list and tree views" )
+					self.__displayModeButton.clickedSignal().connect( Gaffer.WeakMethod( self.__displayModeButtonClicked ), scoped = False )
 
-				upButton = GafferUI.Button( image = "pathUpArrow.png", hasFrame=False )
-				upButton.setToolTip( "Up one level" )
-				self.__upButtonClickedConnection = upButton.clickedSignal().connect( Gaffer.WeakMethod( self.__upButtonClicked ) )
+					self.__bookmarksButton = GafferUI.MenuButton(
+						image = "bookmarks.png",
+						hasFrame=False,
+						menu = GafferUI.Menu( Gaffer.WeakMethod( self.__bookmarksMenuDefinition ) ),
+					)
+					self.__bookmarksButton.setToolTip( "Bookmarks" )
+					self.__bookmarksButton.dragEnterSignal().connect( Gaffer.WeakMethod( self.__bookmarksButtonDragEnter ), scoped = False )
+					self.__bookmarksButton.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__bookmarksButtonDragLeave ), scoped = False )
+					self.__bookmarksButton.dropSignal().connect( Gaffer.WeakMethod( self.__bookmarksButtonDrop ), scoped = False )
 
-				GafferUI.Spacer( IECore.V2i( 2, 2 ) )
+					reloadButton = GafferUI.Button( image = "refresh.png", hasFrame=False )
+					reloadButton.setToolTip( "Refresh view" )
+					reloadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__reloadButtonClicked ), scoped = False )
 
-				self.__dirPathWidget = GafferUI.PathWidget( tmpPath )
+					upButton = GafferUI.Button( image = "pathUpArrow.png", hasFrame=False )
+					upButton.setToolTip( "Up one level" )
+					upButton.clickedSignal().connect( Gaffer.WeakMethod( self.__upButtonClicked ), scoped = False )
 
-			# directory listing and preview widget
-			with GafferUI.SplitContainer(
-				GafferUI.SplitContainer.Orientation.Horizontal,
-				parenting = { "expand" : True }
-			) as splitContainer :
+					GafferUI.Spacer( imath.V2i( 2, 2 ) )
 
-				self.__directoryListing = GafferUI.PathListingWidget( tmpPath, allowMultipleSelection=allowMultipleSelection )
-				self.__displayModeChangedConnection = self.__directoryListing.displayModeChangedSignal().connect( Gaffer.WeakMethod( self.__displayModeChanged ) )
-				if len( previewTypes ) :
-					self.__previewWidget = GafferUI.CompoundPathPreview( tmpPath, childTypes=previewTypes )
-				else :
-					self.__previewWidget = None
+					self.__dirPathWidget = GafferUI.PathWidget( tmpPath )
 
-			if len( splitContainer ) > 1 :
-				splitContainer.setSizes( [ 2, 1 ] ) # give priority to the listing over the preview
+				# directory listing and preview widget
+				with GafferUI.SplitContainer(
+					GafferUI.SplitContainer.Orientation.Horizontal,
+					parenting = { "expand" : True }
+				) as splitContainer :
 
-			# filter section
-			self.__filterFrame = GafferUI.Frame( borderWidth=0, borderStyle=GafferUI.Frame.BorderStyle.None )
-			self.__filter = None
+					self.__directoryListing = GafferUI.PathListingWidget( tmpPath, allowMultipleSelection=allowMultipleSelection )
+					self.__directoryListing.displayModeChangedSignal().connect( Gaffer.WeakMethod( self.__displayModeChanged ), scoped = False )
+					if len( previewTypes ) :
+						self.__previewWidget = GafferUI.CompoundPathPreview( tmpPath, childTypes=previewTypes )
+					else :
+						self.__previewWidget = None
+
+				if len( splitContainer ) > 1 :
+					splitContainer.setSizes( [ 2, 1 ] ) # give priority to the listing over the preview
+
+				# filter section
+				self.__filterFrame = GafferUI.Frame( borderWidth=4, borderStyle=GafferUI.Frame.BorderStyle.None )
+				self.__filter = None
 
 			# path
 			self.__pathWidget = GafferUI.PathWidget( tmpPath )
@@ -109,9 +117,9 @@ class PathChooserWidget( GafferUI.Widget ) :
 
 		self.__pathSelectedSignal = GafferUI.WidgetSignal()
 
-		self.__listingSelectionChangedConnection = self.__directoryListing.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__listingSelectionChanged ) )
-		self.__listingSelectedConnection = self.__directoryListing.pathSelectedSignal().connect( Gaffer.WeakMethod( self.__pathSelected ) )
-		self.__pathWidgetSelectedConnection = self.__pathWidget.activatedSignal().connect( Gaffer.WeakMethod( self.__pathSelected ) )
+		self.__directoryListing.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__listingSelectionChanged ), scoped = False )
+		self.__directoryListing.pathSelectedSignal().connect( Gaffer.WeakMethod( self.__pathSelected ), scoped = False )
+		self.__pathWidget.activatedSignal().connect( Gaffer.WeakMethod( self.__pathSelected ), scoped = False )
 
 		self.__path = None
 		self.setPath( path )
@@ -188,12 +196,12 @@ class PathChooserWidget( GafferUI.Widget ) :
 
 		assert( widget is self.__directoryListing )
 
-		selection = self.__directoryListing.getSelectedPaths()
-		if not selection :
+		selection = self.__directoryListing.getSelection()
+		if selection.isEmpty() :
 			return
 
 		with Gaffer.BlockedConnection( self.__pathChangedConnection ) :
-			self.__path[:] = selection[0][:]
+			self.__path.setFromString( selection.paths()[0] )
 
 	# This slot is connected to the pathSelectedSignals of the children and just forwards
 	# them to our own pathSelectedSignal.
@@ -265,9 +273,9 @@ class PathChooserWidget( GafferUI.Widget ) :
 
 		# and update the selection in the listing
 		if path.isLeaf() :
-			self.__directoryListing.setSelectedPaths( [ path ] )
+			self.__directoryListing.setSelection( IECore.PathMatcher( [ str( path ) ] ) )
 		else :
-			self.__directoryListing.setSelectedPaths( [] )
+			self.__directoryListing.setSelection( IECore.PathMatcher() )
 
 	def __dirPathChanged( self, dirPath ) :
 
@@ -325,7 +333,7 @@ class PathChooserWidget( GafferUI.Widget ) :
 			m.append(
 				"/" + name,
 				{
-					"command" : IECore.curry( self.__path.setFromString, bookmark ),
+					"command" : functools.partial( self.__path.setFromString, bookmark ),
 					"active" : testPath.isValid(),
 					"description" : bookmark,
 				}
@@ -340,7 +348,7 @@ class PathChooserWidget( GafferUI.Widget ) :
 				m.append(
 					"/Recent/%d" % i,
 					{
-						"command" : IECore.curry( self.__path.setFromString, bookmark ),
+						"command" : functools.partial( self.__path.setFromString, bookmark ),
 						"active" : testPath.isValid(),
 						"description" : bookmark,
 						"label" : bookmark,
@@ -350,7 +358,7 @@ class PathChooserWidget( GafferUI.Widget ) :
 		m.append( "/SaveDeleteDivider", { "divider" : True } )
 
 		for name in self.__bookmarks.names( persistent=True ) :
-			m.append( "/Delete/" + name, { "command" : IECore.curry( self.__bookmarks.remove, name ) } )
+			m.append( "/Delete/" + name, { "command" : functools.partial( self.__bookmarks.remove, name ) } )
 
 		m.append( "/Add Bookmark...", {
 			"command" : Gaffer.WeakMethod( self.__saveBookmark ),

@@ -34,20 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/CurvesPrimitive.h"
-#include "IECore/Shader.h"
+#include "GafferScene/Grid.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/Grid.h"
+#include "IECoreScene/CurvesPrimitive.h"
+#include "IECoreScene/Shader.h"
 
 using namespace std;
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( Grid );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Grid );
 
 size_t Grid::g_firstPlugIndex = 0;
 static InternedString g_gridLinesName( "gridLines" );
@@ -294,8 +295,10 @@ IECore::ConstCompoundObjectPtr Grid::computeAttributes( const SceneNode::ScenePa
 	{
 		CompoundObjectPtr result = new CompoundObject;
 
+		/// \todo Remove hardcoded GL-specific attributes,
+		/// and consider removing GL line width plugs too.
+
 		result->members()["gl:curvesPrimitive:useGLLines"] = new BoolData( true );
-		result->members()["gl:smoothing:lines"] = new BoolData( true );
 
 		ShaderPtr shader = new Shader( "Constant", "gl:surface" );
 		shader->parameters()["Cs"] = new Color3fData( Color3f( 1 ) );
@@ -481,7 +484,7 @@ void Grid::hashSet( const IECore::InternedString &setName, const Gaffer::Context
 	h = outPlug()->setPlug()->defaultValue()->Object::hash();
 }
 
-GafferScene::ConstPathMatcherDataPtr Grid::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr Grid::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	return outPlug()->setPlug()->defaultValue();
 }

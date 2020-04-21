@@ -38,6 +38,8 @@
 import os
 import unittest
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -49,8 +51,8 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 
 	def testPassThrough( self ) :
 
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/animatedCube.abc" )
+		a = GafferScene.SceneReader()
+		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/groupedPlane.abc" )
 
 		s = GafferScene.SubTree()
 		s["in"].setInput( a["out"] )
@@ -61,20 +63,20 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertScenesEqual( a["out"], s["out"] )
 		self.assertSceneHashesEqual( a["out"], s["out"] )
-		self.assertTrue( a["out"].object( "/pCube1/pCubeShape1", _copy = False ).isSame( s["out"].object( "/pCube1/pCubeShape1", _copy = False ) ) )
+		self.assertTrue( a["out"].object( "/group/plane", _copy = False ).isSame( s["out"].object( "/group/plane", _copy = False ) ) )
 
 	def testSubTree( self ) :
 
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/animatedCube.abc" )
+		a = GafferScene.SceneReader()
+		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/groupedPlane.abc" )
 
 		s = GafferScene.SubTree()
 		s["in"].setInput( a["out"] )
-		s["root"].setValue( "/pCube1" )
+		s["root"].setValue( "/group" )
 
 		self.assertSceneValid( s["out"] )
-		self.assertScenesEqual( s["out"], a["out"], scenePlug2PathPrefix = "/pCube1" )
-		self.assertTrue( a["out"].object( "/pCube1/pCubeShape1", _copy = False ).isSame( s["out"].object( "/pCubeShape1", _copy = False ) ) )
+		self.assertScenesEqual( s["out"], a["out"], scenePlug2PathPrefix = "/group" )
+		self.assertTrue( a["out"].object( "/group/plane", _copy = False ).isSame( s["out"].object( "/plane", _copy = False ) ) )
 
 	def testSets( self ) :
 
@@ -92,7 +94,7 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 
 	def testRootHashesEqual( self ) :
 
-		a = GafferScene.AlembicSource()
+		a = GafferScene.SceneReader()
 		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/animatedCube.abc" )
 
 		s = GafferScene.SubTree()
@@ -219,25 +221,25 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 
 	def testIncludeRoot( self ) :
 
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/animatedCube.abc" )
+		a = GafferScene.SceneReader()
+		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/groupedPlane.abc" )
 
 		s = GafferScene.SubTree()
 		s["in"].setInput( a["out"] )
-		s["root"].setValue( "/pCube1" )
+		s["root"].setValue( "/group" )
 		s["includeRoot"].setValue( True )
 
 		self.assertSceneValid( s["out"] )
 
 		self.assertScenesEqual( s["out"], a["out"], pathsToIgnore = [ "/", ] )
-		self.assertEqual( s["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "pCube1" ] ) )
-		self.assertEqual( s["out"].bound( "/" ), a["out"].bound( "/pCube1" ) )
+		self.assertEqual( s["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "group" ] ) )
+		self.assertEqual( s["out"].bound( "/" ), a["out"].bound( "/group" ) )
 
-		self.assertTrue( a["out"].object( "/pCube1/pCubeShape1", _copy = False ).isSame( s["out"].object( "/pCube1/pCubeShape1", _copy = False ) ) )
+		self.assertTrue( a["out"].object( "/group/plane", _copy = False ).isSame( s["out"].object( "/group/plane", _copy = False ) ) )
 
 	def testRootBoundWithTransformedChild( self ) :
 
-		a = GafferScene.AlembicSource()
+		a = GafferScene.SceneReader()
 		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/animatedCube.abc" )
 
 		s = GafferScene.SubTree()
@@ -250,13 +252,13 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 			c.setFrame( 10 )
 
 			expectedRootBound = a["out"].bound( "/pCube1" )
-			expectedRootBound = expectedRootBound.transform( a["out"].transform( "/pCube1" ) )
+			expectedRootBound = expectedRootBound * a["out"].transform( "/pCube1" )
 
 			self.assertEqual( s["out"].bound( "/" ), expectedRootBound )
 
 	def testIncludeRootPassesThroughWhenNoRootSpecified( self ) :
 
-		a = GafferScene.AlembicSource()
+		a = GafferScene.SceneReader()
 		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/animatedCube.abc" )
 
 		s = GafferScene.SubTree()
@@ -270,7 +272,7 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertScenesEqual( a["out"], s["out"] )
 		self.assertSceneHashesEqual( a["out"], s["out"] )
-		self.assertTrue( a["out"].object( "/pCube1/pCubeShape1", _copy = False ).isSame( s["out"].object( "/pCube1/pCubeShape1", _copy = False ) ) )
+		self.assertTrue( a["out"].object( "/pCube1", _copy = False ).isSame( s["out"].object( "/pCube1", _copy = False ) ) )
 
 	def testSetsWithIncludeRoot( self ) :
 
@@ -324,15 +326,30 @@ class SubTreeTest( GafferSceneTest.SceneTestCase ) :
 	def testInvalidRoot( self ) :
 
 		p = GafferScene.Plane()
+		p["sets"].setValue( "A" )
 
 		g = GafferScene.Group()
 		g["in"][0].setInput( p["out"] )
 
 		s = GafferScene.SubTree()
 		s["in"].setInput( g["out"] )
-		s["root"].setValue( "notAThing" )
 
-		self.assertRaisesRegexp( RuntimeError, r"Root \"notAThing\" does not exist", s["out"].childNames, "/" )
+		# An invalid root matches nothing, so should output an empty scene
+
+		for includeRoot in ( True, False ) :
+
+			s["includeRoot"].setValue( includeRoot )
+
+			for root in ( "notAThing", "/group/stillNotAThing", "/group/definitely/not/a/thing" ) :
+
+				s["root"].setValue( root )
+
+				self.assertSceneValid( s["out"] )
+				self.assertEqual( s["out"].childNames( "/" ), IECore.InternedStringVectorData() )
+				self.assertEqual( s["out"].set( "A" ), IECore.PathMatcherData() )
+				self.assertEqual( s["out"].bound( "/" ), imath.Box3f() )
+				self.assertEqual( s["out"].attributes( "/" ), IECore.CompoundObject() )
+				self.assertEqual( s["out"].transform( "/" ), imath.M44f() )
 
 if __name__ == "__main__":
 	unittest.main()

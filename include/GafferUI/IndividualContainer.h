@@ -45,27 +45,27 @@ namespace GafferUI
 
 /// The IndividualContainer class allows a single child to be held,
 /// and rejects efforts to add any more.
-class IndividualContainer : public ContainerGadget
+class GAFFERUI_API IndividualContainer : public ContainerGadget
 {
 
 	public :
 
-		IndividualContainer( GadgetPtr child=0 );
-		virtual ~IndividualContainer();
+		IndividualContainer( GadgetPtr child=nullptr );
+		~IndividualContainer() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::IndividualContainer, IndividualContainerTypeId, ContainerGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::IndividualContainer, IndividualContainerTypeId, ContainerGadget );
 
 		/// Accepts the child only if there are currently no children.
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
+		bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
 
 		/// Removes the current child if there is one, and replaces it
 		/// with the specified gadget.
 		void setChild( GadgetPtr child );
 		/// Returns the child, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=Gadget>
 		T *getChild();
 		/// Returns the child, performing a runTimeCast to T.
-		template<typename T>
+		template<typename T=Gadget>
 		const T *getChild() const;
 
 };

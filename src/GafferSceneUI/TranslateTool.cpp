@@ -34,20 +34,22 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferSceneUI/TranslateTool.h"
 
-#include "OpenEXR/ImathMatrixAlgo.h"
-
-#include "Gaffer/UndoScope.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/MetadataAlgo.h"
-
-#include "GafferUI/TranslateHandle.h"
+#include "GafferSceneUI/SceneView.h"
 
 #include "GafferScene/SceneAlgo.h"
 
-#include "GafferSceneUI/TranslateTool.h"
-#include "GafferSceneUI/SceneView.h"
+#include "GafferUI/Pointer.h"
+#include "GafferUI/TranslateHandle.h"
+
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/UndoScope.h"
+
+#include "OpenEXR/ImathMatrixAlgo.h"
+
+#include "boost/bind.hpp"
 
 using namespace std;
 using namespace Imath;
@@ -57,7 +59,7 @@ using namespace GafferUI;
 using namespace GafferScene;
 using namespace GafferSceneUI;
 
-IE_CORE_DEFINERUNTIMETYPED( TranslateTool );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TranslateTool );
 
 TranslateTool::ToolDescription<TranslateTool, SceneView> TranslateTool::g_toolDescription;
 
@@ -67,19 +69,32 @@ TranslateTool::TranslateTool( SceneView *view, const std::string &name )
 	:	TransformTool( view, name )
 {
 
-	static Style::Axes axes[] = { Style::X, Style::Y, Style::Z };
-	static const char *handleNames[] = { "x", "y", "z" };
+	static Style::Axes axes[] = { Style::X, Style::Y, Style::Z, Style::XY, Style::XZ, Style::YZ, Style::XYZ };
+	static const char *handleNames[] = { "x", "y", "z", "xy", "xz", "yz", "xyz" };
 
-	for( int i = 0; i < 3; ++i )
+	for( int i = 0; i < 7; ++i )
 	{
 		HandlePtr handle = new TranslateHandle( axes[i] );
 		handle->setRasterScale( 75 );
 		handles()->setChild( handleNames[i], handle );
 		// connect with group 0, so we get called before the Handle's slot does.
-		handle->dragBeginSignal().connect( 0, boost::bind( &TranslateTool::dragBegin, this, i ) );
-		handle->dragMoveSignal().connect( boost::bind( &TranslateTool::dragMove, this, ::_1, ::_2 ) );
-		handle->dragEndSignal().connect( boost::bind( &TranslateTool::dragEnd, this ) );
+		handle->dragBeginSignal().connect( 0, boost::bind( &TranslateTool::handleDragBegin, this ) );
+		handle->dragMoveSignal().connect( boost::bind( &TranslateTool::handleDragMove, this, ::_1, ::_2 ) );
+		handle->dragEndSignal().connect( boost::bind( &TranslateTool::handleDragEnd, this ) );
 	}
+
+	SceneGadget *sg = runTimeCast<SceneGadget>( this->view()->viewportGadget()->getPrimaryChild() );
+	sg->keyPressSignal().connect( boost::bind( &TranslateTool::keyPress, this, ::_2 ) );
+	sg->keyReleaseSignal().connect( boost::bind( &TranslateTool::keyRelease, this, ::_2 ) );
+	sg->leaveSignal().connect( boost::bind( &TranslateTool::sceneGadgetLeave, this, ::_2 ) );
+	// We have to insert this before the underlying SelectionTool connections or it starts an object drag.
+	sg->buttonPressSignal().connect( 0, boost::bind( &TranslateTool::buttonPress, this, ::_2 ) );
+
+	// We need to track the tool state/view visibility so we don't leave a lingering target cursor
+	sg->visibilityChangedSignal().connect( boost::bind( &TranslateTool::visibilityChanged, this, ::_1 ) );
+	// We use set not dirtied to make sure we're called synchronously. We're
+	// happy to assume that this plug won't ever be connected to anything.
+	plugSetSignal().connect( boost::bind( &TranslateTool::plugSet, this, ::_1 ) );
 
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -112,10 +127,11 @@ bool TranslateTool::affectsHandles( const Gaffer::Plug *input ) const
 		input == scenePlug()->transformPlug();
 }
 
-void TranslateTool::updateHandles()
+void TranslateTool::updateHandles( float rasterScale )
 {
+	const Orientation orientation = static_cast<Orientation>( orientationPlug()->getValue() );
 	handles()->setTransform(
-		orientedTransform( static_cast<Orientation>( orientationPlug()->getValue() ) )
+		selection().back().orientedTransform( orientation )
 	);
 
 	// Because we provide multiple orientations, the handles
@@ -124,103 +140,236 @@ void TranslateTool::updateHandles()
 	// of the target translation. For each handle, check to see
 	// if each of the plugs it effects are settable, and if not,
 	// disable the handle.
-	for( int i = 0; i < 3; ++i )
+	for( TranslateHandleIterator it( handles() ); !it.done(); ++it )
 	{
-		V3f handleDirection( 0 );
-		handleDirection[i] = 1.0f;
-		Translation translation = createTranslation( handleDirection );
-		bool editable = true;
-		for( int j = 0; j < 3; ++j )
+		bool enabled = true;
+		for( const auto &s : selection() )
 		{
-			if( translation.direction[j] != 0.0f )
+			if( !Translation( s, orientation ).canApply( (*it)->axisMask() ) )
 			{
-				const ValuePlug *plug = selection().transformPlug->translatePlug()->getChild( j );
-				if( !plug->settable() || MetadataAlgo::readOnly( plug ) )
-				{
-					editable = false;
-					break;
-				}
+				enabled = false;
+				break;
 			}
 		}
-		handles()->getChild<Gadget>( i )->setEnabled( editable );
+		(*it)->setEnabled( enabled );
+		(*it)->setRasterScale( rasterScale );
 	}
 }
 
 void TranslateTool::translate( const Imath::V3f &offset )
 {
-	if( !selection().transformPlug )
+	const Orientation orientation = static_cast<Orientation>( orientationPlug()->getValue() );
+	for( const auto &s : selection() )
 	{
-		return;
+		Translation( s, orientation ).apply( offset );
 	}
-
-	Translation t = createTranslation( offset );
-	applyTranslation( t, 1.0f );
 }
 
-TranslateTool::Translation TranslateTool::createTranslation( const Imath::V3f &directionInHandleSpace )
+bool TranslateTool::keyPress( const GafferUI::KeyEvent &event )
 {
-	Context::Scope scopedContext( view()->getContext() );
-	Translation result;
-
-	const Selection &selection = this->selection();
-	result.origin = selection.transformPlug->translatePlug()->getValue();
-
-	const M44f handlesTransform = orientedTransform( static_cast<Orientation>( orientationPlug()->getValue() ) );
-	V3f worldSpaceDirection;
-	handlesTransform.multDirMatrix( directionInHandleSpace, worldSpaceDirection );
-
-	const M44f downstreamMatrix = scenePlug()->fullTransform( selection.path );
-	M44f upstreamMatrix;
+	if( activePlug()->getValue() && event.key == "V" )
 	{
-		Context::Scope scopedContext( selection.context.get() );
-		upstreamMatrix = selection.upstreamScene->fullTransform( selection.upstreamPath );
+		setTargetedMode( true );
+		return true;
 	}
 
-	V3f downstreamDirection;
-	downstreamMatrix.inverse().multDirMatrix( worldSpaceDirection, downstreamDirection );
-
-	V3f upstreamWorldDirection;
-	upstreamMatrix.multDirMatrix( downstreamDirection, upstreamWorldDirection );
-
-	selection.transformSpace.inverse().multDirMatrix( upstreamWorldDirection, result.direction );
-
-	return result;
+	return false;
 }
 
-void TranslateTool::applyTranslation( const Translation &translation, float offset )
+bool TranslateTool::keyRelease( const GafferUI::KeyEvent &event )
 {
-	const Selection &selection = this->selection();
-	for( int i = 0; i < 3; ++i )
+	if( activePlug()->getValue() && event.key == "V" )
 	{
-		if( translation.direction[i] != 0.0f )
+		setTargetedMode( false );
+		return true;
+	}
+
+	return false;
+}
+
+void TranslateTool::sceneGadgetLeave( const GafferUI::ButtonEvent & event )
+{
+	if( getTargetedMode() )
+	{
+		// We loose keyRelease events in a variety of scenarios so turn targeted
+		// off whenever the mouse leaves the scene view. Key-repeat events will
+		// cause it to be re-enabled when the mouse re-enters if the key is still
+		// held down at that time.
+		setTargetedMode( false );
+	}
+}
+
+void TranslateTool::plugSet( Gaffer::Plug *plug )
+{
+	if( plug == activePlug() )
+	{
+		if( !activePlug()->getValue() && getTargetedMode() )
 		{
-			selection.transformPlug->translatePlug()->getChild( i )->setValue(
-				translation.origin[i] + translation.direction[i] * offset
-			);
+			setTargetedMode( false );
 		}
 	}
 }
 
-IECore::RunTimeTypedPtr TranslateTool::dragBegin( int axis )
+void TranslateTool::visibilityChanged( GafferUI::Gadget *gadget )
 {
-	V3f handleVector( 0 );
-	handleVector[axis] = 1;
-	m_drag = createTranslation( handleVector );
-
-	TransformTool::dragBegin();
-	return NULL; // let the handle start the drag with the event system
+	if( !gadget->visible() && getTargetedMode() )
+	{
+		setTargetedMode( false );
+	}
 }
 
-bool TranslateTool::dragMove( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
+void TranslateTool::setTargetedMode( bool targeted )
 {
-	UndoScope undoScope( selection().transformPlug->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
-	const float offset = static_cast<const TranslateHandle *>( gadget )->translation( event );
-	applyTranslation( m_drag, offset );
+	if( targeted == m_targetedMode )
+	{
+		return;
+	}
+
+	m_targetedMode = targeted;
+
+	GafferUI::Pointer::setCurrent( targeted ? "target" : "" );
+}
+
+
+IECore::RunTimeTypedPtr TranslateTool::handleDragBegin()
+{
+	m_drag.clear();
+	const Orientation orientation = static_cast<Orientation>( orientationPlug()->getValue() );
+	for( const auto &s : selection() )
+	{
+		m_drag.push_back( Translation( s, orientation ) );
+	}
+	TransformTool::dragBegin();
+	return nullptr; // let the handle start the drag with the event system
+}
+
+bool TranslateTool::handleDragMove( GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event )
+{
+	UndoScope undoScope( selection().back().editTarget()->ancestor<ScriptNode>(), UndoScope::Enabled, undoMergeGroup() );
+	const V3f translation = static_cast<TranslateHandle *>( gadget )->translation( event );
+	for( auto &t : m_drag )
+	{
+		t.apply( translation );
+	}
 	return true;
 }
 
-bool TranslateTool::dragEnd()
+bool TranslateTool::handleDragEnd()
 {
 	TransformTool::dragEnd();
 	return false;
+}
+
+bool TranslateTool::buttonPress( const GafferUI::ButtonEvent &event )
+{
+	if( event.buttons != ButtonEvent::Left || !activePlug()->getValue() || !getTargetedMode() )
+	{
+		return false;
+	}
+
+	// In targeted mode, we teleport the selection to the clicked point.
+	//
+	// Our prescribed behaviour is to move the bbox center of the selection
+	// to the clicked point. If multiple locations are selected, their combined
+	// bounds should be used, so they retain their existing relative spacing.
+	//
+	// We always return true to prevent the SelectTool defaults.
+
+	if( !selectionEditable() )
+	{
+		return true;
+	}
+
+	GafferScene::ScenePlug::ScenePath _;
+	Imath::V3f targetPos;
+
+	const SceneView *sv = static_cast<const SceneView *>( view() );
+	const Gadget *g = sv->viewportGadget()->getPrimaryChild();
+	const SceneGadget* sg = static_cast<const SceneGadget *>( g );
+	if( !sg->objectAt( event.line, _, targetPos ) )
+	{
+		return true;
+	}
+
+	Box3f selectionCentroids;
+	for( const auto &s : selection() )
+	{
+		Context::Scope scopedContext( s.context() );
+
+		const M44f worldTransform = s.scene()->fullTransform( s.path() );
+		selectionCentroids.extendBy( s.scene()->bound( s.path() ).center() * worldTransform );
+	}
+
+	UndoScope undoScope( selection().back().editTarget()->ancestor<ScriptNode>() );
+
+	const V3f offset = targetPos - selectionCentroids.center();
+	for( const auto &s : selection() )
+	{
+		Translation( s, World ).apply( offset );
+	}
+
+	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// TranslateTool::Translation
+//////////////////////////////////////////////////////////////////////////
+
+TranslateTool::Translation::Translation( const Selection &selection, Orientation orientation )
+	:	m_selection( selection )
+{
+	const M44f handlesTransform = selection.orientedTransform( orientation );
+	m_gadgetToTransform = handlesTransform * selection.sceneToTransformSpace();
+}
+
+bool TranslateTool::Translation::canApply( const Imath::V3f &offset ) const
+{
+	auto edit = m_selection.acquireTransformEdit( /* createIfNecessary = */ false );
+	if( !edit )
+	{
+		// Edit will be created on demand in `apply()`.
+		return !MetadataAlgo::readOnly( m_selection.editTarget() );
+	}
+
+	V3f offsetInTransformSpace;
+	m_gadgetToTransform.multDirMatrix( offset, offsetInTransformSpace );
+
+	for( int i = 0; i < 3; ++i )
+	{
+		if( offsetInTransformSpace[i] != 0.0f )
+		{
+			if( !canSetValueOrAddKey( edit->translate->getChild( i ) ) )
+			{
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+void TranslateTool::Translation::apply( const Imath::V3f &offset )
+{
+	V3fPlug *translatePlug = m_selection.acquireTransformEdit()->translate.get();
+	if( !m_origin )
+	{
+		// First call to `apply()`.
+		Context::Scope scopedContext( m_selection.context() );
+		m_origin = translatePlug->getValue();
+	}
+
+	V3f offsetInTransformSpace;
+	m_gadgetToTransform.multDirMatrix( offset, offsetInTransformSpace );
+	for( int i = 0; i < 3; ++i )
+	{
+		FloatPlug *plug = translatePlug->getChild( i );
+		if( canSetValueOrAddKey( plug ) )
+		{
+			setValueOrAddKey(
+				plug,
+				m_selection.context()->getTime(),
+				(*m_origin)[i] + offsetInTransformSpace[i]
+			);
+		}
+	}
 }

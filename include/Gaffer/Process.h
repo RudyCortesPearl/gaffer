@@ -37,17 +37,16 @@
 #ifndef GAFFER_PROCESS_H
 #define GAFFER_PROCESS_H
 
-#include "tbb/enumerable_thread_specific.h"
-
-#include "boost/noncopyable.hpp"
+#include "Gaffer/Export.h"
+#include "Gaffer/ThreadState.h"
 
 #include "IECore/InternedString.h"
 
 namespace Gaffer
 {
 
-class Plug;
-class Monitor;
+IE_CORE_FORWARDDECLARE( Context );
+IE_CORE_FORWARDDECLARE( Plug );
 
 /// Base class representing a node graph process being
 /// performed on behalf of a plug. Processes are never
@@ -57,32 +56,35 @@ class Monitor;
 /// considered to be entirely an internal implementation
 /// detail - they are exposed publicly only so they can
 /// be used by the Monitor classes.
-class Process : public boost::noncopyable
+class GAFFER_API Process : private ThreadState::Scope
 {
 
 	public :
 
 		/// The type of process being performed.
 		const IECore::InternedString type() const { return m_type; }
-		/// The plug for which the process is being
-		/// performed.
+		/// The plug which is the subject of the process being performed.
 		const Plug *plug() const { return m_plug; }
+		/// The plug which triggered the process. This may be the same as
+		/// `plug()` or may be a downstream plug. In either case,
+		/// `destinationPlug()->source() == plug()`.
+		const Plug *destinationPlug() const { return m_destinationPlug; }
+		/// The context in which the process is being
+		/// performed.
+		const Context *context() const { return m_threadState->m_context; }
 
 		/// Returns the parent process for this process - that
 		/// is, the process that invoked this one.
-		/// \todo Currently this does not track parent/child
-		/// relationships correctly when a parent process spawns
-		/// child processes on separate threads.
 		const Process *parent() const { return m_parent; }
 
 		/// Returns the Process currently being performed on
-		/// this thread, or NULL if there is no such process.
+		/// this thread, or null if there is no such process.
 		static const Process *current();
 
 	protected :
 
 		/// Protected constructor for use by derived classes only.
-		Process( const IECore::InternedString &type, const Plug *plug, const Plug *downstream = NULL );
+		Process( const IECore::InternedString &type, const Plug *plug, const Plug *destinationPlug = nullptr );
 		~Process();
 
 		/// Derived classes should catch exceptions thrown
@@ -96,24 +98,46 @@ class Process : public boost::noncopyable
 
 	private :
 
-		// Friendship allows monitors to register and deregister
-		// themselves.
-		friend class Monitor;
-		static void registerMonitor( Monitor *monitor );
-		static void deregisterMonitor( Monitor *monitor );
-		static bool monitorRegistered( const Monitor *monitor );
-
-		void emitError( const std::string &error ) const;
-
-		struct ThreadData;
+		void emitError( const std::string &error, const Plug *source = nullptr ) const;
 
 		IECore::InternedString m_type;
 		const Plug *m_plug;
-		const Plug *m_downstream;
+		const Plug *m_destinationPlug;
 		const Process *m_parent;
-		ThreadData *m_threadData;
 
-		static tbb::enumerable_thread_specific<ThreadData, tbb::cache_aligned_allocator<Process::ThreadData>, tbb::ets_key_per_instance> g_threadData;
+};
+
+/// Used to wrap exceptions that occur during execution of a Process,
+/// adding plug name and process type to the original message.
+class GAFFER_API ProcessException : public std::runtime_error
+{
+
+	public :
+
+		ProcessException( const ProcessException &rhs ) = default;
+
+		const Plug *plug() const;
+		const Context *context() const;
+		IECore::InternedString processType() const;
+
+		/// Rethrows the original exception that was wrapped by `wrapCurrentException()`.
+		[[noreturn]] void rethrowUnwrapped() const;
+
+		/// Throws a ProcessException wrapping the current exception and storing
+		/// the specified process information.
+		[[noreturn]] static void wrapCurrentException( const Process &process );
+		[[noreturn]] static void wrapCurrentException( const ConstPlugPtr &plug, const Context *context, IECore::InternedString processType );
+
+	private :
+
+		ProcessException( const ConstPlugPtr &plug, const Context *context, IECore::InternedString processType, const std::exception_ptr &exception, const char *what );
+
+		static std::string formatWhat( const Plug *plug, const char *what );
+
+		ConstPlugPtr m_plug;
+		ConstContextPtr m_context;
+		const IECore::InternedString m_processType;
+		std::exception_ptr m_exception;
 
 };
 

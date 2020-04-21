@@ -53,7 +53,7 @@ class ScenePathPlugValueWidget( GafferUI.PathPlugValueWidget ) :
 				)
 
 			path = GafferScene.ScenePath(
-				plug.node()["in"],
+				self.__scenePlug( plug ),
 				plug.node().scriptNode().context(),
 				"/",
 				filter = filter
@@ -65,7 +65,7 @@ class ScenePathPlugValueWidget( GafferUI.PathPlugValueWidget ) :
 
 		dialogue = GafferUI.PathPlugValueWidget._pathChooserDialogue( self )
 
-		# Unsorted tree view with only a name column - like the SceneHierarchy.
+		# Unsorted tree view with only a name column - like the HierarchyView.
 		dialogue.pathChooserWidget().pathListingWidget().setDisplayMode( GafferUI.PathListingWidget.DisplayMode.Tree )
 		dialogue.pathChooserWidget().pathListingWidget().setColumns( ( GafferUI.PathListingWidget.defaultNameColumn, ) )
 		dialogue.pathChooserWidget().pathListingWidget().setSortable( False )
@@ -82,3 +82,31 @@ class ScenePathPlugValueWidget( GafferUI.PathPlugValueWidget ) :
 			path[:] = pathNames
 
 		return dialogue
+
+	def __scenePlug( self, plug ) :
+
+		scenePlugName = Gaffer.Metadata.value( plug, "scenePathPlugValueWidget:scene" ) or "in"
+		scenePlug = plug.node().descendant( scenePlugName )
+		if scenePlug and isinstance( scenePlug, GafferScene.ScenePlug ) :
+			return scenePlug
+
+		# Couldn't find scene plug. Perhaps `plug` has been promoted but the
+		# corresponding scene hasn't been yet. Check outputs to see if that
+		# is the case.
+
+		for output in plug.outputs() :
+			p = self.__scenePlug( output )
+			if p is not None :
+				return p
+
+		# Or perhaps `plug` is in a cell in a spreadsheet, in which case
+		# we may be able to get somewhere by looking where the corresponding
+		# output is connected.
+		## \todo Can this sort of traversal be wrapped up in PlugAlgo somehow?
+
+		cellPlug = plug.ancestor( Gaffer.Spreadsheet.CellPlug )
+		if cellPlug is not None :
+			spreadsheet = cellPlug.ancestor( Gaffer.Spreadsheet )
+			if spreadsheet is not None :
+				return self.__scenePlug( spreadsheet["out"][cellPlug.getName()] )
+

@@ -39,13 +39,17 @@
 
 #include "GafferUI/ModifiableEvent.h"
 
+#include "IECore/Export.h"
+
+IECORE_PUSH_DEFAULT_VISIBILITY
 #include "OpenEXR/ImathVec.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace GafferUI
 {
 
 /// A class to represent events involving keyboard keys.
-struct KeyEvent : public ModifiableEvent
+struct GAFFERUI_API KeyEvent : public ModifiableEvent
 {
 	KeyEvent(
 		const char *k = "a",
@@ -59,6 +63,16 @@ struct KeyEvent : public ModifiableEvent
 	std::string key;
 
 };
+
+inline bool operator == ( const KeyEvent &lhs, const KeyEvent &rhs )
+{
+	return lhs.modifiers == rhs.modifiers && lhs.key == rhs.key;
+}
+
+inline bool operator != ( const KeyEvent &lhs, const KeyEvent &rhs )
+{
+	return !(lhs == rhs);
+}
 
 } // namespace GafferUI
 

@@ -38,32 +38,32 @@
 #ifndef GAFFERSCENE_OPTIONS_H
 #define GAFFERSCENE_OPTIONS_H
 
-#include "Gaffer/CompoundDataPlug.h"
-
 #include "GafferScene/GlobalsProcessor.h"
+
+#include "Gaffer/CompoundDataPlug.h"
 
 namespace GafferScene
 {
 
-class Options : public GlobalsProcessor
+class GAFFERSCENE_API Options : public GlobalsProcessor
 {
 
 	public :
 
 		Options( const std::string &name=defaultName<Options>() );
-		virtual ~Options();
+		~Options() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Options, OptionsTypeId, GlobalsProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::Options, OptionsTypeId, GlobalsProcessor );
 
 		Gaffer::CompoundDataPlug *optionsPlug();
 		const Gaffer::CompoundDataPlug *optionsPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashProcessedGlobals( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeProcessedGlobals( const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputGlobals ) const;
+		void hashProcessedGlobals( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeProcessedGlobals( const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputGlobals ) const override;
 
 		virtual void hashPrefix( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual std::string computePrefix( const Gaffer::Context *context ) const;

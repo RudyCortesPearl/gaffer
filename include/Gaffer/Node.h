@@ -38,9 +38,9 @@
 #ifndef GAFFER_NODE_H
 #define GAFFER_NODE_H
 
-#include "Gaffer/GraphComponent.h"
 #include "Gaffer/FilteredChildIterator.h"
 #include "Gaffer/FilteredRecursiveChildIterator.h"
+#include "Gaffer/GraphComponent.h"
 
 namespace Gaffer
 {
@@ -54,15 +54,15 @@ IE_CORE_FORWARDDECLARE( ScriptNode )
 /// to the plugs and their values, flags and connections. The Node class itself
 /// doesn't define any means of performing computations - this is instead provided by
 /// the DependencyNode and ComputeNode derived classes.
-class Node : public GraphComponent
+class GAFFER_API Node : public GraphComponent
 {
 
 	public :
 
 		Node( const std::string &name=defaultName<Node>() );
-		virtual ~Node();
+		~Node() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Node, NodeTypeId, GraphComponent );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Node, NodeTypeId, GraphComponent );
 
 		typedef boost::signal<void (Plug *)> UnaryPlugSignal;
 		typedef boost::signal<void (Plug *, Plug *)> BinaryPlugSignal;
@@ -126,9 +126,9 @@ class Node : public GraphComponent
 		const ScriptNode *scriptNode() const;
 
 		/// Accepts only Nodes and Plugs.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
 		/// Accepts only Nodes.
-		virtual bool acceptsParent( const GraphComponent *potentialParent ) const;
+		bool acceptsParent( const GraphComponent *potentialParent ) const override;
 
 		/// Signal type for communicating errors. The plug argument is the
 		/// plug being processed when the error occurred. The source argument
@@ -170,7 +170,7 @@ class Node : public GraphComponent
 
 		/// Implemented to remove all connections when the node is being
 		/// unparented.
-		virtual void parentChanging( Gaffer::GraphComponent *newParent );
+		void parentChanging( Gaffer::GraphComponent *newParent ) override;
 
 	private :
 

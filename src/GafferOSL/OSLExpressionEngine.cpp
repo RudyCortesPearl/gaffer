@@ -34,25 +34,26 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/regex.hpp"
-#include "boost/algorithm/string/replace.hpp"
-#include "boost/lexical_cast.hpp"
+#include "GafferOSL/Private/CapturingErrorHandler.h"
 
-#include "OpenImageIO/errorhandler.h"
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/Expression.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECoreImage/OpenImageIOAlgo.h"
+
+#include "IECore/StringAlgo.h"
 
 #include "OSL/oslcomp.h"
 #include "OSL/oslexec.h"
 
-#include "Gaffer/Expression.h"
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/StringAlgo.h"
-#include "Gaffer/Context.h"
-#include "Gaffer/CompoundNumericPlug.h"
-#include "Gaffer/StringPlug.h"
+#include "OpenImageIO/errorhandler.h"
 
-#include "GafferImage/OpenImageIOAlgo.h"
-
-#include "GafferOSL/Private/CapturingErrorHandler.h"
+#include "boost/algorithm/string/replace.hpp"
+#include "boost/lexical_cast.hpp"
+#include "boost/regex.hpp"
 
 using namespace std;
 using namespace boost;
@@ -97,58 +98,69 @@ class RendererServices : public OSL::RendererServices
 		{
 		}
 
-		virtual bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, TransformationPtr xform, float time )
+		bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, TransformationPtr xform, float time ) override
 		{
 			return false;
 		}
 
-		virtual bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, TransformationPtr xform )
+		bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, TransformationPtr xform ) override
 		{
 			return false;
 		}
 
-		virtual bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, ustring from, float time )
+		bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, ustring from, float time ) override
 		{
 			return false;
 		}
 
-		virtual bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, ustring from )
+		bool get_matrix( OSL::ShaderGlobals *sg, OSL::Matrix44 &result, ustring from ) override
 		{
 			return false;
 		}
 
-		virtual bool get_attribute( OSL::ShaderGlobals *sg, bool derivatives, ustring object, TypeDesc type, ustring name, void *value )
+		bool get_attribute( OSL::ShaderGlobals *sg, bool derivatives, ustring object, TypeDesc type, ustring name, void *value ) override
 		{
-			const RenderState *renderState = sg ? static_cast<RenderState *>( sg->renderstate ) : NULL;
+			const RenderState *renderState = sg ? static_cast<RenderState *>( sg->renderstate ) : nullptr;
 			if( !renderState )
 			{
 				return false;
 			}
 
-			const Data *data = renderState->context->get<Data>( name.c_str(), NULL );
+			const Data *data = renderState->context->get<Data>( name.c_str(), nullptr );
 			if( !data )
 			{
 				return false;
 			}
 
-			GafferImage::OpenImageIOAlgo::DataView dataView( data, /* createUStrings = */ true );
+			IECoreImage::OpenImageIOAlgo::DataView dataView( data, /* createUStrings = */ true );
 			if( !dataView.data )
 			{
+				if( auto b = runTimeCast<const BoolData>( data ) )
+				{
+					// BoolData isn't supported by `DataView` because `OIIO::TypeDesc` doesn't
+					// have a boolean type. We could work around this in `DataView` by casting to
+					// `TypeDesc::UCHAR` (along with a `static_assert( sizeof( bool ) == 1`). But that
+					// wouldn't be round-trippable via `OpenImageIOAlgo::data()`, so it's not clear
+					// that it would be a good thing in general. Here we don't care about round
+					// tripping, so we simply perform a conversion ourselves.
+					const unsigned char c = b->readable();
+					return ShadingSystem::convert_value( value, type, &c, TypeDesc::UCHAR );
+				}
 				return false;
 			}
 			return ShadingSystem::convert_value( value, type, dataView.data, dataView.type );
 		}
 
-		virtual bool get_array_attribute( OSL::ShaderGlobals *sg, bool derivatives, ustring object, TypeDesc type, ustring name, int index, void *value )
+		bool get_array_attribute( OSL::ShaderGlobals *sg, bool derivatives, ustring object, TypeDesc type, ustring name, int index, void *value ) override
 		{
 			return false;
 		}
 
 		// OSL tries to populate shader parameter values per-object by calling this method.
 		// So we implement it to search for an appropriate input plug and get its value.
-		virtual bool get_userdata( bool derivatives, ustring name, TypeDesc type, OSL::ShaderGlobals *sg, void *value )
+		bool get_userdata( bool derivatives, ustring name, TypeDesc type, OSL::ShaderGlobals *sg, void *value ) override
 		{
-			const RenderState *renderState = sg ? static_cast<RenderState *>( sg->renderstate ) : NULL;
+			const RenderState *renderState = sg ? static_cast<RenderState *>( sg->renderstate ) : nullptr;
 			if( !renderState )
 			{
 				return false;
@@ -180,6 +192,9 @@ class RendererServices : public OSL::RendererServices
 					case V3fPlugTypeId :
 						*(V3f *)value = static_cast<const V3fPlug *>( plug )->getValue();
 						return true;
+					case M44fPlugTypeId :
+						*(M44f *)value = static_cast<const M44fPlug *>( plug )->getValue();
+						return true;
 					case StringPlugTypeId :
 					{
 						ustring s( static_cast<const StringPlug *>( plug )->getValue() );
@@ -195,7 +210,7 @@ class RendererServices : public OSL::RendererServices
 
 		virtual bool has_userdata( ustring name, TypeDesc type, OSL::ShaderGlobals *sg )
 		{
-			return get_userdata( false, name, type, sg, NULL );
+			return get_userdata( false, name, type, sg, nullptr );
 		}
 
 };
@@ -221,11 +236,12 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 		{
 		}
 
-		virtual void parse( Expression *node, const std::string &expression, std::vector<ValuePlug *> &inputs, std::vector<ValuePlug *> &outputs, std::vector<IECore::InternedString> &contextVariables )
+		void parse( Expression *node, const std::string &expression, std::vector<ValuePlug *> &inputs, std::vector<ValuePlug *> &outputs, std::vector<IECore::InternedString> &contextVariables ) override
 		{
 			m_inParameters.clear();
 			m_outSymbols.clear();
 			m_shaderGroup.reset();
+			m_needsTime = false;
 
 			// Find all references to plugs within the expression.
 			vector<string> inPlugPaths;
@@ -271,8 +287,8 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 			shadingSys->getattribute( m_shaderGroup.get(), "num_attributes_needed", numAttributes );
 			if( numAttributes )
 			{
-				ustring *attributeNames = NULL;
-				ustring *scopeNames = NULL;
+				ustring *attributeNames = nullptr;
+				ustring *scopeNames = nullptr;
 				shadingSys->getattribute( m_shaderGroup.get(), "attributes_needed", TypeDesc::PTR, &attributeNames );
 				shadingSys->getattribute( m_shaderGroup.get(), "attribute_scopes", TypeDesc::PTR, &scopeNames );
 				for( int i = 0; i < numAttributes; ++i )
@@ -289,7 +305,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 			shadingSys->getattribute( m_shaderGroup.get(), "num_globals_needed", numGlobals );
 			if( numGlobals )
 			{
-				ustring *globalNames = NULL;
+				ustring *globalNames = nullptr;
 				shadingSys->getattribute( m_shaderGroup.get(), "globals_needed", TypeDesc::PTR, &globalNames );
 				for( int i = 0; i < numGlobals; ++i )
 				{
@@ -297,6 +313,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 					{
 						contextVariables.push_back( "frame" );
 						contextVariables.push_back( "framesPerSecond" );
+						m_needsTime = true;
 						break;
 					}
 				}
@@ -311,7 +328,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 
 		}
 
-		virtual IECore::ConstObjectVectorPtr execute( const Gaffer::Context *context, const std::vector<const Gaffer::ValuePlug *> &proxyInputs ) const
+		IECore::ConstObjectVectorPtr execute( const Gaffer::Context *context, const std::vector<const Gaffer::ValuePlug *> &proxyInputs ) const override
 		{
 			ShadingSystem *s = shadingSystem();
 			OSL::ShadingContext *shadingContext = s->get_context();
@@ -319,7 +336,10 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 		    OSL::ShaderGlobals shaderGlobals;
 			memset( &shaderGlobals, 0, sizeof( ShaderGlobals ) );
 
-			shaderGlobals.time = context->getTime();
+			if( m_needsTime )
+			{
+				shaderGlobals.time = context->getTime();
+			}
 
 			RenderState renderState;
 			renderState.inParameters = &m_inParameters;
@@ -354,6 +374,16 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 					const float *f = (const float *)storage;
 					result->members().push_back( new V3fData( V3f( f[0], f[1], f[2] ) ) );
 				}
+				else if( type == TypeDesc::TypeMatrix )
+				{
+					const float *f = (const float *)storage;
+					result->members().push_back( new M44fData( M44f(
+						f[0],  f[1],  f[2],  f[3],
+						f[4],  f[5],  f[6],  f[7],
+						f[8],  f[9],  f[10], f[11],
+						f[12], f[13], f[14], f[15]
+					) ) );
+				}
 				else if( type == TypeDesc::TypeString )
 				{
 					result->members().push_back( new StringData( *(const char **)storage ) );
@@ -364,7 +394,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 			return result;
 		}
 
-		virtual void apply( Gaffer::ValuePlug *proxyOutput, const Gaffer::ValuePlug *topLevelProxyOutput, const IECore::Object *value ) const
+		void apply( Gaffer::ValuePlug *proxyOutput, const Gaffer::ValuePlug *topLevelProxyOutput, const IECore::Object *value ) const override
 		{
 			switch( value->typeId() )
 			{
@@ -407,6 +437,9 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 					}
 					break;
 				}
+				case M44fDataTypeId :
+					static_cast<M44fPlug *>( proxyOutput )->setValue( static_cast<const M44fData *>( value )->readable() );
+					break;
 				case StringDataTypeId :
 					static_cast<StringPlug *>( proxyOutput )->setValue( static_cast<const StringData *>( value )->readable() );
 					break;
@@ -417,7 +450,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 			}
 		}
 
-		virtual std::string identifier( const Expression *node, const ValuePlug *plug ) const
+		std::string identifier( const Expression *node, const ValuePlug *plug ) const override
 		{
 			switch( (Gaffer::TypeId)plug->typeId() )
 			{
@@ -426,6 +459,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 				case IntPlugTypeId :
 				case Color3fPlugTypeId :
 				case V3fPlugTypeId :
+				case M44fPlugTypeId :
 				case StringPlugTypeId :
 					break;
 				default :
@@ -445,7 +479,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 			return "parent." + relativeName;
 		}
 
-		virtual std::string replace( const Expression *node, const std::string &expression, const std::vector<const ValuePlug *> &oldPlugs, const std::vector<const ValuePlug *> &newPlugs ) const
+		std::string replace( const Expression *node, const std::string &expression, const std::vector<const ValuePlug *> &oldPlugs, const std::vector<const ValuePlug *> &newPlugs ) const override
 		{
 			vector<Replacement> replacements;
 
@@ -488,9 +522,9 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 			return result;
 		}
 
-		virtual std::string defaultExpression( const ValuePlug *output ) const
+		std::string defaultExpression( const ValuePlug *output ) const override
 		{
-			const Node *parentNode = output->node() ? output->node()->ancestor<Node>() : NULL;
+			const Node *parentNode = output->node() ? output->node()->ancestor<Node>() : nullptr;
 			if( !parentNode )
 			{
 				return "";
@@ -520,6 +554,12 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 					value = boost::str( boost::format( "vector( %f, %f, %f )" ) % v[0] % v[1] % v[2] );
 					break;
 				}
+				case M44fPlugTypeId :
+				{
+					const M44f m = static_cast<const M44fPlug *>( output )->getValue();
+					value = boost::str( boost::format( "matrix( %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f )" ) % m[0][0] % m[0][1] % m[0][2] % m[0][3] % m[1][0] % m[1][1] % m[1][2] % m[1][3] % m[2][0] % m[2][1] % m[2][2] % m[2][3] % m[3][0] % m[3][1] % m[3][2] % m[3][3] );
+					break;
+				}
 				case StringPlugTypeId :
 					value = '"' + static_cast<const StringPlug *>( output )->getValue() + '"';
 					break;
@@ -536,7 +576,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 
 		static OSL::ShadingSystem *shadingSystem()
 		{
-			static OSL::ShadingSystem *g_s = NULL;
+			static OSL::ShadingSystem *g_s = nullptr;
 			if( !g_s )
 			{
 				g_s = new OSL::ShadingSystem( new RendererServices );
@@ -575,7 +615,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 		static ValuePlug *plug( Expression *node, const std::string &plugPath )
 		{
 			Node *plugScope = node->parent<Node>();
-			GraphComponent *descendant = plugScope->descendant<GraphComponent>( plugPath );
+			GraphComponent *descendant = plugScope->descendant( plugPath );
 			if( !descendant )
 			{
 				throw IECore::Exception( boost::str( boost::format( "\"%s\" does not exist" ) % plugPath ) );
@@ -609,6 +649,9 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 				case V3fPlugTypeId :
 					defaultValue = "vector( 0.0 )";
 					return "vector";
+				case M44fPlugTypeId :
+					defaultValue = "matrix( 1.0 )";
+					return "matrix";
 				case StringPlugTypeId :
 					defaultValue = "\"\"";
 					return "string";
@@ -675,7 +718,11 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 
 			for( int i = 0, e = inPlugPaths.size(); i < e; ++i )
 			{
-				string parameter = "_" + inPlugPaths[i];
+				string parameter = inPlugPaths[i];
+				if( parameter[0] != '_' )
+				{
+					parameter = "_" + parameter;
+				}
 				replace_all( parameter, ".", "_" );
 				replace_all( result, "parent." + inPlugPaths[i], parameter );
 				inParameters.push_back( ustring( parameter ) );
@@ -683,7 +730,11 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 
 			for( int i = 0, e = outPlugPaths.size(); i < e; ++i )
 			{
-				string parameter = "_" + outPlugPaths[i];
+				string parameter = outPlugPaths[i];
+				if( parameter[0] != '_' )
+				{
+					parameter = "_" + parameter;
+				}
 				replace_all( parameter, ".", "_" );
 				replace_all( result, "parent." + outPlugPaths[i], parameter );
 				outParameters.push_back( ustring( parameter ) );
@@ -776,6 +827,7 @@ class OSLExpressionEngine : public Gaffer::Expression::Engine
 		}
 
 		// Initialised by parse().
+		bool m_needsTime;
 		vector<ustring> m_inParameters;
 		vector<const OSL::ShaderSymbol *> m_outSymbols;
 		OSL::ShaderGroupRef m_shaderGroup;

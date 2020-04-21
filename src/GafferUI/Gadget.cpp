@@ -35,33 +35,32 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/lexical_cast.hpp"
-#include "boost/bind.hpp"
+#include "GafferUI/Gadget.h"
 
-#include "OpenEXR/ImathBoxAlgo.h"
-
-#include "IECore/SimpleTypedData.h"
+#include "GafferUI/Style.h"
 
 #include "IECoreGL/GL.h"
 #include "IECoreGL/NameStateComponent.h"
 #include "IECoreGL/Selector.h"
 
-#include "GafferUI/Gadget.h"
-#include "GafferUI/Style.h"
+#include "IECore/SimpleTypedData.h"
+
+#include "OpenEXR/ImathBoxAlgo.h"
+
+#include "boost/bind.hpp"
+#include "boost/lexical_cast.hpp"
 
 using namespace GafferUI;
 using namespace Imath;
 using namespace std;
 
-IE_CORE_DEFINERUNTIMETYPED( Gadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Gadget );
 
 Gadget::Gadget( const std::string &name )
-	:	GraphComponent( name ), m_style( 0 ), m_visible( true ), m_enabled( true ), m_highlighted( false ), m_toolTip( "" )
+	:	GraphComponent( name ), m_style( nullptr ), m_visible( true ), m_enabled( true ), m_highlighted( false ), m_toolTip( "" )
 {
 	std::string n = "__Gaffer::Gadget::" + boost::lexical_cast<std::string>( (size_t)this );
 	m_glName = IECoreGL::NameStateComponent::glNameFromName( n, true );
-
-	parentChangedSignal().connect( boost::bind( &Gadget::parentChanged, this, ::_1, ::_2 ) );
 }
 
 GadgetPtr Gadget::select( GLuint id )
@@ -69,7 +68,7 @@ GadgetPtr Gadget::select( GLuint id )
 	const std::string &name = IECoreGL::NameStateComponent::nameFromGLName( id );
 	if( name.compare( 0, 18, "__Gaffer::Gadget::" ) )
 	{
-		return 0;
+		return nullptr;
 	}
 	std::string address = name.c_str() + 18;
 	size_t a = boost::lexical_cast<size_t>( address );
@@ -254,11 +253,22 @@ Imath::M44f Gadget::fullTransform( const Gadget *ancestor ) const
 	return result;
 }
 
-void Gadget::render( const Style *currentStyle ) const
+void Gadget::render() const
 {
-	glPushMatrix();
+	for( int layer = (int)Layer::Back; layer <= (int)Layer::Front; ++layer )
+	{
+		renderLayer( (Layer)layer, /* currentStyle = */ nullptr );
+	}
+}
 
+void Gadget::renderLayer( Layer layer, const Style *currentStyle ) const
+{
+	const bool haveTransform = m_transform != M44f();
+	if( haveTransform )
+	{
+		glPushMatrix();
 		glMultMatrixf( m_transform.getValue() );
+	}
 
 		if( !currentStyle )
 		{
@@ -279,9 +289,26 @@ void Gadget::render( const Style *currentStyle ) const
 			selector->loadName( m_glName );
 		}
 
-		doRender( currentStyle );
+		doRenderLayer( layer, currentStyle );
 
-	glPopMatrix();
+		for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
+		{
+			// Cast is safe because of the guarantees acceptsChild() gives us
+			const Gadget *c = static_cast<const Gadget *>( it->get() );
+			if( !c->getVisible() )
+			{
+				continue;
+			}
+			if( c->hasLayer( layer ) )
+			{
+				c->renderLayer( layer, currentStyle );
+			}
+		}
+
+	if( haveTransform )
+	{
+		glPopMatrix();
+	}
 }
 
 void Gadget::requestRender()
@@ -294,18 +321,13 @@ void Gadget::requestRender()
 	}
 }
 
-void Gadget::doRender( const Style *style ) const
+void Gadget::doRenderLayer( Layer layer, const Style *style ) const
 {
-	for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
-	{
-		// cast is safe because of the guarantees acceptsChild() gives us
-		const Gadget *c = static_cast<const Gadget *>( it->get() );
-		if( !c->getVisible() )
-		{
-			continue;
-		}
-		c->render( style );
-	}
+}
+
+bool Gadget::hasLayer( Layer layer ) const
+{
+	return true;
 }
 
 Imath::Box3f Gadget::bound() const
@@ -430,9 +452,14 @@ Gadget::KeySignal &Gadget::keyReleaseSignal()
 
 Gadget::IdleSignal &Gadget::idleSignal()
 {
-	static IdleSignal g_idleSignal;
+	// Deliberately leaking here, as the alternative is for `g_idleSignal`
+	// to be destroyed during shutdown when static destructors are run.
+	// Static destructors are run _after_ Python has shut down, so we are
+	// not in a position to destroy any slots that might still be holding
+	// on to Python objects.
+	static IdleSignal *g_idleSignal = new IdleSignal;
 	idleSignalAccessedSignal()();
-	return g_idleSignal;
+	return *g_idleSignal;
 }
 
 Gadget::IdleSignal &Gadget::idleSignalAccessedSignal()
@@ -441,30 +468,20 @@ Gadget::IdleSignal &Gadget::idleSignalAccessedSignal()
 	return g_idleSignalAccessedSignal;
 }
 
-void Gadget::executeOnUIThread( UIThreadFunction function )
-{
-	executeOnUIThreadSignal()( function );
-}
-
-Gadget::ExecuteOnUIThreadSignal &Gadget::executeOnUIThreadSignal()
-{
-	static ExecuteOnUIThreadSignal g_executeOnUIThreadSignal;
-	return g_executeOnUIThreadSignal;
-}
-
 void Gadget::styleChanged()
 {
 	requestRender();
 }
 
-void Gadget::parentChanged( GraphComponent *child, GraphComponent *oldParent )
+void Gadget::parentChanged( GraphComponent *oldParent )
 {
-	assert( child==this );
+	GraphComponent::parentChanged( oldParent );
+
 	if( Gadget *oldParentGadget = IECore::runTimeCast<Gadget>( oldParent ) )
 	{
 		oldParentGadget->requestRender();
 	}
-	if( Gadget *parentGadget = child->parent<Gadget>() )
+	if( Gadget *parentGadget = parent<Gadget>() )
 	{
 		parentGadget->requestRender();
 	}

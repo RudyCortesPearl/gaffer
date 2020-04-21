@@ -37,8 +37,11 @@
 import os
 import sys
 import unittest
+import imath
+import inspect
 
 import IECore
+import IECoreScene
 import IECoreGL
 
 import Gaffer
@@ -47,7 +50,7 @@ import GafferImage
 import GafferScene
 import GafferSceneTest
 
-@unittest.skipIf( "TRAVIS" in os.environ, "OpenGL not set up on Travis" )
+@unittest.skipIf( GafferTest.inCI(), "OpenGL not set up" )
 class OpenGLShaderTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
@@ -61,7 +64,7 @@ class OpenGLShaderTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( isinstance( s["parameters"]["texture"], GafferImage.ImagePlug ) )
 
 		s["parameters"]["mult"].setValue( 0.5 )
-		s["parameters"]["tint"].setValue( IECore.Color4f( 1, 0.5, 0.25, 1 ) )
+		s["parameters"]["tint"].setValue( imath.Color4f( 1, 0.5, 0.25, 1 ) )
 
 		i = GafferImage.ImageReader()
 		i["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" ) )
@@ -69,16 +72,16 @@ class OpenGLShaderTest( GafferSceneTest.SceneTestCase ) :
 
 		a = s.attributes()
 		self.assertEqual( a.keys(), [ "gl:surface"] )
-		self.failUnless( isinstance( a["gl:surface"][0], IECore.Shader ) )
+		self.failUnless( isinstance( a["gl:surface"].outputShader(), IECoreScene.Shader ) )
 
-		self.assertEqual( a["gl:surface"][0].name, "Texture" )
-		self.assertEqual( a["gl:surface"][0].type, "gl:surface" )
-		self.assertEqual( a["gl:surface"][0].parameters["mult"], IECore.FloatData( 0.5 ) )
-		self.assertEqual( a["gl:surface"][0].parameters["tint"].value, IECore.Color4f( 1, 0.5, 0.25, 1 ) )
-		self.assertTrue( isinstance( a["gl:surface"][0].parameters["texture"], IECore.CompoundData ) )
-		self.failUnless( "displayWindow" in a["gl:surface"][0].parameters["texture"] )
-		self.failUnless( "dataWindow" in a["gl:surface"][0].parameters["texture"] )
-		self.failUnless( "channels" in a["gl:surface"][0].parameters["texture"] )
+		self.assertEqual( a["gl:surface"].outputShader().name, "Texture" )
+		self.assertEqual( a["gl:surface"].outputShader().type, "gl:surface" )
+		self.assertEqual( a["gl:surface"].outputShader().parameters["mult"], IECore.FloatData( 0.5 ) )
+		self.assertEqual( a["gl:surface"].outputShader().parameters["tint"].value, imath.Color4f( 1, 0.5, 0.25, 1 ) )
+		self.assertTrue( isinstance( a["gl:surface"].outputShader().parameters["texture"], IECore.CompoundData ) )
+		self.failUnless( "displayWindow" in a["gl:surface"].outputShader().parameters["texture"] )
+		self.failUnless( "dataWindow" in a["gl:surface"].outputShader().parameters["texture"] )
+		self.failUnless( "channels" in a["gl:surface"].outputShader().parameters["texture"] )
 
 	def testDirtyPropagation( self ) :
 
@@ -108,7 +111,7 @@ class OpenGLShaderTest( GafferSceneTest.SceneTestCase ) :
 		h2 = s.attributesHash()
 		self.assertNotEqual( h2, h1 )
 
-		i["color"].setValue( IECore.Color4f( 1, 0, 1, 0 ) )
+		i["color"].setValue( imath.Color4f( 1, 0, 1, 0 ) )
 
 		h3 = s.attributesHash()
 		self.assertNotEqual( h3, h2 )
@@ -131,6 +134,71 @@ class OpenGLShaderTest( GafferSceneTest.SceneTestCase ) :
 		# By default we don't keep existing values
 		self.assertEqual( s["parameters"]["mult"].getValue(), 0 )
 
+	def testSerialisation( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["shader"] = GafferScene.OpenGLShader()
+		s["shader"].loadShader( "Constant" )
+
+		self.assertEqual(
+			s["shader"].attributes()["gl:surface"].outputShader().name,
+			"Constant"
+		)
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertEqual( s2["shader"].attributes(), s["shader"].attributes() )
+
+	def testGLSLSourceParameters( self ) :
+
+		vertSource = inspect.cleandoc(
+			'''
+			void main()
+			{
+				gl_Position = vec4( 1 );
+			}
+			'''
+		)
+
+		geomSource = inspect.cleandoc(
+			'''
+			layout(points) in;
+			layout(points, max_vertices = 1) out;
+
+			void main()
+			{
+				gl_Position = gl_in[0].gl_Position;
+				EmitVertex();
+				EndPrimitive();
+			}
+			'''
+		)
+
+		fragSource = inspect.cleandoc(
+			'''
+			void main()
+			{
+				gl_FragColor = vec4( 1 );
+			}
+			'''
+		)
+
+		s = GafferScene.OpenGLShader()
+		s["name"].setValue( "testSource" )
+		s["type"].setValue( "gl:surface" )
+		s["parameters"].addChild( Gaffer.StringPlug( "glVertexSource", defaultValue = vertSource ) )
+		s["parameters"].addChild( Gaffer.StringPlug( "glGeometrySource", defaultValue = geomSource ) )
+		s["parameters"].addChild( Gaffer.StringPlug( "glFragmentSource", defaultValue = fragSource ) )
+		s["parameters"].addChild( Gaffer.StringPlug( "glNotAThing", defaultValue = "this isnt glsl" ) )
+
+		ss = s.attributes()["gl:surface"].outputShader()
+		self.assertEqual( set(ss.parameters.keys()), set(['gl:vertexSource', 'gl:geometrySource', 'gl:fragmentSource', 'glNotAThing']) )
+		self.assertEqual( ss.parameters["gl:vertexSource"].value, vertSource )
+		self.assertEqual( ss.parameters["gl:geometrySource"].value, geomSource )
+		self.assertEqual( ss.parameters["gl:fragmentSource"].value, fragSource )
+		self.assertEqual( ss.parameters["glNotAThing"].value, "this isnt glsl" )
+
 if sys.platform == "darwin" :
 	# The Texture shader used in the test provides only a .frag file, which
 	# means that it gets the default vertex shader. The default vertex shader
@@ -141,6 +209,7 @@ if sys.platform == "darwin" :
 	# not much we can do (other than provide a .vert shader with the unnecessary
 	# bit omitted), so for now we mark the test as an expected failure.
 	OpenGLShaderTest.test = unittest.expectedFailure( OpenGLShaderTest.test )
+	OpenGLShaderTest.testLoadShader = unittest.expectedFailure( OpenGLShaderTest.testLoadShader )
 
 if __name__ == "__main__":
 	unittest.main()

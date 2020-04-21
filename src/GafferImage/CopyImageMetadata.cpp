@@ -34,10 +34,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringAlgo.h"
+#include "GafferImage/CopyImageMetadata.h"
+
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/CopyImageMetadata.h"
+#include "IECore/StringAlgo.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -45,7 +46,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( CopyImageMetadata );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( CopyImageMetadata );
 
 size_t CopyImageMetadata::g_firstPlugIndex = 0;
 

@@ -39,6 +39,7 @@ import re
 import shutil
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferUI
@@ -80,7 +81,7 @@ class PresetDialogue( GafferUI.Dialogue ) :
 	def _updatePresetListing( self ) :
 
 		location = self.__locationMenu.getCurrentItem()
-		presetLoader = IECore.ClassLoader( IECore.SearchPath( location, ":" ) )
+		presetLoader = IECore.ClassLoader( IECore.SearchPath( location ) )
 		parameterised = self._parameterHandler.plug().node().getParameterised()[0]
 
 		d = {}
@@ -428,7 +429,7 @@ class DeletePresetsDialogue( PresetDialogue ) :
 def autoLoad( parameterisedHolder ) :
 
 	searchPaths = os.environ.get( _searchPathEnvVar( parameterisedHolder ), "" )
-	searchPaths = IECore.SearchPath( searchPaths, ":" )
+	searchPaths = IECore.SearchPath( searchPaths )
 	presetLoader = IECore.ClassLoader( searchPaths )
 
 	parameterised = parameterisedHolder.getParameterised()[0]
@@ -457,8 +458,6 @@ def _searchPathEnvVar( parameterisedHolder ) :
 		# we need to guess based on type
 		if isinstance( parameterised[0], IECore.Op ) :
 			searchPathEnvVar = "IECORE_OP_PATHS"
-		elif isinstance( parameterised[0], IECore.ParameterisedProcedural ) :
-			searchPathEnvVar = "IECORE_PROCEDURAL_PATHS"
 		else :
 			raise Exception( "Unable to determine search paths for presets" )
 
@@ -502,4 +501,4 @@ def __parameterPopupMenu( menuDefinition, parameterValueWidget ) :
 	menuDefinition.append( "/Load Preset...", { "command" : IECore.curry( __loadPreset, parameterHandler ), "active" : editable } )
 	menuDefinition.append( "/Delete Presets...", { "command" : IECore.curry( __deletePresets, parameterHandler ) } )
 
-__popupMenuConnection = GafferCortexUI.ParameterValueWidget.popupMenuSignal().connect( __parameterPopupMenu )
+GafferCortexUI.ParameterValueWidget.popupMenuSignal().connect( __parameterPopupMenu, scoped = False )

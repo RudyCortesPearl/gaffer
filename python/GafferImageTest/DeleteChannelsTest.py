@@ -36,6 +36,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
@@ -114,9 +115,9 @@ class DeleteChannelsTest( GafferImageTest.ImageTestCase ) :
 
 		# the channels that are passed through should have identical hashes to the input,
 		# so they can share cache entries.
-		self.assertEqual( r["out"].channelDataHash( "G", IECore.V2i( 0 ) ), d["out"].channelDataHash( "G", IECore.V2i( 0 ) ) )
-		self.assertEqual( r["out"].channelDataHash( "B", IECore.V2i( 0 ) ), d["out"].channelDataHash( "B", IECore.V2i( 0 ) ) )
-		self.assertEqual( r["out"].channelDataHash( "A", IECore.V2i( 0 ) ), d["out"].channelDataHash( "A", IECore.V2i( 0 ) ) )
+		self.assertEqual( r["out"].channelDataHash( "G", imath.V2i( 0 ) ), d["out"].channelDataHash( "G", imath.V2i( 0 ) ) )
+		self.assertEqual( r["out"].channelDataHash( "B", imath.V2i( 0 ) ), d["out"].channelDataHash( "B", imath.V2i( 0 ) ) )
+		self.assertEqual( r["out"].channelDataHash( "A", imath.V2i( 0 ) ), d["out"].channelDataHash( "A", imath.V2i( 0 ) ) )
 
 	def testHashChanged( self ) :
 
@@ -155,12 +156,12 @@ class DeleteChannelsTest( GafferImageTest.ImageTestCase ) :
 		d["mode"].setValue( d.Mode.Keep )
 		d["channels"].setValue( "R" )
 
-		ri = r["out"].image()
-		di = d["out"].image()
+		ri = GafferImage.ImageAlgo.image( r["out"] )
+		di = GafferImage.ImageAlgo.image( d["out"] )
 
 		self.assertEqual( set( ri.keys() ), set( [ "R", "G", "B", "A" ] ) )
 		self.assertEqual( di.keys(), [ "R" ] )
-		self.assertEqual( di["R"].data, ri["R"].data )
+		self.assertEqual( di["R"], ri["R"] )
 
 	def testPassThrough( self ) :
 
@@ -181,7 +182,7 @@ class DeleteChannelsTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( i["out"]["metadata"].getValue(), d["out"]["metadata"].getValue() )
 
 		context = Gaffer.Context()
-		context["image:tileOrigin"] = IECore.V2i( 0 )
+		context["image:tileOrigin"] = imath.V2i( 0 )
 		with context :
 			for c in [ "G", "B", "A" ] :
 				context["image:channelName"] = c

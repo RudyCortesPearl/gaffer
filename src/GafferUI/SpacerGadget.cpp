@@ -38,7 +38,7 @@
 
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( SpacerGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SpacerGadget );
 
 SpacerGadget::SpacerGadget( const Imath::Box3f &size )
 	:	Gadget( defaultName<SpacerGadget>() ), m_bound( size )
@@ -49,7 +49,7 @@ SpacerGadget::~SpacerGadget()
 {
 }
 
-void SpacerGadget::doRender( const Style *style ) const
+void SpacerGadget::doRenderLayer( Layer layer, const Style *style ) const
 {
 }
 

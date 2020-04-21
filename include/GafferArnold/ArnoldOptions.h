@@ -37,22 +37,23 @@
 #ifndef GAFFERARNOLD_ARNOLDOPTIONS_H
 #define GAFFERARNOLD_ARNOLDOPTIONS_H
 
-#include "GafferScene/Options.h"
-
+#include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
+
+#include "GafferScene/Options.h"
 
 namespace GafferArnold
 {
 
-class ArnoldOptions : public GafferScene::Options
+class GAFFERARNOLD_API ArnoldOptions : public GafferScene::Options
 {
 
 	public :
 
 		ArnoldOptions( const std::string &name=defaultName<ArnoldOptions>() );
-		virtual ~ArnoldOptions();
+		~ArnoldOptions() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferArnold::ArnoldOptions, ArnoldOptionsTypeId, GafferScene::Options );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldOptions, ArnoldOptionsTypeId, GafferScene::Options );
 
 };
 

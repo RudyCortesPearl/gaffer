@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -49,14 +51,14 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 		d = GafferScene.Duplicate()
 		d["in"].setInput( s["out"] )
 		d["target"].setValue( "/sphere" )
-		d["transform"]["translate"].setValue( IECore.V3f( 1, 0, 0 ) )
+		d["transform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
 
 		self.assertSceneValid( d["out"] )
 
 		self.assertEqual( d["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "sphere", "sphere1" ] ) )
 		self.assertPathHashesEqual( s["out"], "/sphere", d["out"], "/sphere" )
-		self.assertPathHashesEqual( d["out"], "/sphere", d["out"], "/sphere1", childPlugNamesToIgnore = ( "transform", ) )
-		self.assertEqual( d["out"].transform( "/sphere1" ), IECore.M44f.createTranslated( IECore.V3f( 1, 0, 0 ) ) )
+		self.assertPathHashesEqual( d["out"], "/sphere", d["out"], "/sphere1", checks = self.allPathChecks - { "transform" } )
+		self.assertEqual( d["out"].transform( "/sphere1" ), imath.M44f().translate( imath.V3f( 1, 0, 0 ) ) )
 
 	def testMultipleCopies( self ) :
 
@@ -64,7 +66,7 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 		d = GafferScene.Duplicate()
 		d["in"].setInput( s["out"] )
 		d["target"].setValue( "/sphere" )
-		d["transform"]["translate"].setValue( IECore.V3f( 1, 0, 0 ) )
+		d["transform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
 		d["copies"].setValue( 10 )
 
 		self.assertSceneValid( d["out"] )
@@ -78,8 +80,8 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 
 		for i in range( 1, 11 ) :
 			path = "sphere%d" % i
-			self.assertPathHashesEqual( d["out"], "/sphere", d["out"], path, childPlugNamesToIgnore = ( "transform", ) )
-			self.assertEqual( d["out"].transform( path ), IECore.M44f.createTranslated( IECore.V3f( 1, 0, 0 ) * i ) )
+			self.assertPathHashesEqual( d["out"], "/sphere", d["out"], path, checks = self.allPathChecks - { "transform" } )
+			self.assertEqual( d["out"].transform( path ), imath.M44f().translate( imath.V3f( 1, 0, 0 ) * i ) )
 
 	def testHierarchy( self ) :
 
@@ -93,7 +95,7 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertSceneValid( d["out"] )
 		self.assertPathsEqual( d["out"], "/group", d["out"], "/group1" )
-		self.assertPathHashesEqual( d["out"], "/group", d["out"], "/group1", childPlugNamesToIgnore = ( "transform", ) )
+		self.assertPathHashesEqual( d["out"], "/group", d["out"], "/group1", checks = self.allPathChecks - { "transform" } )
 		self.assertPathsEqual( d["out"], "/group/sphere", d["out"], "/group1/sphere" )
 		self.assertPathHashesEqual( d["out"], "/group/sphere", d["out"], "/group1/sphere" )
 
@@ -104,7 +106,19 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 		d["in"].setInput( s["out"] )
 		d["target"].setValue( "/cube" )
 
-		self.assertRaises( RuntimeError, d["out"].childNames, "/" )
+		self.assertSceneValid( d["out"] )
+		self.assertScenesEqual( d["out"], d["in"] )
+
+	def testInvalidTargetParent( self ) :
+
+		r = GafferScene.SceneReader()
+		r["fileName"].setValue( "${GAFFER_ROOT}/python/GafferSceneTest/alembicFiles/cube.abc" )
+
+		d = GafferScene.Duplicate()
+		d["in"].setInput( r["out"] )
+		d["target"].setValue( "/notGroup1/pCube1" )
+
+		self.assertScenesEqual( d["in"], d["out"] )
 
 	def testNamePlug( self ) :
 
@@ -161,7 +175,7 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 		s["sets"].setValue( "set" )
 
 		g = GafferScene.Group()
-		g["in"].setInput( s["out"] )
+		g["in"][0].setInput( s["out"] )
 
 		d = GafferScene.Duplicate()
 		d["in"].setInput( g["out"] )
@@ -194,7 +208,7 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 		d = GafferScene.Duplicate()
 		d["in"].setInput( s["out"] )
 		d["target"].setValue( "/sphere" )
-		d["transform"]["translate"].setValue( IECore.V3f( 1, 0, 0 ) )
+		d["transform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
 
 		with Gaffer.PerformanceMonitor() as m :
 			self.assertEqual( s["out"]["setNames"].hash(), d["out"]["setNames"].hash() )

@@ -42,15 +42,15 @@
 namespace GafferScene
 {
 
-class AimConstraint : public Constraint
+class GAFFERSCENE_API AimConstraint : public Constraint
 {
 
 	public :
 
 		AimConstraint( const std::string &name=defaultName<AimConstraint>() );
-		virtual ~AimConstraint();
+		~AimConstraint() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::AimConstraint, AimConstraintTypeId, Constraint );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::AimConstraint, AimConstraintTypeId, Constraint );
 
 		Gaffer::V3fPlug *aimPlug();
 		const Gaffer::V3fPlug *aimPlug() const;
@@ -60,9 +60,9 @@ class AimConstraint : public Constraint
 
 	protected :
 
-		virtual bool affectsConstraint( const Gaffer::Plug *input ) const;
-		virtual void hashConstraint( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::M44f computeConstraint( const Imath::M44f &fullTargetTransform, const Imath::M44f &fullInputTransform, const Imath::M44f &inputTransform ) const;
+		bool affectsConstraint( const Gaffer::Plug *input ) const override;
+		void hashConstraint( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::M44f computeConstraint( const Imath::M44f &fullTargetTransform, const Imath::M44f &fullInputTransform, const Imath::M44f &inputTransform ) const override;
 
 	private :
 

@@ -37,23 +37,23 @@
 #ifndef GAFFERIMAGE_BLUR_H
 #define GAFFERIMAGE_BLUR_H
 
-#include "Gaffer/CompoundNumericPlug.h"
+#include "GafferImage/FlatImageProcessor.h"
 
-#include "GafferImage/ImageProcessor.h"
+#include "Gaffer/CompoundNumericPlug.h"
 
 namespace GafferImage
 {
 
 IE_CORE_FORWARDDECLARE( Resample )
 
-class Blur : public ImageProcessor
+class GAFFERIMAGE_API Blur : public FlatImageProcessor
 {
 	public :
 
 		Blur( const std::string &name=defaultName<Blur>() );
-		virtual ~Blur();
+		~Blur() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Blur, BlurTypeId, ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Blur, BlurTypeId, FlatImageProcessor );
 
 		Gaffer::V2fPlug *radiusPlug();
 		const Gaffer::V2fPlug *radiusPlug() const;
@@ -64,7 +64,7 @@ class Blur : public ImageProcessor
 		Gaffer::BoolPlug *expandDataWindowPlug();
 		const Gaffer::BoolPlug *expandDataWindowPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
@@ -84,14 +84,14 @@ class Blur : public ImageProcessor
 		Resample *resample();
 		const Resample *resample() const;
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
-		virtual void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 		static size_t g_firstPlugIndex;
 

@@ -47,23 +47,23 @@ IE_CORE_FORWARDDECLARE( Set )
 
 /// A Box is simply a Node which is intended to hold other Nodes
 /// as children.
-class Box : public SubGraph
+class GAFFER_API Box : public SubGraph
 {
 
 	public :
 
 		Box( const std::string &name=defaultName<Box>() );
-		virtual ~Box();
+		~Box() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Box, BoxTypeId, SubGraph );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Box, BoxTypeId, SubGraph );
 
-		/// \deprecated Use MetadataAlgo::canPromote() instead.
+		/// \deprecated Use PlugAlgo::canPromote() instead.
 		bool canPromotePlug( const Plug *descendantPlug ) const;
-		/// \deprecated Use MetadataAlgo::promote() instead.
+		/// \deprecated Use PlugAlgo::promote() instead.
 		Plug *promotePlug( Plug *descendantPlug );
-		/// \deprecated Use MetadataAlgo::isPromoted() instead.
+		/// \deprecated Use PlugAlgo::isPromoted() instead.
 		bool plugIsPromoted( const Plug *descendantPlug ) const;
-		/// \deprecated Use MetadataAlgo::unpromote() instead.
+		/// \deprecated Use PlugAlgo::unpromote() instead.
 		void unpromotePlug( Plug *promotedDescendantPlug );
 
 		/// Exports the contents of the Box so that it can be referenced

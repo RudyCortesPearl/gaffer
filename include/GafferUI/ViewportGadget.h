@@ -38,12 +38,13 @@
 #ifndef GAFFERUI_VIEWPORTGADGET_H
 #define GAFFERUI_VIEWPORTGADGET_H
 
-#include "IECore/Camera.h"
-#include "IECore/CameraController.h"
+#include "GafferUI/IndividualContainer.h"
 
 #include "IECoreGL/Selector.h"
 
-#include "GafferUI/IndividualContainer.h"
+#include "IECoreScene/Camera.h"
+
+#include <chrono>
 
 namespace GafferUI
 {
@@ -54,21 +55,21 @@ namespace GafferUI
 /// its child gadgets, transforming the event from the 2d space of the widget to the 3d
 /// space of the gadget as it goes. The framing of the child gadgets is specified using a
 /// Camera, which may be specified both programatically and through user interaction.
-class ViewportGadget : public Gadget
+class GAFFERUI_API ViewportGadget : public Gadget
 {
 
 	public :
 
 		typedef boost::signal<void (ViewportGadget *)> UnarySignal;
 
-		ViewportGadget( GadgetPtr primaryChild = NULL );
-		virtual ~ViewportGadget();
+		ViewportGadget( GadgetPtr primaryChild = nullptr );
+		~ViewportGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::ViewportGadget, ViewportGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::ViewportGadget, ViewportGadgetTypeId, Gadget );
 
 		/// Accepts no parents - the ViewportGadget must always be the topmost Gadget.
-		virtual bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const;
-		virtual std::string getToolTip( const IECore::LineSegment3f &position ) const;
+		bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const override;
+		std::string getToolTip( const IECore::LineSegment3f &position ) const override;
 
 		/// Typically mouse event signals are emitted for the gadget under
 		/// the mouse, but in the case that there is no such gadget, they
@@ -89,11 +90,33 @@ class ViewportGadget : public Gadget
 		/// a call to setViewport().
 		UnarySignal &viewportChangedSignal();
 
-		const IECore::Camera *getCamera() const;
+		/// Sets whether the Viewport is in planar movement mode.
+		/// ( used for 2D UIs with a scale pixel that doesn't change with
+		/// the viewport width, such as the Node Graph )
+		void setPlanarMovement( bool planarMovement );
+		/// Return whether the viewport is currently in planar movement mode
+		bool getPlanarMovement() const;
+
+		/// Sets whether the Viewport supports precise motion mode via
+		/// modifier keys. NOTE: This defaults to true, and causes the
+		/// viewport to consume button press events using the corresponding
+		/// modifiers.
+		void setPreciseMotionAllowed( bool allowed );
+		/// Return whether the viewport is currently allows precise motion
+		bool getPreciseMotionAllowed() const;
+
+		/// Return the camera currently used to render the viewport.
+		/// This bakes in aperture and clipping planes based on tweaks
+		/// made using the ViewportGadget.
+		IECoreScene::ConstCameraPtr getCamera() const;
 		/// A copy is taken.
-		void setCamera( const IECore::Camera *camera );
+		void setCamera( IECoreScene::CameraPtr camera );
+
+		const Imath::M44f &getCameraTransform() const;
+		void setCameraTransform( const Imath::M44f &transform );
 		/// A signal emitted when the camera is changed, either by
-		/// a setCamera() call or through user interaction.
+		/// a setCamera() or setCameraTransform() call, or through
+		/// user interaction.
 		UnarySignal &cameraChangedSignal();
 
 		/// If the camera is editable, the user can move it around
@@ -101,14 +124,33 @@ class ViewportGadget : public Gadget
 		bool getCameraEditable() const;
 		void setCameraEditable( bool editable );
 
+		/// The center of interest is the depth (in camera space)
+		/// of a pivot about which the Alt+drag camera motion operates.
+		void setCenterOfInterest( float centerOfInterest );
+		float getCenterOfInterest();
+
 		void frame( const Imath::Box3f &box );
 		void frame( const Imath::Box3f &box, const Imath::V3f &viewDirection,
 			const Imath::V3f &upVector = Imath::V3f( 0, 1, 0 ) );
 
+		void fitClippingPlanes( const Imath::Box3f &box );
+
 		/// When drag tracking is enabled, the camera will automatically
 		/// move to follow drags that would otherwise be exiting the viewport.
-		void setDragTracking( bool dragTracking );
-		bool getDragTracking() const;
+		enum DragTracking
+		{
+			NoDragTracking = 0,
+			XDragTracking = 1,
+			YDragTracking = 2
+		};
+
+		void setDragTracking( unsigned dragTracking );
+		unsigned getDragTracking() const;
+
+		/// When variable aspect zoom is enabled, the two axis can be scaled
+		/// independently when performing a 2D zoom.
+		void setVariableAspectZoom( bool variableAspectZoom );
+		bool getVariableAspectZoom() const;
 
 		/// Fills the passed vector with all the Gadgets below the specified position.
 		/// The first Gadget in the list will be the frontmost, determined either by the
@@ -125,7 +167,7 @@ class ViewportGadget : public Gadget
 
 		/// The SelectionScope class can be used by child Gadgets to perform
 		/// OpenGL selection from event signal callbacks.
-		class SelectionScope
+		class SelectionScope : boost::noncopyable
 		{
 
 			public :
@@ -160,14 +202,14 @@ class ViewportGadget : public Gadget
 				void end();
 
 				bool m_depthSort;
-				typedef boost::shared_ptr<IECoreGL::Selector> SelectorPtr;
+				typedef std::unique_ptr<IECoreGL::Selector> SelectorPtr;
 				SelectorPtr m_selector;
 				std::vector<IECoreGL::HitRecord> &m_selection;
 
 		};
 
 		/// The RasterScope class can be used to perform drawing in raster space.
-		class RasterScope
+		class RasterScope : boost::noncopyable
 		{
 
 			public :
@@ -177,14 +219,12 @@ class ViewportGadget : public Gadget
 
 		};
 
+		void render() const;
+
 		/// A signal emitted just prior to rendering the viewport each time. This
 		/// provides an opportunity for clients to make last minute adjustments to
 		/// the viewport or its children.
 		UnarySignal &preRenderSignal();
-
-	protected :
-
-		virtual void doRender( const Style *style ) const;
 
 	private :
 
@@ -193,6 +233,8 @@ class ViewportGadget : public Gadget
 		bool buttonPress( GadgetPtr gadget, const ButtonEvent &event );
 		bool buttonRelease( GadgetPtr gadget, const ButtonEvent &event );
 		bool buttonDoubleClick( GadgetPtr gadget, const ButtonEvent &event );
+		void enter( const ButtonEvent &event );
+		void leave( const ButtonEvent &event );
 		bool mouseMove( GadgetPtr gadget, const ButtonEvent &event );
 		IECore::RunTimeTypedPtr dragBegin( GadgetPtr gadget, const DragDropEvent &event );
 		bool dragEnter( GadgetPtr gadget, const DragDropEvent &event );
@@ -207,7 +249,11 @@ class ViewportGadget : public Gadget
 		void eventToGadgetSpace( Event &event, Gadget *gadget );
 		void eventToGadgetSpace( ButtonEvent &event, Gadget *gadget );
 
+		void updateGadgetUnderMouse( const ButtonEvent &event );
 		void emitEnterLeaveEvents( GadgetPtr newGadgetUnderMouse, GadgetPtr oldGadgetUnderMouse, const ButtonEvent &event );
+
+		void updateMotionState( const DragDropEvent &event, bool initialEvent = false );
+		Imath::V2f motionPositionFromEvent( const DragDropEvent &event ) const;
 
 		GadgetPtr updatedDragDestination( std::vector<GadgetPtr> &gadgets, const DragDropEvent &event );
 
@@ -220,19 +266,27 @@ class ViewportGadget : public Gadget
 		template<typename Event, typename Signal>
 		typename Signal::result_type dispatchEvent( GadgetPtr gadget, Signal &(Gadget::*signalGetter)(), const Event &event );
 
-		IECore::CameraController m_cameraController;
+		class CameraController;
+		std::unique_ptr<CameraController> m_cameraController;
 		bool m_cameraInMotion;
 		bool m_cameraEditable;
+
+		bool m_preciseMotionAllowed;
+		bool m_preciseMotionEnabled;
+		Imath::V2f m_motionSegmentOrigin;
+		Imath::V2f m_motionSegmentEventOrigin;
 
 		GadgetPtr m_lastButtonPressGadget;
 		GadgetPtr m_gadgetUnderMouse;
 
-		bool m_dragTracking;
+		unsigned m_dragTracking;
 		boost::signals::connection m_dragTrackingIdleConnection;
 		DragDropEvent m_dragTrackingEvent;
 		float m_dragTrackingThreshold;
 		Imath::V2f m_dragTrackingVelocity;
-		double m_dragTrackingTime;
+		std::chrono::steady_clock::time_point m_dragTrackingTime;
+
+		bool m_variableAspectZoom;
 
 		UnarySignal m_viewportChangedSignal;
 		UnarySignal m_cameraChangedSignal;

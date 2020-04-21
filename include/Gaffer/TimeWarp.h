@@ -43,17 +43,15 @@
 namespace Gaffer
 {
 
-template<typename BaseType>
-class TimeWarp : public ContextProcessor<BaseType>
+class IECORE_EXPORT TimeWarp : public ContextProcessor
 {
 
 	public :
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( TimeWarp<BaseType>, ContextProcessor<BaseType> );
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( TimeWarp<BaseType> );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::TimeWarp, TimeWarpTypeId, ContextProcessor );
 
 		TimeWarp( const std::string &name=GraphComponent::defaultName<TimeWarp>() );
-		virtual ~TimeWarp();
+		~TimeWarp() override;
 
 		FloatPlug *speedPlug();
 		const FloatPlug *speedPlug() const;
@@ -61,36 +59,18 @@ class TimeWarp : public ContextProcessor<BaseType>
 		FloatPlug *offsetPlug();
 		const FloatPlug *offsetPlug() const;
 
-		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
-
 	protected :
 
-		virtual void processContext( Context *context ) const;
+		bool affectsContext( const Plug *input ) const override;
+		void processContext( Context::EditableScope &context ) const override;
+
+	private :
+
+		static size_t g_firstPlugIndex;
 
 };
 
-namespace Detail
-{
-
-struct IdentityScope;
-
-} // namespace Detail
-
-/// May be specialised to control the behaviour of
-/// TimeWarp<BaseType>.
-template<typename BaseType>
-struct TimeWarpTraits
-{
-
-   /// A class which will be instantiated as
-   /// `TimeScope timeScope( Context::current() )`
-   /// to modify the context when evaluating the time
-   typedef Detail::IdentityScope TimeScope;
-
-};
-
-typedef TimeWarp<ComputeNode> TimeWarpComputeNode;
-IE_CORE_DECLAREPTR( TimeWarpComputeNode );
+IE_CORE_DECLAREPTR( TimeWarp );
 
 } // namespace Gaffer
 

@@ -37,10 +37,11 @@
 #ifndef GAFFERSCENEUI_SELECTIONTOOL_H
 #define GAFFERSCENEUI_SELECTIONTOOL_H
 
-#include "GafferUI/Tool.h"
-#include "GafferUI/DragDropEvent.h"
-
+#include "GafferSceneUI/Export.h"
 #include "GafferSceneUI/TypeIds.h"
+
+#include "GafferUI/DragDropEvent.h"
+#include "GafferUI/Tool.h"
 
 namespace GafferSceneUI
 {
@@ -48,16 +49,16 @@ namespace GafferSceneUI
 IE_CORE_FORWARDDECLARE( SceneView )
 IE_CORE_FORWARDDECLARE( SceneGadget )
 
-class SelectionTool : public GafferUI::Tool
+class GAFFERSCENEUI_API SelectionTool : public GafferUI::Tool
 {
 
 	public :
 
 		SelectionTool( SceneView *view, const std::string &name = defaultName<SelectionTool>() );
 
-		virtual ~SelectionTool();
+		~SelectionTool() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::SelectionTool, SelectionToolTypeId, GafferUI::Tool );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::SelectionTool, SelectionToolTypeId, GafferUI::Tool );
 
 	private :
 
@@ -69,11 +70,14 @@ class SelectionTool : public GafferUI::Tool
 		DragOverlay *dragOverlay();
 
 		bool buttonPress( const GafferUI::ButtonEvent &event );
+		bool buttonRelease( const GafferUI::ButtonEvent &event );
 		IECore::RunTimeTypedPtr dragBegin( GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event );
 		bool dragEnter( const GafferUI::Gadget *gadget, const GafferUI::DragDropEvent &event );
 		bool dragMove( const GafferUI::DragDropEvent &event );
 		bool dragEnd( const GafferUI::DragDropEvent &event );
 
+		bool m_acceptedButtonPress = false;
+		bool m_initiatedDrag = false;
 };
 
 } // namespace GafferSceneUI

@@ -80,8 +80,8 @@ def __mainSummary( plug ) :
 		info.append( "Passes %d" % plug["renderPasses"]["value"].getValue() )
 	if plug["sampler"]["enabled"].getValue() :
 		info.append( "Sampler %s" % plug["sampler"]["value"].getValue() )
-	if plug["aaSamples"]["enabled"].getValue() :
-		info.append( "AA Samples %d" % plug["aaSamples"]["value"].getValue() )
+	if plug["maxAASamples"]["enabled"].getValue() :
+		info.append( "AA Samples %d" % plug["maxAASamples"]["value"].getValue() )
 	if plug["lightingEngine"]["enabled"].getValue() :
 		info.append( "Lighting Engine %s" % plug["lightingEngine"]["value"].getValue() )
 
@@ -108,12 +108,22 @@ def __ptSummary( plug ) :
 		info.append( "Caustics" )
 	if plug["ptMaxBounces"]["enabled"].getValue() :
 		info.append( "Max Bounces %d" % plug["ptMaxBounces"]["value"].getValue() )
+	if plug["ptMaxBounces"]["enabled"].getValue() :
+		info.append( "Max Bounces %d" % plug["ptMaxBounces"]["value"].getValue() )
+	if plug["ptMaxDiffuseBounces"]["enabled"].getValue() :
+		info.append( "Max Diffuse Bounces %d" % plug["ptMaxDiffuseBounces"]["value"].getValue() )
+	if plug["ptMaxGlossyBounces"]["enabled"].getValue() :
+		info.append( "Max Glossy Bounces %d" % plug["ptMaxGlossyBounces"]["value"].getValue() )
+	if plug["ptMaxSpecularBounces"]["enabled"].getValue() :
+		info.append( "Max Specular Bounces %d" % plug["ptMaxSpecularBounces"]["value"].getValue() )
 	if plug["ptLightingSamples"]["enabled"].getValue() :
 		info.append( "Lighting Samples %f" % plug["ptLightingSamples"]["value"].getValue() )
 	if plug["ptIBLSamples"]["enabled"].getValue() :
 		info.append( "IBL Samples %f" % plug["ptIBLSamples"]["value"].getValue() )
 	if plug["ptMaxRayIntensity"]["enabled"].getValue() :
 		info.append( "Max Ray Intensity %f" % plug["ptMaxRayIntensity"]["value"].getValue() )
+	if plug["ptClampRoughness"]["enabled"].getValue() :
+		info.append( "Clamp Roughness %f" % plug["ptClampRoughness"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -142,6 +152,20 @@ def __sppmSummary( plug ) :
 		info.append( "Max Photons %d" % plug["sppmMaxPhotons"]["value"].getValue() )
 	if plug["sppmAlpha"]["enabled"].getValue() :
 		info.append( "Alpha %f" % plug["sppmAlpha"]["value"].getValue() )
+
+	return ", ".join( info )
+
+def __denoiserSummary( plug ) :
+
+	info = []
+	if plug["denoiserMode"]["enabled"].getValue() :
+		info.append( "Denoiser %s" % plug["denoiserMode"]["value"].getValue() )
+	if plug["denoiserSkipPixels"]["enabled"].getValue() :
+		info.append( "Skip Pixels %s" % plug["denoiserSkipPixels"]["value"].getValue() )
+	if plug["denoiserRandomPixelOrder"]["enabled"].getValue() :
+		info.append( "Random Order %s" % plug["denoiserRandomPixelOrder"]["value"].getValue() )
+	if plug["denoiserScales"]["enabled"].getValue() :
+		info.append( "Scales %s" % plug["denoiserScales"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -192,6 +216,7 @@ Gaffer.Metadata.registerNode(
 			"layout:section:Environment:summary", __environmentSummary,
 			"layout:section:Unidirectional Path Tracer:summary", __ptSummary,
 			"layout:section:SPPM:summary", __sppmSummary,
+			"layout:section:Denoiser:summary", __denoiserSummary,
 			"layout:section:System:summary", __systemSummary,
 			"layout:section:Logging:summary", __loggingSummary,
 
@@ -203,7 +228,7 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			__getDescriptionString(
-				"generic_frame_renderer:passes",
+				"passes",
 				"""
 				When using photon mapping this is the number of
 				progressive refinement passes used.
@@ -218,7 +243,7 @@ Gaffer.Metadata.registerNode(
 		"options.sampler" : [
 
 			"description",
-			__getDescriptionString( "sampling_mode" ),
+			"Antialiasing sampler",
 
 			"layout:section", "Main",
 
@@ -226,20 +251,50 @@ Gaffer.Metadata.registerNode(
 
 		"options.sampler.value" : [
 
-			"preset:Random", "rng",
-			"preset:QMC", "qmc",
+			"preset:Uniform", "generic",
+			"preset:Adaptive", "adaptive",
 
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
 		],
 
-		"options.aaSamples" : [
+		"options.minAASamples" : [
 
 			"description",
-			__getDescriptionString( "uniform_pixel_renderer:samples" ),
+			__getDescriptionString( "adaptive_tile_renderer:min_samples" ),
 
 			"layout:section", "Main",
-			"label", "AA Samples",
+			"label", "Min Samples",
+
+		],
+
+		"options.maxAASamples" : [
+
+			"description",
+			__getDescriptionString( "adaptive_tile_renderer:max_samples" ),
+
+			"layout:section", "Main",
+			"label", "Max Samples",
+
+		],
+
+		"options.aaBatchSampleSize" : [
+
+			"description",
+			__getDescriptionString( "adaptive_tile_renderer:batch_size" ),
+
+			"layout:section", "Main",
+			"label", "Batch Sample Size",
+
+		],
+
+		"options.aaNoiseThresh" : [
+
+			"description",
+			__getDescriptionString( "adaptive_tile_renderer:noise_threshold" ),
+
+			"layout:section", "Main",
+			"label", "Noise Threshold",
 
 		],
 
@@ -258,21 +313,6 @@ Gaffer.Metadata.registerNode(
 			"preset:SPPM", "sppm",
 
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
-
-		],
-
-		"options.meshFileFormat" : [
-
-			"description",
-			"""
-			Mesh file format to use when exporting scenes to appleseed.
-			It is recommended to set it to BinaryMesh as it is more efficient than Obj.
-			""",
-
-			"layout:section", "Main",
-
-			# Hidden because it's not used in the new renderer.
-			"plugValueWidget:type", ""
 
 		],
 
@@ -368,12 +408,51 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			__getDescriptionString(
-				"pt:max_path_length",
-				"If set to zero, use an unlimited number of bounces"
+				"pt:max_bounces",
+				"If set to a negative number, use an unlimited number of bounces"
 			),
 
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Max Bounces",
+
+		],
+
+		"options.ptMaxDiffuseBounces" : [
+
+			"description",
+			__getDescriptionString(
+				"pt:max_diffuse_bounces",
+				"If set to a negative number, use an unlimited number of bounces"
+			),
+
+			"layout:section", "Unidirectional Path Tracer",
+			"label", "Max Diffuse Bounces",
+
+		],
+
+		"options.ptMaxGlossyBounces" : [
+
+			"description",
+			__getDescriptionString(
+				"pt:max_glossy_bounces",
+				"If set to a negative number, use an unlimited number of bounces"
+			),
+
+			"layout:section", "Unidirectional Path Tracer",
+			"label", "Max Glossy Bounces",
+
+		],
+
+		"options.ptMaxSpecularBounces" : [
+
+			"description",
+			__getDescriptionString(
+				"pt:max_specular_bounces",
+				"If set to a negative number, use an unlimited number of bounces"
+			),
+
+			"layout:section", "Unidirectional Path Tracer",
+			"label", "Max Specular Bounces",
 
 		],
 
@@ -407,6 +486,16 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Max Ray Intensity",
+
+		],
+
+		"options.ptClampRoughness" : [
+
+			"description",
+			__getDescriptionString("pt:clamp_roughness"),
+
+			"layout:section", "Unidirectional Path Tracer",
+			"label", "Clamp Roughness",
 
 		],
 
@@ -475,8 +564,8 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			__getDescriptionString(
-				"sppm:photon_tracing_max_path_length",
-				"If set to zero, use an unlimited number of bounces"
+				"sppm:photon_tracing_max_bounces",
+				"If set to a negative number, use an unlimited number of bounces"
 			),
 
 			"layout:section", "SPPM",
@@ -488,8 +577,8 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			__getDescriptionString(
-				"sppm:path_tracing_max_path_length",
-				"If set to zero, use an unlimited number of bounces"
+				"sppm:path_tracing_max_bounces",
+				"If set to a negative number, use an unlimited number of bounces"
 			),
 
 			"layout:section", "SPPM",
@@ -544,6 +633,71 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section", "SPPM",
 			"label", "Alpha",
+
+		],
+
+		# Denoiser
+
+		"options.denoiserMode" : [
+
+			"description",
+			"""
+			Enable the denoiser.
+			When choosing Write Outputs, two EXR images with denoising AOVs
+			will be written in the same directory as the beauty image.
+			The command line denoiser in appleseed can be used with the EXR files
+			to produce denoised images.
+			""",
+
+			"layout:section", "Denoiser",
+			"label", "Denoiser",
+		],
+
+		"options.denoiserMode.value" : [
+
+			"preset:Off", "off",
+			"preset:On", "on",
+			"preset:Write Outputs", "write_outputs",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
+		],
+
+		"options.denoiserSkipPixels" : [
+
+			"description",
+			"""
+			Disabling this option will produce better results
+			at the expense of slower processing time.
+			""",
+
+			"layout:section", "Denoiser",
+			"label", "Skip Denoised Pixels",
+
+		],
+
+		"options.denoiserRandomPixelOrder" : [
+
+			"description",
+			"""
+			Process pixels in random order.
+			Enabling this option can help reducing artifacts.
+			""",
+
+			"layout:section", "Denoiser",
+			"label", "Random Pixel Order",
+
+		],
+
+		"options.denoiserScales" : [
+
+			"description",
+			"""
+			Number of resolution scales used for denoising.
+			""",
+
+			"layout:section", "Denoiser",
+			"label", "Denoise Scales",
 
 		],
 

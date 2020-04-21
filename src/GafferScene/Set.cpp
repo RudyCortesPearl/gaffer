@@ -34,12 +34,13 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/StringAlgo.h"
-
 #include "GafferScene/Set.h"
-#include "GafferScene/PathMatcherData.h"
+
 #include "GafferScene/FilterResults.h"
+
+#include "Gaffer/StringPlug.h"
+
+#include "IECore/StringAlgo.h"
 
 using namespace std;
 using namespace IECore;
@@ -48,12 +49,12 @@ using namespace GafferScene;
 
 static InternedString g_ellipsis( "..." );
 
-IE_CORE_DEFINERUNTIMETYPED( Set );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Set );
 
 size_t Set::g_firstPlugIndex = 0;
 
 Set::Set( const std::string &name )
-	:	FilteredSceneProcessor( name, Filter::NoMatch )
+	:	FilteredSceneProcessor( name, IECore::PathMatcher::NoMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new Gaffer::IntPlug( "mode", Gaffer::Plug::In, Create, Create, Remove ) );
@@ -113,22 +114,22 @@ const Gaffer::StringVectorDataPlug *Set::pathsPlug() const
 	return getChild<Gaffer::StringVectorDataPlug>( g_firstPlugIndex + 2 );
 }
 
-PathMatcherDataPlug *Set::filterResultsPlug()
+Gaffer::PathMatcherDataPlug *Set::filterResultsPlug()
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 3 );
 }
 
-const PathMatcherDataPlug *Set::filterResultsPlug() const
+const Gaffer::PathMatcherDataPlug *Set::filterResultsPlug() const
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 3 );
 }
 
-PathMatcherDataPlug *Set::pathMatcherPlug()
+Gaffer::PathMatcherDataPlug *Set::pathMatcherPlug()
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 4 );
 }
 
-const PathMatcherDataPlug *Set::pathMatcherPlug() const
+const Gaffer::PathMatcherDataPlug *Set::pathMatcherPlug() const
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 4 );
 }
@@ -280,11 +281,13 @@ void Set::hashSet( const IECore::InternedString &setName, const Gaffer::Context 
 
 	FilteredSceneProcessor::hashSet( setName, context, parent, h );
 	inPlug()->setPlug()->hash( h );
+
+	ScenePlug::GlobalScope globalScope( context );
 	modePlug()->hash( h );
 	pathMatcherPlug()->hash( h );
 }
 
-GafferScene::ConstPathMatcherDataPtr Set::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+IECore::ConstPathMatcherDataPtr Set::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	const std::string allSets = " " + namePlug()->getValue() + " ";
 	const std::string setNameToFind = " " + setName.string() + " ";
@@ -293,8 +296,15 @@ GafferScene::ConstPathMatcherDataPtr Set::computeSet( const IECore::InternedStri
 		return inPlug()->setPlug()->getValue();
 	}
 
-	ConstPathMatcherDataPtr pathMatcher = pathMatcherPlug()->getValue();
-	switch( modePlug()->getValue() )
+	Mode mode;
+	ConstPathMatcherDataPtr pathMatcher;
+	{
+		ScenePlug::GlobalScope globalScope( context );
+		mode = static_cast<Mode>( modePlug()->getValue() );
+		pathMatcher = pathMatcherPlug()->getValue();
+	}
+
+	switch( mode )
 	{
 		case Add : {
 			ConstPathMatcherDataPtr inputSet = inPlug()->setPlug()->getValue();

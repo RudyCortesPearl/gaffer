@@ -38,10 +38,15 @@
 import os
 import subprocess32 as subprocess
 import unittest
+import glob
+import inspect
+import imath
 
 import IECore
 
 import Gaffer
+import GafferDispatch
+
 import GafferTest
 import GafferDispatchTest
 
@@ -54,7 +59,7 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 		self.__scriptFileName = self.temporaryDirectory() + "/executeScript.gfr"
 		self.__scriptFileNameWithSpecialCharacters = self.temporaryDirectory() + "/executeScript-10.tmp.gfr"
 		self.__outputTextFile = self.temporaryDirectory() + "/executeOutput.txt"
-		self.__outputFileSeq = IECore.FileSequence( self.temporaryDirectory() + "/sphere.####.cob" )
+		self.__outputFileSeq = IECore.FileSequence( self.temporaryDirectory() + "/output.####.cob" )
 
 	def testErrorReturnStatusForMissingScript( self ) :
 
@@ -68,13 +73,11 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 		self.failUnless( "thisScriptDoesNotExist" in "".join( p.stderr.readlines() ) )
 		self.failUnless( p.returncode )
 
-	def testExecuteObjectWriter( self ) :
+	def testExecuteTextWriter( self ) :
 
 		s = Gaffer.ScriptNode()
 
-		s["sphere"] = GafferTest.SphereNode()
-		s["write"] = Gaffer.ObjectWriter()
-		s["write"]["in"].setInput( s["sphere"]["out"] )
+		s["write"] = GafferDispatchTest.TextWriter()
 		s["write"]["fileName"].setValue( self.__outputFileSeq.fileName )
 
 		s["fileName"].setValue( self.__scriptFileName )
@@ -96,10 +99,10 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 	def testFramesParameter( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["sphere"] = GafferTest.SphereNode()
-		s["write"] = Gaffer.ObjectWriter()
-		s["write"]["in"].setInput( s["sphere"]["out"] )
+
+		s["write"] = GafferDispatchTest.TextWriter()
 		s["write"]["fileName"].setValue( self.__outputFileSeq.fileName )
+		s["write"]["text"].setValue( "test" )
 
 		s["fileName"].setValue( self.__scriptFileName )
 		s.save()
@@ -124,21 +127,19 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 	def testContextParameter( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["sphere"] = GafferTest.SphereNode()
-		s["e"] = Gaffer.Expression()
-		s["e"].setExpression( "parent['sphere']['radius'] = context.get( 'sphere:radius', 1 )" )
-		s["e2"] = Gaffer.Expression()
-		s["e2"].setExpression( "parent['sphere']['theta'] = context.get( 'sphere:theta', 360 )" )
-		s["write"] = Gaffer.ObjectWriter()
-		s["write"]["in"].setInput( s["sphere"]["out"] )
+
+		s["write"] = GafferDispatchTest.TextWriter()
 		s["write"]["fileName"].setValue( self.__outputFileSeq.fileName )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['write']['text'] = '{} {}'.format( context.get( 'valueOne', 0 ), context.get( 'valueTwo', 0 ) )" )
 
 		s["fileName"].setValue( self.__scriptFileName )
 		s.save()
 
 		self.failIf( os.path.exists( self.__outputFileSeq.fileNameForFrame( 1 ) ) )
 		p = subprocess.Popen(
-			"gaffer execute " + self.__scriptFileName + " -context -sphere:radius 5 -sphere:theta 180",
+			"gaffer execute " + self.__scriptFileName + " -context -valueOne 1 -valueTwo 2",
 			shell=True,
 			stderr = subprocess.PIPE,
 		)
@@ -149,16 +150,16 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 		self.failIf( p.returncode )
 		self.failUnless( os.path.exists( self.__outputFileSeq.fileNameForFrame( 1 ) ) )
 
-		prim = IECore.ObjectReader( self.__outputFileSeq.fileNameForFrame( 1 ) ).read()
-		self.failUnless( prim.isInstanceOf( IECore.SpherePrimitive.staticTypeId() ) )
-		self.assertEqual( prim.bound(), IECore.Box3f( IECore.V3f( -5 ), IECore.V3f( 5 ) ) )
-		self.assertEqual( prim.thetaMax(), 180 )
+		with open( self.__outputFileSeq.fileNameForFrame( 1 ) ) as f :
+			string = f.read()
+
+		self.assertEqual( string, "1 2" )
 
 	def testErrorReturnStatusForBadContext( self ) :
 
 		s = Gaffer.ScriptNode()
 		s["fileName"].setValue( self.__scriptFileName )
-		s["write"] = Gaffer.ObjectWriter()
+		s["write"] = GafferDispatchTest.TextWriter()
 		s.save()
 
 		p = subprocess.Popen(
@@ -249,6 +250,128 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 
 		self.assertEqual( p.returncode, 0 )
 		self.assertTrue( os.path.exists( self.__outputTextFile ) )
+
+	def testErrorMessagesIncludeNodeName( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( self.__scriptFileName )
+
+		s["MyTextWriter"] = GafferDispatchTest.TextWriter()
+		s["MyTextWriter"]["fileName"].setValue( self.__outputTextFile )
+
+		s["MyExpression"] = Gaffer.Expression()
+		s["MyExpression"].setExpression(
+			"""parent["MyTextWriter"]["text"] = thisVariableDoesntExist"""
+		)
+
+		s["MyErroringTaskNode"] = GafferDispatchTest.ErroringTaskNode()
+
+		s.save()
+
+		p = subprocess.Popen(
+			"gaffer execute -script " + self.__scriptFileName + " -nodes MyTextWriter",
+			shell=True,
+			stderr = subprocess.PIPE,
+		)
+		p.wait()
+
+		error = "".join( p.stderr.readlines() )
+		self.assertIn( "MyTextWriter", error )
+		self.assertIn( "MyExpression", error )
+
+		p = subprocess.Popen(
+			"gaffer execute -script " + self.__scriptFileName + " -nodes MyErroringTaskNode",
+			shell=True,
+			stderr = subprocess.PIPE,
+		)
+		p.wait()
+
+		error = "".join( p.stderr.readlines() )
+		self.assertIn( "MyErroringTaskNode", error )
+		self.assertNotIn( "MyExpression", error )
+
+	def testDefaultFrame( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["t"] = GafferDispatchTest.TextWriter()
+		s["t"]["fileName"].setValue( self.temporaryDirectory() + "/test.####.txt" )
+		s["t"]["text"].setValue( "test" )
+
+		s["fileName"].setValue( self.__scriptFileName )
+		s.context().setFrame( 10 )
+		s.save()
+
+		subprocess.check_call( [ "gaffer", "execute", self.__scriptFileName ] )
+
+		self.assertEqual(
+			glob.glob( self.temporaryDirectory() + "/test.*.txt" ),
+			[ self.temporaryDirectory() + "/test.0010.txt" ]
+		)
+
+	def testImathContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["t"] = GafferDispatchTest.TextWriter()
+		s["t"]["fileName"].setValue( self.temporaryDirectory() + "/test.txt" )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( inspect.cleandoc(
+			"""
+			c = context["c"]
+			parent["t"]["text"] = "{0} {1} {2}".format( *c )
+			"""
+		) )
+
+		s["fileName"].setValue(  self.temporaryDirectory() + "/test.gfr" )
+		s.save()
+
+		subprocess.check_call( [ "gaffer", "execute", s["fileName"].getValue(), "-context", "c", "imath.Color3f( 0, 1, 2 )" ] )
+
+		self.assertEqual(
+			open( s["t"]["fileName"].getValue() ).read(),
+			"0.0 1.0 2.0"
+		)
+
+	def testCanSerialiseFrameDependentPlugs( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["PythonCommand"] = GafferDispatch.PythonCommand()
+		s["PythonCommand"]["command"].setValue(
+			inspect.cleandoc( """
+				import os
+				import GafferDispatchTest
+
+				tmpDir = os.path.dirname( self.scriptNode()["fileName"].getValue() )
+				s = Gaffer.ScriptNode()
+				s["t"] = GafferDispatchTest.TextWriter()
+				s["t"]["fileName"].setValue( tmpDir + "/test.####.txt" )
+				s["t"]["text"].setValue( "test" )
+				s["fileName"].setValue( tmpDir + "/canSerialiseFrameDependentPlug.gfr" )
+				s.save()
+			""" )
+		)
+
+		def validate( sequence ) :
+
+			s["PythonCommand"]["sequence"].setValue( sequence )
+
+			s["fileName"].setValue( self.__scriptFileName )
+			s.context().setFrame( 10 )
+			s.save()
+
+			subprocess.check_call( [ "gaffer", "execute", self.__scriptFileName, "-frames", "5", "-nodes", "PythonCommand" ] )
+
+			self.assertTrue( os.path.exists( self.temporaryDirectory() + "/canSerialiseFrameDependentPlug.gfr" ) )
+
+			ss = Gaffer.ScriptNode()
+			ss["fileName"].setValue( self.temporaryDirectory() + "/canSerialiseFrameDependentPlug.gfr" )
+			ss.load()
+
+			# we must retain the non-substituted value
+			self.assertEqual( ss["t"]["fileName"].getValue(), "{}/test.####.txt".format( self.temporaryDirectory() ) )
+
+		validate( sequence = True )
+		validate( sequence = False )
 
 if __name__ == "__main__":
 	unittest.main()

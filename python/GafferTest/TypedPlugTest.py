@@ -139,11 +139,6 @@ class TypedPlugTest( GafferTest.TestCase ) :
 		self.assertNotEqual( p1.hash(), p2.hash() )
 		self.assertEqual( p2.hash(), p3.hash() )
 
-	def testReadOnlySetValueRaises( self ) :
-
-		p = Gaffer.BoolPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.ReadOnly )
-		self.assertRaises( RuntimeError, p.setValue, True )
-
 	def testCreateCounterpart( self ) :
 
 		p1 = Gaffer.BoolPlug(
@@ -165,7 +160,7 @@ class TypedPlugTest( GafferTest.TestCase ) :
 			"p",
 			Gaffer.Plug.Direction.In,
 			"defaultValue",
-			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.ReadOnly
+			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic
 		)
 
 		p2 = eval( repr( p1 ) )
@@ -174,22 +169,6 @@ class TypedPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( p2.direction(), p1.direction() )
 		self.assertEqual( p2.defaultValue(), p1.defaultValue() )
 		self.assertEqual( p2.getFlags(), p1.getFlags() )
-
-	def testReadOnlySerialisation( self ) :
-
-		s = Gaffer.ScriptNode()
-		s["n"] = Gaffer.Node()
-		s["n"]["p"] = Gaffer.StringPlug( defaultValue = "defaultValue", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		s["n"]["p"].setValue( "apple" )
-		s["n"]["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		ss = s.serialise()
-
-		s2 = Gaffer.ScriptNode()
-		s2.execute( ss )
-
-		self.assertEqual( s2["n"]["p"].defaultValue(), "defaultValue" )
-		self.assertEqual( s2["n"]["p"].getValue(), "apple" )
-		self.assertEqual( s2["n"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ), True )
 
 	def testBoolPlugNumericConnections( self ) :
 
@@ -239,6 +218,31 @@ class TypedPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( n["out"].getValue( _precomputedHash = h ), "hi" )
 		self.assertEqual( n.numHashCalls, numHashCalls )
 		self.assertEqual( n.numComputeCalls, 1 )
+
+	def testBoolPlugStringConnections( self ) :
+
+		n = GafferTest.AddNode()
+		n["op1"].setValue( 0 )
+		n["op2"].setValue( 2 )
+		self.assertEqual( n["sum"].getValue(), 2 )
+
+		s = Gaffer.StringPlug()
+		n["enabled"].setInput( s )
+		self.assertEqual( n["sum"].getValue(), 0 )
+
+		s.setValue( "notEmpty" )
+		self.assertEqual( n["sum"].getValue(), 2 )
+
+		s.setValue( "${test}" )
+		self.assertEqual( n["sum"].getValue(), 0 )
+
+		with Gaffer.Context() as c :
+
+			c["test"] = "notEmpty"
+			self.assertEqual( n["sum"].getValue(), 2 )
+
+			c["test"] = ""
+			self.assertEqual( n["sum"].getValue(), 0 )
 
 if __name__ == "__main__":
 	unittest.main()

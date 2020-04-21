@@ -40,14 +40,7 @@ import Gaffer
 import GafferUI
 import GafferImageUI
 import GafferImage
-
-def __colorSpacePresetNames( plug ) :
-
-	return IECore.StringVectorData( [ "Default" ] + GafferImage.OpenColorIOTransform.availableColorSpaces() )
-
-def __colorSpacePresetValues( plug ) :
-
-	return IECore.StringVectorData( [ "" ] + GafferImage.OpenColorIOTransform.availableColorSpaces() )
+import OpenColorIOTransformUI
 
 Gaffer.Metadata.registerNode(
 
@@ -103,7 +96,6 @@ Gaffer.Metadata.registerNode(
 
 			"plugValueWidget:type", "GafferImageUI.ChannelMaskPlugValueWidget",
 
-
 		],
 
 		"colorSpace" : [
@@ -116,8 +108,8 @@ Gaffer.Metadata.registerNode(
 			calling the function registered with `ImageWriter::setDefaultColorSpaceFunction()`.
 			""",
 
-			"presetNames", __colorSpacePresetNames,
-			"presetValues", __colorSpacePresetValues,
+			"presetNames", OpenColorIOTransformUI.colorSpacePresetNames,
+			"presetValues", OpenColorIOTransformUI.colorSpacePresetValues,
 
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 		],
@@ -356,6 +348,8 @@ Gaffer.Metadata.registerNode(
 			"preset:PXR24", "pxr24",
 			"preset:B44", "b44",
 			"preset:B44A", "b44a",
+			"preset:DWAA", "dwaa",
+			"preset:DWAB", "dwab",
 
 		],
 
@@ -369,6 +363,20 @@ Gaffer.Metadata.registerNode(
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 			"preset:Float", "float",
 			"preset:Half Float", "half",
+
+		],
+
+		"openexr.depthDataType" : [
+
+			"description",
+			"""
+			Overriding the data type for depth channels is useful because many of the things depth is used
+			for require greater precision.
+			""",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+			"preset:Override to Float", "float",
+			"preset:Use Default", "",
 
 		],
 

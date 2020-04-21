@@ -35,23 +35,23 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/regex.hpp"
-#include "boost/algorithm/string/predicate.hpp"
-#include "boost/container/flat_set.hpp"
+#include "GafferUI/NoduleLayout.h"
 
-#include "IECore/SimpleTypedData.h"
+#include "GafferUI/LinearContainer.h"
+#include "GafferUI/NodeGadget.h"
+#include "GafferUI/Nodule.h"
 
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
-#include "Gaffer/Plug.h"
 #include "Gaffer/Node.h"
+#include "Gaffer/Plug.h"
 
-#include "GafferUI/Nodule.h"
-#include "GafferUI/LinearContainer.h"
-#include "GafferUI/CompoundNodule.h"
-#include "GafferUI/NoduleLayout.h"
-#include "GafferUI/NodeGadget.h"
+#include "IECore/SimpleTypedData.h"
+
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/bind.hpp"
+#include "boost/container/flat_set.hpp"
+#include "boost/regex.hpp"
 
 using namespace std;
 using namespace IECore;
@@ -108,14 +108,14 @@ GadgetPtr createCustomGadget( const InternedString &gadgetType, GraphComponentPt
 	const CustomGadgetCreatorMap::const_iterator it = m.find( gadgetType );
 	if( it == m.end() )
 	{
-		return NULL;
+		return nullptr;
 	}
 	return it->second( parent );
 }
 
 // Custom gadget metadata accessors. These affect the layout of custom gadgets
 
-int index( const GraphComponent *parent, const InternedString &gadgetName, int defaultValue )
+int layoutIndex( const GraphComponent *parent, const InternedString &gadgetName, int defaultValue )
 {
 	ConstIntDataPtr i = Metadata::value<IntData>( parent, "noduleLayout:customGadget:" + gadgetName.string() + ":index" );
 	return i ? i->readable() : defaultValue;
@@ -146,7 +146,7 @@ bool visible( const GraphComponent *parent, const InternedString &gadgetName, IE
 
 typedef boost::variant<const Gaffer::Plug *, IECore::InternedString> GadgetKey;
 
-int index( const Plug *plug, int defaultValue )
+int layoutIndex( const Plug *plug, int defaultValue )
 {
 	ConstIntDataPtr i = Metadata::value<IntData>( plug, g_indexKey );
 	if( !i )
@@ -376,7 +376,7 @@ bool affectsDirection( IECore::InternedString key, IECore::InternedString sectio
 // NoduleLayout implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( NoduleLayout );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( NoduleLayout );
 
 NoduleLayout::NoduleLayout( Gaffer::GraphComponentPtr parent, IECore::InternedString section )
 	:	Gadget(), m_parent( parent ), m_section( section )
@@ -406,10 +406,10 @@ NoduleLayout::~NoduleLayout()
 
 Nodule *NoduleLayout::nodule( const Gaffer::Plug *plug )
 {
-	const GraphComponent *plugParent = plug->parent<GraphComponent>();
+	const GraphComponent *plugParent = plug->parent();
 	if( !plugParent )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	if( plugParent == m_parent.get() )
@@ -421,17 +421,16 @@ Nodule *NoduleLayout::nodule( const Gaffer::Plug *plug )
 			// for plug keys.
 			return static_cast<Nodule *>( it->second.gadget.get() );
 		}
-		return NULL;
+		return nullptr;
 	}
 	else if( const Plug *parentPlug = IECore::runTimeCast<const Plug>( plugParent ) )
 	{
-		CompoundNodule *compoundNodule = IECore::runTimeCast<CompoundNodule>( nodule( parentPlug ) );
-		if( compoundNodule )
+		if( Nodule *parentNodule = nodule( parentPlug ) )
 		{
-			return compoundNodule->nodule( plug );
+			return parentNodule->nodule( plug );
 		}
 	}
-	return NULL;
+	return nullptr;
 }
 
 const Nodule *NoduleLayout::nodule( const Gaffer::Plug *plug ) const
@@ -447,7 +446,7 @@ Gadget *NoduleLayout::customGadget( const std::string &name )
 	{
 		return it->second.gadget.get();
 	}
-	return NULL;
+	return nullptr;
 }
 
 const Gadget *NoduleLayout::customGadget( const std::string &name ) const
@@ -459,6 +458,11 @@ const Gadget *NoduleLayout::customGadget( const std::string &name ) const
 void NoduleLayout::registerCustomGadget( const std::string &gadgetType, CustomGadgetCreator creator )
 {
 	customGadgetCreators()[gadgetType] = creator;
+}
+
+bool NoduleLayout::hasLayer( Layer layer ) const
+{
+	return layer != GraphLayer::Backdrops;
 }
 
 LinearContainer *NoduleLayout::noduleContainer()
@@ -487,9 +491,9 @@ void NoduleLayout::childRemoved( Gaffer::GraphComponent *child )
 	}
 }
 
-void NoduleLayout::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+void NoduleLayout::plugMetadataChanged( IECore::TypeId nodeTypeId, const IECore::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
 {
-	if( childAffectedByChange( m_parent.get(), nodeTypeId, plugPath, plug ) )
+	if( MetadataAlgo::childAffectedByChange( m_parent.get(), nodeTypeId, plugPath, plug ) )
 	{
 		if(
 			key == g_sectionKey || key == g_indexKey || key == g_visibleKey ||
@@ -503,7 +507,7 @@ void NoduleLayout::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer:
 
 	if( const Plug *typedParent = runTimeCast<const Plug>( m_parent.get() ) )
 	{
-		if( affectedByChange( typedParent, nodeTypeId, plugPath, plug ) )
+		if( MetadataAlgo::affectedByChange( typedParent, nodeTypeId, plugPath, plug ) )
 		{
 			if( affectsSpacing( key, m_section ) )
 			{
@@ -528,7 +532,7 @@ void NoduleLayout::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer:
 void NoduleLayout::nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Gaffer::Node *node )
 {
 	const Node *typedParent = runTimeCast<const Node>( m_parent.get() );
-	if( !typedParent || !affectedByChange( typedParent, nodeTypeId, node ) )
+	if( !typedParent || !MetadataAlgo::affectedByChange( typedParent, nodeTypeId, node ) )
 	{
 		return;
 	}
@@ -570,7 +574,7 @@ std::vector<NoduleLayout::GadgetKey> NoduleLayout::layoutOrder()
 			continue;
 		}
 
-		toSort.push_back( SortItem( index( plug, toSort.size() ), plug ) );
+		toSort.push_back( SortItem( layoutIndex( plug, toSort.size() ), plug ) );
 	}
 
 	// Then any custom gadgets specified by the metadata
@@ -591,7 +595,7 @@ std::vector<NoduleLayout::GadgetKey> NoduleLayout::layoutOrder()
 			continue;
 		}
 
-		toSort.push_back( SortItem( index( m_parent.get(), name, toSort.size() ), name ) );
+		toSort.push_back( SortItem( layoutIndex( m_parent.get(), name, toSort.size() ), name ) );
 	}
 
 	// Sort and return the result
@@ -668,7 +672,12 @@ void NoduleLayout::updateLayout()
 		if( itemsSet.find( it->first ) == itemsSet.end() )
 		{
 			removed.push_back( it->second.gadget );
+// In libc++11 and earlier, Map::erase didn't take an iterator, only a const_iterator
+#if ( defined( _LIBCPP_VERSION ) && _LIBCPP_VERSION <= 1101 )
+			m_gadgets.erase( GadgetMap::const_iterator( it ) );
+#else
 			m_gadgets.erase( it );
+#endif
 		}
 		it = next;
 	}

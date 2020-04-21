@@ -37,40 +37,64 @@
 #ifndef GAFFERDISPATCHBINDINGS_TASKNODEBINDING_H
 #define GAFFERDISPATCHBINDINGS_TASKNODEBINDING_H
 
-#include "boost/python/suite/indexing/container_utils.hpp"
+#include "GafferDispatch/TaskNode.h"
 
+#include "GafferBindings/DependencyNodeBinding.h"
+
+#include "IECorePython/ExceptionAlgo.h"
 #include "IECorePython/ScopedGILLock.h"
 
-#include "GafferBindings/NodeBinding.h"
-#include "GafferBindings/ExceptionAlgo.h"
+#include "boost/python/suite/indexing/container_utils.hpp"
 
-#include "GafferDispatch/TaskNode.h"
+#include <utility>
 
 namespace GafferDispatchBindings
 {
 
-void bindTaskNode();
-
 template<typename T, typename TWrapper=T>
-class TaskNodeClass : public GafferBindings::NodeClass<T, TWrapper>
+class TaskNodeClass : public GafferBindings::DependencyNodeClass<T, TWrapper>
 {
 	public :
 
-		TaskNodeClass( const char *docString = NULL );
+		TaskNodeClass( const char *docString = nullptr );
 
 };
 
 template<typename WrappedType>
-class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
+class TaskNodeWrapper : public GafferBindings::DependencyNodeWrapper<WrappedType>
 {
 	public :
 
-		TaskNodeWrapper( PyObject *self, const std::string &name )
-			:	GafferBindings::NodeWrapper<WrappedType>( self, name )
+		template<typename... Args>
+		TaskNodeWrapper( PyObject *self, Args&&... args )
+			:	GafferBindings::DependencyNodeWrapper<WrappedType>( self, std::forward<Args>( args )... )
 		{
 		}
 
-		virtual void preTasks( const Gaffer::Context *context, GafferDispatch::TaskNode::Tasks &tasks ) const
+		bool affectsTask( const Gaffer::Plug *input ) const override
+		{
+			if( this->isSubclassed() )
+			{
+				IECorePython::ScopedGILLock gilLock;
+				try
+				{
+					boost::python::object override = this->methodOverride( "affectsTask" );
+					if( override )
+					{
+						return boost::python::extract<bool>(
+							override( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( input ) ) )
+						);
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
+				}
+			}
+			return WrappedType::affectsTask( input );
+		}
+
+		void preTasks( const Gaffer::Context *context, GafferDispatch::TaskNode::Tasks &tasks ) const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -95,13 +119,13 @@ class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					GafferBindings::ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::preTasks( context, tasks );
 		}
 
-		virtual void postTasks( const Gaffer::Context *context, GafferDispatch::TaskNode::Tasks &tasks ) const
+		void postTasks( const Gaffer::Context *context, GafferDispatch::TaskNode::Tasks &tasks ) const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -120,13 +144,13 @@ class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					GafferBindings::ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::postTasks( context, tasks );
 		}
 
-		virtual IECore::MurmurHash hash( const Gaffer::Context *context ) const
+		IECore::MurmurHash hash( const Gaffer::Context *context ) const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -143,13 +167,13 @@ class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					GafferBindings::ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::hash( context );
 		}
 
-		virtual void execute() const
+		void execute() const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -165,13 +189,13 @@ class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					GafferBindings::ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::execute();
 		}
 
-		virtual void executeSequence( const std::vector<float> &frames ) const
+		void executeSequence( const std::vector<float> &frames ) const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -192,13 +216,13 @@ class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					GafferBindings::ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::executeSequence( frames );
 		}
 
-		virtual bool requiresSequenceExecution() const
+		bool requiresSequenceExecution() const override
 		{
 			if( this->isSubclassed() )
 			{
@@ -213,7 +237,7 @@ class TaskNodeWrapper : public GafferBindings::NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					GafferBindings::ExceptionAlgo::translatePythonException();
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::requiresSequenceExecution();

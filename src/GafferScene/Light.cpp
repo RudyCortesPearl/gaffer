@@ -34,23 +34,26 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/NullObject.h"
-#include "IECore/Shader.h"
-#include "IECore/Light.h"
-#include "IECore/MessageHandler.h"
-
-#include "Gaffer/StringPlug.h"
-
 #include "GafferScene/Light.h"
-#include "GafferScene/PathMatcherData.h"
+
 #include "GafferScene/SceneNode.h"
+
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/TransformPlug.h"
+
+#include "IECoreScene/Shader.h"
+
+#include "IECore/MessageHandler.h"
+#include "IECore/NullObject.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 
 static IECore::InternedString g_lightsSetName( "__lights" );
+static IECore::InternedString g_defaultLightsSetName( "defaultLights" );
 
-IE_CORE_DEFINERUNTIMETYPED( Light );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Light );
 
 size_t Light::g_firstPlugIndex = 0;
 
@@ -59,6 +62,24 @@ Light::Light( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new Plug( "parameters" ) );
+	addChild( new BoolPlug( "defaultLight", Gaffer::Plug::Direction::In, true ) );
+
+	Gaffer::CompoundDataPlug *visualiserAttr = new CompoundDataPlug( "visualiserAttributes" );
+
+	FloatPlugPtr scaleValuePlug = new FloatPlug( "value", Gaffer::Plug::Direction::In, 1.0f, 0.01f );
+	visualiserAttr->addChild( new Gaffer::NameValuePlug( "gl:visualiser:scale", scaleValuePlug, false, "scale" ) );
+
+	IntPlugPtr maxResValuePlug = new IntPlug( "value", Gaffer::Plug::Direction::In, 512, 2, 2048 );
+	visualiserAttr->addChild( new Gaffer::NameValuePlug( "gl:visualiser:maxTextureResolution", maxResValuePlug, false, "maxTextureResolution" ) );
+
+	visualiserAttr->addChild( new Gaffer::NameValuePlug( "gl:visualiser:frustum", new IECore::StringData( "whenSelected" ), false, "frustum" ) );
+
+	FloatPlugPtr frustumScaleValuePlug = new FloatPlug( "value", Gaffer::Plug::Direction::In, 1.0f, 0.01f );
+	visualiserAttr->addChild( new Gaffer::NameValuePlug( "gl:light:frustumScale", frustumScaleValuePlug, false, "lightFrustumScale" ) );
+
+	visualiserAttr->addChild( new Gaffer::NameValuePlug( "gl:light:drawingMode", new IECore::StringData( "texture" ), false, "lightDrawingMode" ) );
+
+	addChild( visualiserAttr  );
 }
 
 Light::~Light()
@@ -75,15 +96,49 @@ const Gaffer::Plug *Light::parametersPlug() const
 	return getChild<Plug>( g_firstPlugIndex );
 }
 
+Gaffer::BoolPlug *Light::defaultLightPlug()
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::BoolPlug *Light::defaultLightPlug() const
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
+}
+
+Gaffer::CompoundDataPlug *Light::visualiserAttributesPlug()
+{
+	return getChild<Gaffer::CompoundDataPlug>( g_firstPlugIndex + 2 );
+}
+
+const Gaffer::CompoundDataPlug *Light::visualiserAttributesPlug() const
+{
+	return getChild<Gaffer::CompoundDataPlug>( g_firstPlugIndex + 2 );
+}
+
 void Light::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ObjectSource::affects( input, outputs );
 
-	if( parametersPlug()->isAncestorOf( input ) )
-	{
+	if(
+		parametersPlug()->isAncestorOf( input )
+		|| visualiserAttributesPlug()->isAncestorOf( input )
+	) {
 		outputs.push_back( outPlug()->attributesPlug() );
 	}
 
+	if( input == defaultLightPlug() )
+	{
+		// \todo: Perhaps this is indicative of a hole in the ObjectSource API. In
+		// theory the Light class has no responsibility towards the `setPlug()` since
+		// that is meant to be dealt with in the ObjectSource base class. The
+		// subclasses are meant to only worry about `hashStandardSetNames()` and
+		// `computeStandardSetNames()`. We should maybe have a matching `virtual bool
+		// affectsStandardSetNames( const Plug *input )` that subclasses implement
+		// and is called in `ObjectSource::affects()`
+		outputs.push_back( outPlug()->setNamesPlug() );
+		outputs.push_back( outPlug()->setPlug() );
+	}
 }
 
 void Light::hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -97,10 +152,10 @@ IECore::ConstObjectPtr Light::computeSource( const Context *context ) const
 	return IECore::NullObject::defaultNullObject();
 }
 
-
 void Light::hashAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
 	hashLight( context, h );
+	visualiserAttributesPlug()->hash( h );
 }
 
 IECore::ConstCompoundObjectPtr Light::computeAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
@@ -109,46 +164,53 @@ IECore::ConstCompoundObjectPtr Light::computeAttributes( const SceneNode::SceneP
 
 	std::string lightAttribute = "light";
 
-	IECore::ObjectVectorPtr lightShaders = computeLight( context );
-	if( lightShaders->members().size() )
+	IECoreScene::ConstShaderNetworkPtr lightShaders = computeLight( context );
+	if( const IECoreScene::Shader *shader = lightShaders->outputShader() )
 	{
-		if( const IECore::Shader *shader = IECore::runTimeCast<const IECore::Shader>( lightShaders->members().back().get() ) )
-		{
-			lightAttribute = shader->getType();
-		}
-		else if( const IECore::Light *light = IECore::runTimeCast<const IECore::Light>( lightShaders->members().back().get() ) )
-		{
-			/// \todo We are phasing out the use of IECore::Light and replacing
-			/// it with IECore::Shader everywhere. Make sure no derived classes
-			/// are using it and then remove this special case code.
-			IECore::msg( IECore::Msg::Warning, "Light::computeAttributes", "The use of IECore::Light is deprecated - please use IECore::Shader instead." );
-			const std::string &lightName = light->getName();
-			size_t colon = lightName.find( ":" );
-			if( colon != std::string::npos )
-			{
-				lightAttribute = lightName.substr( 0, colon ) + ":light";
-			}
-		}
+		lightAttribute = shader->getType();
 	}
 
-	result->members()[lightAttribute] = lightShaders;
+	// As we output as const, then this just lets us get through the next few lines...
+	result->members()[lightAttribute] = const_cast<IECoreScene::ShaderNetwork*>( lightShaders.get() );
+
+	visualiserAttributesPlug()->fillCompoundObject( result->members() );
 
 	return result;
+}
+
+void Light::hashStandardSetNames( const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	defaultLightPlug()->hash( h );
 }
 
 IECore::ConstInternedStringVectorDataPtr Light::computeStandardSetNames() const
 {
 	IECore::InternedStringVectorDataPtr result = new IECore::InternedStringVectorData();
 	result->writable().push_back( g_lightsSetName );
+
+	if( defaultLightPlug()->getValue() )
+	{
+		result->writable().push_back( g_defaultLightsSetName );
+	}
+
 	return result;
 }
 
 void Light::hashBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
 	SceneNode::hashBound( path, context, parent, h );
+	if( path.size() == 0 )
+	{
+		transformPlug()->hash( h );
+	}
 }
 
 Imath::Box3f Light::computeBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	return Imath::Box3f( Imath::V3f( -.5 ), Imath::V3f( .5 ) );
+	Imath::Box3f result = Imath::Box3f( Imath::V3f( -.5 ), Imath::V3f( .5 ) );
+	if( path.size() == 0 )
+	{
+		result = Imath::transform( result, transformPlug()->matrix() );
+	}
+	return result;
 }

@@ -37,23 +37,23 @@
 #ifndef GAFFERIMAGE_CDL_H
 #define GAFFERIMAGE_CDL_H
 
+#include "GafferImage/OpenColorIOTransform.h"
+
 #include "Gaffer/CompoundNumericPlug.h"
 #include "Gaffer/NumericPlug.h"
-
-#include "GafferImage/OpenColorIOTransform.h"
 
 namespace GafferImage
 {
 
-class CDL : public OpenColorIOTransform
+class GAFFERIMAGE_API CDL : public OpenColorIOTransform
 {
 
 	public :
 
 		CDL( const std::string &name=defaultName<CDL>() );
-		virtual ~CDL();
+		~CDL() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::CDL, CDLTypeId, OpenColorIOTransform );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::CDL, CDLTypeId, OpenColorIOTransform );
 
 		Gaffer::Color3fPlug *slopePlug();
 		const Gaffer::Color3fPlug *slopePlug() const;
@@ -72,9 +72,9 @@ class CDL : public OpenColorIOTransform
 
 	protected :
 
-		virtual bool affectsTransform( const Gaffer::Plug *input ) const;
-		virtual void hashTransform( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual OpenColorIO::ConstTransformRcPtr transform() const;
+		bool affectsTransform( const Gaffer::Plug *input ) const override;
+		void hashTransform( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		OpenColorIO::ConstTransformRcPtr transform() const override;
 
 	private :
 

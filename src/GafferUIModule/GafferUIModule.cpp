@@ -37,93 +37,57 @@
 
 #include "boost/python.hpp"
 
-#include "GafferUIBindings/GadgetBinding.h"
-#include "GafferUIBindings/EventBinding.h"
-#include "GafferUIBindings/ModifiableEventBinding.h"
-#include "GafferUIBindings/KeyEventBinding.h"
-#include "GafferUIBindings/ButtonEventBinding.h"
-#include "GafferUIBindings/NodeGadgetBinding.h"
-#include "GafferUIBindings/ContainerGadgetBinding.h"
-#include "GafferUIBindings/GraphGadgetBinding.h"
-#include "GafferUIBindings/RenderableGadgetBinding.h"
-#include "GafferUIBindings/IndividualContainerBinding.h"
-#include "GafferUIBindings/FrameBinding.h"
-#include "GafferUIBindings/TextGadgetBinding.h"
-#include "GafferUIBindings/NameGadgetBinding.h"
-#include "GafferUIBindings/LinearContainerBinding.h"
-#include "GafferUIBindings/NoduleBinding.h"
-#include "GafferUIBindings/DragDropEventBinding.h"
-#include "GafferUIBindings/ConnectionGadgetBinding.h"
-#include "GafferUIBindings/WidgetSignalBinding.h"
-#include "GafferUIBindings/StandardNodeGadgetBinding.h"
-#include "GafferUIBindings/SplinePlugGadgetBinding.h"
-#include "GafferUIBindings/StandardNoduleBinding.h"
-#include "GafferUIBindings/CompoundNoduleBinding.h"
-#include "GafferUIBindings/ImageGadgetBinding.h"
-#include "GafferUIBindings/StyleBinding.h"
-#include "GafferUIBindings/StandardStyleBinding.h"
-#include "GafferUIBindings/ViewportGadgetBinding.h"
-#include "GafferUIBindings/ViewBinding.h"
-#include "GafferUIBindings/PlugGadgetBinding.h"
-#include "GafferUIBindings/GraphLayoutBinding.h"
-#include "GafferUIBindings/StandardGraphLayoutBinding.h"
-#include "GafferUIBindings/PointerBinding.h"
-#include "GafferUIBindings/BackdropNodeGadgetBinding.h"
-#include "GafferUIBindings/SpacerGadgetBinding.h"
-#include "GafferUIBindings/StandardConnectionGadgetBinding.h"
-#include "GafferUIBindings/HandleBinding.h"
-#include "GafferUIBindings/ToolBinding.h"
-#include "GafferUIBindings/DotNodeGadgetBinding.h"
-#include "GafferUIBindings/PathListingWidgetBinding.h"
-#include "GafferUIBindings/GLWidgetBinding.h"
-#include "GafferUIBindings/PlugAdderBinding.h"
-#include "GafferUIBindings/NoduleLayoutBinding.h"
+#include "ConnectionGadgetBinding.h"
+#include "ContainerGadgetBinding.h"
+#include "EventBinding.h"
+#include "GLWidgetBinding.h"
+#include "GadgetBinding.h"
+#include "GraphGadgetBinding.h"
+#include "HandleBinding.h"
+#include "ImageGadgetBinding.h"
+#include "NameGadgetBinding.h"
+#include "NodeGadgetBinding.h"
+#include "NoduleBinding.h"
+#include "PathListingWidgetBinding.h"
+#include "PlugAdderBinding.h"
+#include "PlugGadgetBinding.h"
+#include "PointerBinding.h"
+#include "SpacerGadgetBinding.h"
+#include "StyleBinding.h"
+#include "TextGadgetBinding.h"
+#include "ToolBinding.h"
+#include "ViewBinding.h"
+#include "ViewportGadgetBinding.h"
+#include "WidgetSignalBinding.h"
+#include "AnimationGadgetBinding.h"
 
-using namespace GafferUIBindings;
+using namespace GafferUIModule;
 
 BOOST_PYTHON_MODULE( _GafferUI )
 {
 
 	bindGadget();
 	bindEvent();
-	bindModifiableEvent();
-	bindKeyEvent();
-	bindButtonEvent();
 	bindContainerGadget();
 	bindGraphGadget();
-	bindRenderableGadget();
-	bindIndividualContainer();
-	bindFrame();
 	bindTextGadget();
 	bindNameGadget();
 	bindNodeGadget();
-	bindLinearContainer();
 	bindNodule();
-	bindDragDropEvent();
 	bindConnectionGadget();
 	bindWidgetSignal();
-	bindStandardNodeGadget();
-	bindSplinePlugGadget();
-	bindStandardNodule();
-	bindCompoundNodule();
 	bindImageGadget();
 	bindStyle();
-	bindStandardStyle();
 	bindViewportGadget();
 	bindView();
 	bindPlugGadget();
-	bindGraphLayout();
-	bindStandardGraphLayout();
 	bindPointer();
-	bindBackdropNodeGadget();
 	bindSpacerGadget();
-	bindStandardConnectionGadget();
 	bindHandle();
 	bindTool();
-	bindDotNodeGadget();
 	bindPathListingWidget();
 	bindGLWidget();
 	bindPlugAdder();
-	bindNoduleLayout();
+	bindAnimationGadget();
 
 }

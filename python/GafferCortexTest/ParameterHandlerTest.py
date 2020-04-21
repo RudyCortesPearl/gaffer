@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import unittest
 
 import IECore
@@ -183,14 +181,14 @@ class ParameterHandlerTest( GafferTest.TestCase ) :
 		h = GafferCortex.ParameterHandler.create( p )
 		h.setupPlug( n )
 
-		self.failIf( h.plug().getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( h.plug() ) )
 
 		p.userData()["gaffer"] = IECore.CompoundObject( {
 			"readOnly" : IECore.BoolData( True ),
 		} )
 
 		h.setupPlug( n )
-		self.failUnless( h.plug().getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertTrue( Gaffer.MetadataAlgo.getReadOnly( h.plug() ) )
 
 	def testNonDefaultFlags( self ) :
 
@@ -201,15 +199,72 @@ class ParameterHandlerTest( GafferTest.TestCase ) :
 
 		h.setupPlug( n )
 		self.assertTrue( h.plug().getFlags( Gaffer.Plug.Flags.Dynamic ) )
-		self.assertFalse( h.plug().getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertTrue( h.plug().getFlags( Gaffer.Plug.Flags.Serialisable ) )
 
 		h.setupPlug( n, flags = Gaffer.Plug.Flags.Default )
 		self.assertFalse( h.plug().getFlags( Gaffer.Plug.Flags.Dynamic ) )
-		self.assertFalse( h.plug().getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertTrue( h.plug().getFlags( Gaffer.Plug.Flags.Serialisable ) )
 
-		h.setupPlug( n, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.ReadOnly )
+		h.setupPlug( n, flags = Gaffer.Plug.Flags.Default & ~Gaffer.Plug.Flags.Serialisable )
 		self.assertFalse( h.plug().getFlags( Gaffer.Plug.Flags.Dynamic ) )
-		self.assertTrue( h.plug().getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertFalse( h.plug().getFlags( Gaffer.Plug.Flags.Serialisable ) )
+
+	def testHash( self ) :
+
+		c = IECore.CompoundParameter(
+
+			"c",
+			"",
+
+			[
+				IECore.IntParameter( "i", "" ),
+				IECore.FloatParameter( "f", "" )
+			]
+
+		)
+
+		n = Gaffer.Node()
+
+		h = GafferCortex.CompoundParameterHandler( c )
+		h.setupPlug( n )
+
+		hash1 = h.hash()
+		n["c"]["i"].setValue( 10 )
+		hash2 = h.hash()
+		n["c"]["f"].setValue( 10 )
+		hash3 = h.hash()
+
+		self.assertNotEqual( hash1, hash2 )
+		self.assertNotEqual( hash1, hash3 )
+		self.assertNotEqual( hash2, hash3 )
+
+	def testSubstitutions( self ) :
+
+		p = IECore.StringParameter( "s", "d", "" )
+
+		n = Gaffer.Node()
+		h = GafferCortex.ParameterHandler.create( p )
+		h.setupPlug( n )
+		self.assertEqual( n["s"].substitutions(), IECore.StringAlgo.Substitutions.AllSubstitutions )
+
+		# adding substitutions should affect the plug
+		p.userData()["gaffer"] = IECore.CompoundObject( {
+			"substitutions" : IECore.IntData( IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions ),
+		} )
+		h.setupPlug( n )
+		self.assertEqual( n["s"].substitutions(), IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.FrameSubstitutions )
+
+		# make sure connections are maintained as well
+		nn = Gaffer.Node()
+		nn["driver"] = Gaffer.StringPlug()
+		n["s"].setInput( nn["driver"] )
+		# we're forcing a re-creation of the plug because substitutions have changed
+		p.userData()["gaffer"] = IECore.CompoundObject( {
+			"substitutions" : IECore.IntData( IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.VariableSubstitutions ),
+		} )
+		h.setupPlug( n )
+		self.assertEqual( n["s"].substitutions(), IECore.StringAlgo.Substitutions.AllSubstitutions & ~IECore.StringAlgo.Substitutions.VariableSubstitutions )
+		self.assertEqual( n["s"].getInput(), nn["driver"] )
 
 if __name__ == "__main__":
 	unittest.main()

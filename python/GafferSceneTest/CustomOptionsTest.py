@@ -36,8 +36,10 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
@@ -55,19 +57,19 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 		# check that the scene hierarchy is passed through
 
 		self.assertEqual( options["out"].object( "/" ), IECore.NullObject() )
-		self.assertEqual( options["out"].transform( "/" ), IECore.M44f() )
-		self.assertEqual( options["out"].bound( "/" ), IECore.Box3f( IECore.V3f( -0.5, -0.5, 0 ), IECore.V3f( 0.5, 0.5, 0 ) ) )
+		self.assertEqual( options["out"].transform( "/" ), imath.M44f() )
+		self.assertEqual( options["out"].bound( "/" ), imath.Box3f( imath.V3f( -0.5, -0.5, 0 ), imath.V3f( 0.5, 0.5, 0 ) ) )
 		self.assertEqual( options["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "plane" ] ) )
 
-		self.assertEqual( options["out"].object( "/plane" ), IECore.MeshPrimitive.createPlane( IECore.Box2f( IECore.V2f( -0.5 ), IECore.V2f( 0.5 ) ) ) )
-		self.assertEqual( options["out"].transform( "/plane" ), IECore.M44f() )
-		self.assertEqual( options["out"].bound( "/plane" ), IECore.Box3f( IECore.V3f( -0.5, -0.5, 0 ), IECore.V3f( 0.5, 0.5, 0 ) ) )
+		self.assertEqual( options["out"].object( "/plane" ), IECoreScene.MeshPrimitive.createPlane( imath.Box2f( imath.V2f( -0.5 ), imath.V2f( 0.5 ) ) ) )
+		self.assertEqual( options["out"].transform( "/plane" ), imath.M44f() )
+		self.assertEqual( options["out"].bound( "/plane" ), imath.Box3f( imath.V3f( -0.5, -0.5, 0 ), imath.V3f( 0.5, 0.5, 0 ) ) )
 		self.assertEqual( options["out"].childNames( "/plane" ), IECore.InternedStringVectorData() )
 
 		# check that we can make options
 
-		options["options"].addMember( "test", IECore.IntData( 10 ) )
-		options["options"].addMember( "test2", IECore.StringData( "10" ) )
+		options["options"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ) ) )
+		options["options"].addChild( Gaffer.NameValuePlug( "test2", IECore.StringData( "10" ) ) )
 
 		g = options["out"]["globals"].getValue()
 		self.assertEqual( len( g ), 2 )
@@ -78,8 +80,8 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["optionsNode"] = GafferScene.CustomOptions()
-		s["optionsNode"]["options"].addMember( "test", IECore.IntData( 10 ) )
-		s["optionsNode"]["options"].addMember( "test2", IECore.StringData( "10" ) )
+		s["optionsNode"]["options"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["optionsNode"]["options"].addChild( Gaffer.NameValuePlug( "test2", IECore.StringData( "10" ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		ss = s.serialise()
 
@@ -94,24 +96,24 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 
 	def testHashPassThrough( self ) :
 
-		# the hash of the per-object part of the output should be
+		# The hash of everything except the globals should be
 		# identical to the input, so that they share cache entries.
 
 		p = GafferScene.Plane()
 		options = GafferScene.CustomOptions()
 		options["in"].setInput( p["out"] )
-		options["options"].addMember( "test", IECore.IntData( 10 ) )
+		options["options"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ) ) )
 
-		self.assertSceneHashesEqual( p["out"], options["out"], childPlugNames = ( "transform", "bound", "attributes", "object", "childNames" ) )
+		self.assertSceneHashesEqual( p["out"], options["out"], checks = self.allSceneChecks - { "globals" } )
 
 	def testDisabled( self ) :
 
 		p = GafferScene.Plane()
 		options = GafferScene.CustomOptions()
 		options["in"].setInput( p["out"] )
-		options["options"].addMember( "test", IECore.IntData( 10 ) )
+		options["options"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ) ) )
 
-		self.assertSceneHashesEqual( p["out"], options["out"], childPlugNames = ( "transform", "bound", "attributes", "object", "childNames" ) )
+		self.assertSceneHashesEqual( p["out"], options["out"], checks = self.allSceneChecks - { "globals" } )
 		self.assertNotEqual( options["out"]["globals"].hash(), p["out"]["globals"].hash() )
 
 		options["enabled"].setValue( False )
@@ -143,7 +145,7 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 	def testSubstitution( self ) :
 
 		o = GafferScene.CustomOptions()
-		o["options"].addMember( "test", "${foo}" )
+		o["options"].addChild( Gaffer.NameValuePlug( "test", "${foo}" ) )
 
 		self.assertEqual( o["out"]["globals"].getValue()["option:test"], IECore.StringData( "" ) )
 		h = o["out"]["globals"].hash()
@@ -160,7 +162,8 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 		o = GafferScene.CustomOptions()
 		cs = GafferTest.CapturingSlot( o.plugDirtiedSignal() )
 
-		p = o["options"].addMember( "test", IECore.IntData( 10 ) )
+		p = Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		o["options"].addChild( p )
 		self.assertTrue( o["out"]["globals"] in [ c[0] for c in cs ] )
 
 		del cs[:]
@@ -185,7 +188,7 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 
 		options = GafferScene.CustomOptions()
 
-		options["options"].addMember( "test", IECore.IntData( 10 ) )
+		options["options"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ) ) )
 		options["prefix"].setValue( "myCategory:" )
 
 		g = options["out"]["globals"].getValue()

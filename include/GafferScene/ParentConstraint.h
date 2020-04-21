@@ -37,31 +37,31 @@
 #ifndef GAFFERSCENE_PARENTCONSTRAINT_H
 #define GAFFERSCENE_PARENTCONSTRAINT_H
 
-#include "Gaffer/TransformPlug.h"
-
 #include "GafferScene/Constraint.h"
+
+#include "Gaffer/TransformPlug.h"
 
 namespace GafferScene
 {
 
-class ParentConstraint : public Constraint
+class GAFFERSCENE_API ParentConstraint : public Constraint
 {
 
 	public :
 
 		ParentConstraint( const std::string &name=defaultName<ParentConstraint>() );
-		virtual ~ParentConstraint();
+		~ParentConstraint() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ParentConstraint, ParentConstraintTypeId, Constraint );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::ParentConstraint, ParentConstraintTypeId, Constraint );
 
 		Gaffer::TransformPlug *relativeTransformPlug();
 		const Gaffer::TransformPlug *relativeTransformPlug() const;
 
 	protected :
 
-		virtual bool affectsConstraint( const Gaffer::Plug *input ) const;
-		virtual void hashConstraint( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::M44f computeConstraint( const Imath::M44f &fullTargetTransform, const Imath::M44f &fullInputTransform, const Imath::M44f &inputTransform ) const;
+		bool affectsConstraint( const Gaffer::Plug *input ) const override;
+		void hashConstraint( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::M44f computeConstraint( const Imath::M44f &fullTargetTransform, const Imath::M44f &fullInputTransform, const Imath::M44f &inputTransform ) const override;
 
 	private :
 

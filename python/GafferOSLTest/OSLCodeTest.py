@@ -39,6 +39,7 @@ import subprocess
 import shutil
 import unittest
 import functools
+import imath
 
 import IECore
 
@@ -61,7 +62,7 @@ class OSLCodeTest( GafferOSLTest.OSLTestCase ) :
 			Gaffer.Color3fPlug,
 			Gaffer.M44fPlug,
 			Gaffer.StringPlug,
-			Gaffer.Plug,
+			GafferOSL.ClosurePlug,
 		] ) :
 
 			inName = "in%d" % i
@@ -85,9 +86,11 @@ class OSLCodeTest( GafferOSLTest.OSLTestCase ) :
 		self.assertEqual( oslShader["out"].keys(), oslCode["out"].keys() )
 
 		for p in oslShader["parameters"].children() :
+			p.setFlags( Gaffer.Plug.Flags.Dynamic, True )
 			self.assertEqual( repr( p ), repr( oslCode["parameters"][p.getName()] ) )
 
 		for p in oslShader["out"].children() :
+			p.setFlags( Gaffer.Plug.Flags.Dynamic, True )
 			self.assertEqual( repr( p ), repr( oslCode["out"][p.getName()] ) )
 
 	def testParseError( self ) :
@@ -182,10 +185,10 @@ class OSLCodeTest( GafferOSLTest.OSLTestCase ) :
 			defaultValue = IECore.SplinefColor3f(
 				IECore.CubicBasisf.catmullRom(),
 				(
-					( 0, IECore.Color3f( 0 ) ),
-					( 0, IECore.Color3f( 0 ) ),
-					( 1, IECore.Color3f( 1 ) ),
-					( 1, IECore.Color3f( 1 ) ),
+					( 0, imath.Color3f( 0 ) ),
+					( 0, imath.Color3f( 0 ) ),
+					( 1, imath.Color3f( 1 ) ),
+					( 1, imath.Color3f( 1 ) ),
 				)
 			),
 			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic
@@ -199,6 +202,8 @@ class OSLCodeTest( GafferOSLTest.OSLTestCase ) :
 
 		oslShader = GafferOSL.OSLShader()
 		oslShader.loadShader( self.__osoFileName( oslCode ) )
+
+		oslShader["parameters"]["sp"].setFlags( Gaffer.Plug.Flags.Dynamic, True )
 
 		self.assertEqual( repr( oslShader["parameters"]["sp"] ), repr( oslCode["parameters"]["sp"] ) )
 
@@ -284,9 +289,11 @@ class OSLCodeTest( GafferOSLTest.OSLTestCase ) :
 		self.assertEqual( oslShader["out"].keys(), oslCode["out"].keys() )
 
 		for p in oslShader["parameters"].children() :
+			p.setFlags( Gaffer.Plug.Flags.Dynamic, True )
 			self.assertEqual( repr( p ), repr( oslCode["parameters"][p.getName()] ) )
 
 		for p in oslShader["out"].children() :
+			p.setFlags( Gaffer.Plug.Flags.Dynamic, True )
 			self.assertEqual( repr( p ), repr( oslCode["out"][p.getName()] ) )
 
 	def testSourceUsesRequestedName( self ) :
@@ -355,7 +362,7 @@ class OSLCodeTest( GafferOSLTest.OSLTestCase ) :
 		# `GafferScene::Shader` base class shouldn't even
 		# mandate the existence of "name" and "type" plugs.
 
-		return oslCode.attributes()["osl:shader"][0].name
+		return oslCode.attributes()["osl:shader"].outputShader().name
 
 	def __assertError( self, oslCode, fn, *args, **kw ) :
 

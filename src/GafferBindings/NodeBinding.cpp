@@ -37,70 +37,16 @@
 
 #include "boost/python.hpp"
 
-#include "Gaffer/ScriptNode.h"
-
 #include "GafferBindings/NodeBinding.h"
-#include "GafferBindings/SignalBinding.h"
+
 #include "GafferBindings/MetadataBinding.h"
+
+#include "Gaffer/Plug.h"
 
 using namespace boost::python;
 using namespace IECorePython;
 using namespace Gaffer;
 using namespace GafferBindings;
-
-namespace
-{
-
-struct UnaryPlugSlotCaller
-{
-	boost::signals::detail::unusable operator()( boost::python::object slot, PlugPtr p )
-	{
-		try
-		{
-			slot( p );
-		}
-		catch( const error_already_set &e )
-		{
-			PyErr_PrintEx( 0 ); // clears the error status
-		}
-		return boost::signals::detail::unusable();
-	}
-};
-
-struct BinaryPlugSlotCaller
-{
-
-	boost::signals::detail::unusable operator()( boost::python::object slot, PlugPtr p1, PlugPtr p2 )
-	{
-		try
-		{
-			slot( p1, p2 );
-		}
-		catch( const error_already_set &e )
-		{
-			PyErr_PrintEx( 0 ); // clears the error status
-		}
-		return boost::signals::detail::unusable();
-	}
-};
-
-struct ErrorSlotCaller
-{
-	boost::signals::detail::unusable operator()( boost::python::object slot, const Plug *plug, const Plug *source, const std::string &error )
-	{
-		try
-		{
-			slot( PlugPtr( const_cast<Plug *>( plug ) ), PlugPtr( const_cast<Plug *>( source ) ), error );
-		}
-		catch( const error_already_set &e )
-		{
-			ExceptionAlgo::translatePythonException();
-		}
-		return boost::signals::detail::unusable();
-	}
-};
-
-} // namespace
 
 void NodeSerialiser::moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const
 {
@@ -131,7 +77,7 @@ bool NodeSerialiser::childNeedsSerialisation( const Gaffer::GraphComponent *chil
 		// children explicitly. This is most useful to allow nodes to be
 		// cut + pasted out of Reference nodes, but implementing it here
 		// makes it possible to inspect the internals of other nodes too.
-		return serialisation.parent() == child->parent<GraphComponent>();
+		return serialisation.parent() == child->parent();
 	}
 }
 
@@ -146,25 +92,4 @@ bool NodeSerialiser::childNeedsConstruction( const Gaffer::GraphComponent *child
 		assert( child->isInstanceOf( Node::staticTypeId() ) );
 		return true;
 	}
-}
-
-void GafferBindings::bindNode()
-{
-	typedef NodeWrapper<Node> Wrapper;
-
-	scope s = NodeClass<Node, Wrapper>()
-		.def( "scriptNode", (ScriptNode *(Node::*)())&Node::scriptNode, return_value_policy<CastToIntrusivePtr>() )
-		.def( "plugSetSignal", &Node::plugSetSignal, return_internal_reference<1>() )
-		.def( "plugInputChangedSignal", &Node::plugInputChangedSignal, return_internal_reference<1>() )
-		.def( "plugFlagsChangedSignal", &Node::plugFlagsChangedSignal, return_internal_reference<1>() )
-		.def( "plugDirtiedSignal", &Node::plugDirtiedSignal, return_internal_reference<1>() )
-		.def( "errorSignal", (Node::ErrorSignal &(Node::*)())&Node::errorSignal, return_internal_reference<1>() )
-	;
-
-	SignalClass<Node::UnaryPlugSignal, DefaultSignalCaller<Node::UnaryPlugSignal>, UnaryPlugSlotCaller >( "UnaryPlugSignal" );
-	SignalClass<Node::BinaryPlugSignal, DefaultSignalCaller<Node::BinaryPlugSignal>, BinaryPlugSlotCaller >( "BinaryPlugSignal" );
-	SignalClass<Node::ErrorSignal, DefaultSignalCaller<Node::ErrorSignal>, ErrorSlotCaller >( "ErrorSignal" );
-
-	Serialisation::registerSerialiser( Node::staticTypeId(), new NodeSerialiser() );
-
 }

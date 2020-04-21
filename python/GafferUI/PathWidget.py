@@ -35,10 +35,10 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import os
 import warnings
+import functools
+import imath
 
 import IECore
 
@@ -57,10 +57,10 @@ class PathWidget( GafferUI.TextWidget ) :
 		# than the other things that go in TextWidgets.
 		self.setPreferredCharacterWidth( 60 )
 
-		self.__keyPressConnection = self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
-		self.__selectingFinishedConnection = self.selectingFinishedSignal().connect( Gaffer.WeakMethod( self.__selectingFinished ) )
+		self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
+		self.selectingFinishedSignal().connect( Gaffer.WeakMethod( self.__selectingFinished ), scoped = False )
 
-		self.__textChangedConnection = self.textChangedSignal().connect( Gaffer.WeakMethod( self.__textChanged ) )
+		self.textChangedSignal().connect( Gaffer.WeakMethod( self.__textChanged ), scoped = False )
 
 		self.__popupMenu = None
 
@@ -173,7 +173,7 @@ class PathWidget( GafferUI.TextWidget ) :
 				"/" + str( i ),
 				IECore.MenuItemDefinition(
 					label = str( pathCopy ),
-					command = IECore.curry( Gaffer.WeakMethod( self.__path.setFromString ), str( pathCopy ) ),
+					command = functools.partial( Gaffer.WeakMethod( self.__path.setFromString ), str( pathCopy ) ),
 				)
 			)
 			del pathCopy[-1]
@@ -198,7 +198,7 @@ class PathWidget( GafferUI.TextWidget ) :
 				md.append( "/" + o,
 					IECore.MenuItemDefinition(
 						label=o,
-						command = IECore.curry( Gaffer.WeakMethod( self.__replacePathEntry ), len( dirPath ), o )
+						command = functools.partial( Gaffer.WeakMethod( self.__replacePathEntry ), len( dirPath ), o )
 					)
 				)
 
@@ -224,7 +224,7 @@ class PathWidget( GafferUI.TextWidget ) :
 				break
 
 		bound = self.bound()
-		return IECore.V2i( bound.min.x + x, bound.max.y )
+		return imath.V2i( bound.min().x + x, bound.max().y )
 
 	def __pathChanged( self, path ) :
 

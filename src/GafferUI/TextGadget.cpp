@@ -36,6 +36,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "GafferUI/TextGadget.h"
+
 #include "GafferUI/Style.h"
 
 #include "IECore/SimpleTypedData.h"
@@ -44,7 +45,7 @@ using namespace GafferUI;
 using namespace IECore;
 using namespace boost;
 
-IE_CORE_DEFINERUNTIMETYPED( TextGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( TextGadget );
 
 TextGadget::TextGadget( const std::string &text )
 	:	Gadget( defaultName<TextGadget>() )
@@ -82,7 +83,12 @@ Imath::Box3f TextGadget::bound() const
 	return m_bound;
 }
 
-void TextGadget::doRender( const Style *style ) const
+void TextGadget::doRenderLayer( Layer layer, const Style *style ) const
 {
+	if( layer != Layer::Main )
+	{
+		return;
+	}
+
 	style->renderText( Style::LabelText, m_text );
 }

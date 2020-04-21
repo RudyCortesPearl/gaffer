@@ -34,14 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/lexical_cast.hpp"
+#include "GafferTest/ContextTest.h"
 
-#include "IECore/Timer.h"
+#include "GafferTest/Assert.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferTest/Assert.h"
-#include "GafferTest/ContextTest.h"
+#include "IECore/Timer.h"
+
+#include "boost/lexical_cast.hpp"
 
 using namespace std;
 using namespace boost;
@@ -70,16 +71,13 @@ void GafferTest::testManyContexts()
 	// change a value or two, and then continue.
 
 	Timer t;
-	for( int i = 0; i < 100000; ++i )
+	for( int i = 0; i < 1000000; ++i )
 	{
 		ContextPtr tmp = new Context( *base, Context::Borrowed );
 		tmp->set( keys[i%numKeys], i );
 		GAFFERTEST_ASSERT( tmp->get<int>( keys[i%numKeys] ) == i );
 		GAFFERTEST_ASSERT( tmp->hash() != baseHash );
 	}
-
-	// uncomment to get timing information
-	//std::cerr << t.stop() << std::endl;
 }
 
 // Useful for assessing the performance of substitutions.
@@ -93,14 +91,11 @@ void GafferTest::testManySubstitutions()
 	const std::string expectedResult( "smoke me a kipper" );
 
 	Timer t;
-	for( int i = 0; i < 100000; ++i )
+	for( int i = 0; i < 1000000; ++i )
 	{
 		const std::string s = context->substitute( phrase );
 		GAFFERTEST_ASSERT( s == expectedResult );
 	}
-
-	// uncomment to get timing information
-	//std::cerr << t.stop() << std::endl;
 }
 
 // Useful for assessing the performance of environment variable substitutions.
@@ -117,9 +112,6 @@ void GafferTest::testManyEnvironmentSubstitutions()
 		const std::string s = context->substitute( phrase );
 		GAFFERTEST_ASSERT( s == expectedResult );
 	}
-
-	// uncomment to get timing information
-	//std::cerr << t.stop() << std::endl;
 }
 
 // Tests that scoping a null context is a no-op
@@ -137,7 +129,7 @@ void GafferTest::testScopingNullContext()
 		const std::string s = Context::current()->substitute( phrase );
 		GAFFERTEST_ASSERT( s == expectedResult );
 
-		const Context *nullContext = NULL;
+		const Context *nullContext = nullptr;
 		{
 			Context::Scope scope( nullContext );
 			const std::string s = Context::current()->substitute( phrase );

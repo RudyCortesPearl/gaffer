@@ -34,35 +34,30 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Primitive.h"
+#include "GafferScene/MapOffset.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/MapOffset.h"
+#include "IECoreScene/Primitive.h"
 
 using namespace std;
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( MapOffset );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( MapOffset );
 
 size_t MapOffset::g_firstPlugIndex = 0;
 
 MapOffset::MapOffset( const std::string &name )
-	:	SceneElementProcessor( name )
+	:	ObjectProcessor( name, PathMatcher::EveryMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new V2fPlug( "offset" ) );
 	addChild( new IntPlug( "udim", Plug::In, 1001, 1001 ) );
-	addChild( new StringPlug( "sName", Plug::In, "s" ) );
-	addChild( new StringPlug( "tName", Plug::In, "t" ) );
-
-	// Fast pass-throughs for things we don't modify
-	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
-	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
-	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
+	addChild( new StringPlug( "uvSet", Plug::In, "uv" ) );
 }
 
 MapOffset::~MapOffset()
@@ -89,69 +84,55 @@ const Gaffer::IntPlug *MapOffset::udimPlug() const
 	return getChild<IntPlug>( g_firstPlugIndex + 1 );
 }
 
-Gaffer::StringPlug *MapOffset::sNamePlug()
+Gaffer::StringPlug *MapOffset::uvSetPlug()
 {
 	return getChild<StringPlug>( g_firstPlugIndex + 2 );
 }
 
-const Gaffer::StringPlug *MapOffset::sNamePlug() const
+const Gaffer::StringPlug *MapOffset::uvSetPlug() const
 {
 	return getChild<StringPlug>( g_firstPlugIndex + 2 );
 }
 
-Gaffer::StringPlug *MapOffset::tNamePlug()
+bool MapOffset::affectsProcessedObject( const Gaffer::Plug *input ) const
 {
-	return getChild<StringPlug>( g_firstPlugIndex + 3 );
-}
-
-const Gaffer::StringPlug *MapOffset::tNamePlug() const
-{
-	return getChild<StringPlug>( g_firstPlugIndex + 3 );
-}
-
-void MapOffset::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
-{
-	SceneElementProcessor::affects( input, outputs );
-
-	if(
+	return
+		ObjectProcessor::affectsProcessedObject( input ) ||
 		input->parent<Plug>() == offsetPlug() ||
 		input == udimPlug() ||
-		input == sNamePlug() ||
-		input == tNamePlug()
-	)
-	{
-		outputs.push_back( outPlug()->objectPlug() );
-	}
-}
-
-bool MapOffset::processesObject() const
-{
-	return true;
+		input == uvSetPlug()
+	;
 }
 
 void MapOffset::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ObjectProcessor::hashProcessedObject( path, context, h );
 	offsetPlug()->hash( h );
 	udimPlug()->hash( h );
-	sNamePlug()->hash( h );
-	tNamePlug()->hash( h );
+	uvSetPlug()->hash( h );
 }
 
-IECore::ConstObjectPtr MapOffset::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const
+IECore::ConstObjectPtr MapOffset::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const
 {
 	// early out if it's not a primitive
-	const Primitive *inputPrimitive = runTimeCast<const Primitive>( inputObject.get() );
+	const Primitive *inputPrimitive = runTimeCast<const Primitive>( inputObject );
 	if( !inputPrimitive )
 	{
 		return inputObject;
 	}
 
-	// early out if the s/t names haven't been provided.
+	// early out if the uv set hasn't been specified
 
-	std::string sName = sNamePlug()->getValue();
-	std::string tName = tNamePlug()->getValue();
+	const string uvSet = uvSetPlug()->getValue();
+	if( uvSet == "" )
+	{
+		return inputObject;
+	}
 
-	if( sName == "" || tName == "" )
+
+	// also early out if the uv set doesn't exist on the input primitive
+
+	if ( inputPrimitive->variables.find( uvSet ) == inputPrimitive->variables.end() )
 	{
 		return inputObject;
 	}
@@ -166,19 +147,11 @@ IECore::ConstObjectPtr MapOffset::computeProcessedObject( const ScenePath &path,
 	offset.x += (udim - 1001) % 10;
 	offset.y += (udim - 1001) / 10;
 
-	if( FloatVectorDataPtr sData = result->variableData<FloatVectorData>( sName ) )
+	if( V2fVectorData *uvData = runTimeCast<V2fVectorData>( result->variables[uvSet].data.get() ) )
 	{
-		for( vector<float>::iterator it = sData->writable().begin(), eIt = sData->writable().end(); it != eIt; ++it )
+		for( V2f &uv : uvData->writable() )
 		{
-			*it += offset.x;
-		}
-	}
-
-	if( FloatVectorDataPtr tData = result->variableData<FloatVectorData>( tName ) )
-	{
-		for( vector<float>::iterator it = tData->writable().begin(), eIt = tData->writable().end(); it != eIt; ++it )
-		{
-			*it += offset.y;
+			uv += offset;
 		}
 	}
 

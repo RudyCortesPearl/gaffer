@@ -35,11 +35,11 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
 import Gaffer
-import GafferTest
 import GafferImage
 import GafferImageTest
 import os
@@ -52,10 +52,17 @@ class BlurTest( GafferImageTest.ImageTestCase ) :
 
 		b = GafferImage.Blur()
 		b["in"].setInput( c["out"] )
-		b["radius"].setValue( IECore.V2f( 0 ) )
+		b["radius"].setValue( imath.V2f( 0 ) )
 
-		self.assertEqual( c["out"].imageHash(), b["out"].imageHash() )
-		self.assertEqual( c["out"].image(), b["out"].image() )
+		self.assertImageHashesEqual( c["out"], b["out"] )
+		self.assertImagesEqual( c["out"], b["out"] )
+
+	def testNonFlatThrows( self ) :
+
+		blur = GafferImage.Blur()
+		blur["radius"].setValue( imath.V2f( 1 ) )
+
+		self.assertRaisesDeepNotSupported( blur )
 
 	def testExpandDataWindow( self ) :
 
@@ -63,31 +70,31 @@ class BlurTest( GafferImageTest.ImageTestCase ) :
 
 		b = GafferImage.Blur()
 		b["in"].setInput( c["out"] )
-		b["radius"].setValue( IECore.V2f( 1 ) )
+		b["radius"].setValue( imath.V2f( 1 ) )
 
 		self.assertEqual( b["out"]["dataWindow"].getValue(), c["out"]["dataWindow"].getValue() )
 
 		b["expandDataWindow"].setValue( True )
 
-		self.assertEqual( b["out"]["dataWindow"].getValue().min, c["out"]["dataWindow"].getValue().min - IECore.V2i( 2 ) )
-		self.assertEqual( b["out"]["dataWindow"].getValue().max, c["out"]["dataWindow"].getValue().max + IECore.V2i( 2 ) )
+		self.assertEqual( b["out"]["dataWindow"].getValue().min(), c["out"]["dataWindow"].getValue().min() - imath.V2i( 2 ) )
+		self.assertEqual( b["out"]["dataWindow"].getValue().max(), c["out"]["dataWindow"].getValue().max() + imath.V2i( 2 ) )
 
 	def testOnePixelBlur( self ) :
 
 		constant = GafferImage.Constant()
-		constant["color"].setValue( IECore.Color4f( 1 ) )
+		constant["color"].setValue( imath.Color4f( 1 ) )
 
 		crop = GafferImage.Crop()
 		crop["in"].setInput( constant["out"] )
-		crop["area"].setValue( IECore.Box2i( IECore.V2i( 10 ), IECore.V2i( 11 ) ) )
+		crop["area"].setValue( imath.Box2i( imath.V2i( 10 ), imath.V2i( 11 ) ) )
 		crop["affectDisplayWindow"].setValue( False )
 
 		blur = GafferImage.Blur()
 		blur["in"].setInput( crop["out"] )
-		blur["radius"].setValue( IECore.V2f( 1 ) )
+		blur["radius"].setValue( imath.V2f( 1 ) )
 		blur["expandDataWindow"].setValue( True )
 
-		sampler = GafferImage.Sampler( blur["out"], "R", IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 20 ) ) )
+		sampler = GafferImage.Sampler( blur["out"], "R", imath.Box2i( imath.V2i( 0 ), imath.V2i( 20 ) ) )
 
 		# Centre is brightest
 		self.assertGreater( sampler.sample( 10, 10 ), sampler.sample( 11, 10 ) )
@@ -108,11 +115,11 @@ class BlurTest( GafferImageTest.ImageTestCase ) :
 	def testEnergyPreservation( self ) :
 
 		constant = GafferImage.Constant()
-		constant["color"].setValue( IECore.Color4f( 1 ) )
+		constant["color"].setValue( imath.Color4f( 1 ) )
 
 		crop = GafferImage.Crop()
 		crop["in"].setInput( constant["out"] )
-		crop["area"].setValue( IECore.Box2i( IECore.V2i( 10 ), IECore.V2i( 11 ) ) )
+		crop["area"].setValue( imath.Box2i( imath.V2i( 10 ), imath.V2i( 11 ) ) )
 		crop["affectDisplayWindow"].setValue( False )
 
 		blur = GafferImage.Blur()
@@ -121,23 +128,23 @@ class BlurTest( GafferImageTest.ImageTestCase ) :
 
 		stats = GafferImage.ImageStats()
 		stats["in"].setInput( blur["out"] )
-		stats["area"].setValue( IECore.Box2i( IECore.V2i( 5 ), IECore.V2i( 15 ) ) )
+		stats["area"].setValue( imath.Box2i( imath.V2i( 5 ), imath.V2i( 15 ) ) )
 
 		for i in range( 0, 10 ) :
 
-			blur["radius"].setValue( IECore.V2f( i * 0.5 ) )
+			blur["radius"].setValue( imath.V2f( i * 0.5 ) )
 			self.assertAlmostEqual( stats["average"]["r"].getValue(), 1 / 100., delta = 0.0001 )
 
 	def testBlurRange( self ):
 
 		constant = GafferImage.Constant()
 		constant["format"].setValue( GafferImage.Format( 5, 5, 1.000 ) )
-		constant["color"].setValue( IECore.Color4f( 1, 1, 1, 1 ) )
+		constant["color"].setValue( imath.Color4f( 1, 1, 1, 1 ) )
 
-		
+
 
 		cropDot = GafferImage.Crop()
-		cropDot["area"].setValue( IECore.Box2i( IECore.V2i( 2, 2 ), IECore.V2i( 3, 3 ) ) )
+		cropDot["area"].setValue( imath.Box2i( imath.V2i( 2, 2 ), imath.V2i( 3, 3 ) ) )
 		cropDot["affectDisplayWindow"].setValue( False )
 		cropDot["in"].setInput( constant["out"] )
 
@@ -153,7 +160,8 @@ class BlurTest( GafferImageTest.ImageTestCase ) :
 		loopInit = GafferImage.Constant()
 		loopInit["format"].setValue( GafferImage.Format( 5, 5, 1.000 ) )
 
-		imageLoop = GafferImage.ImageLoop()
+		imageLoop = Gaffer.Loop()
+		imageLoop.setup( GafferImage.ImagePlug() )
 		imageLoop["in"].setInput( loopInit["out"] )
 
 		merge = GafferImage.Merge()
@@ -162,7 +170,7 @@ class BlurTest( GafferImageTest.ImageTestCase ) :
 		merge["in"]["in1"].setInput( imageLoop["previous"] )
 
 		offset = GafferImage.Offset()
-		offset["offset"].setValue( IECore.V2i( -5, 0 ) )
+		offset["offset"].setValue( imath.V2i( -5, 0 ) )
 		offset["in"].setInput( merge["out"] )
 
 		imageLoop["next"].setInput( offset["out"] )

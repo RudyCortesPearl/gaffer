@@ -36,8 +36,10 @@
 
 import os
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -53,13 +55,13 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 	def testFileRefreshProblem( self ) :
 
-		sc = IECore.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
+		sc = IECoreScene.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
 
 		t = sc.createChild( "1" )
-		t.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
+		t.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
 
 		s = t.createChild( "2" )
-		s.writeObject( IECore.SpherePrimitive( 10 ), 0.0 )
+		s.writeObject( IECoreScene.SpherePrimitive( 10 ), 0.0 )
 
 		del sc, t, s
 
@@ -72,13 +74,13 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 		del scene
 
-		sc = IECore.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
+		sc = IECoreScene.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
 
 		t = sc.createChild( "transform" )
-		t.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
+		t.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
 
 		s = t.createChild( "shape" )
-		s.writeObject( IECore.SpherePrimitive( 10 ), 0.0 )
+		s.writeObject( IECoreScene.SpherePrimitive( 10 ), 0.0 )
 
 		del sc, t, s
 
@@ -93,13 +95,13 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 	def testRead( self ) :
 
-		sc = IECore.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
+		sc = IECoreScene.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
 
 		t = sc.createChild( "transform" )
-		t.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
+		t.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
 
 		s = t.createChild( "shape" )
-		s.writeObject( IECore.SpherePrimitive( 10 ), 0.0 )
+		s.writeObject( IECoreScene.SpherePrimitive( 10 ), 0.0 )
 
 		del sc, t, s
 
@@ -113,43 +115,43 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 		scene = reader["out"]
 		self.assertSceneValid( scene )
 
-		self.assertEqual( scene.transform( "transform" ), IECore.M44f.createTranslated( IECore.V3f( 1, 0, 0 ) ) )
-		self.assertEqual( scene.object( "transform/shape" ), IECore.SpherePrimitive( 10 ) )
+		self.assertEqual( scene.transform( "transform" ), imath.M44f().translate( imath.V3f( 1, 0, 0 ) ) )
+		self.assertEqual( scene.object( "transform/shape" ), IECoreScene.SpherePrimitive( 10 ) )
 
 	def writeAnimatedSCC( self ) :
 
-		scene = IECore.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
+		scene = IECoreScene.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
 
 		time = 0
 		sc1 = scene.createChild( str( 1 ) )
-		mesh = IECore.MeshPrimitive.createBox(IECore.Box3f(IECore.V3f(0),IECore.V3f(1)))
-		mesh["Cd"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ IECore.V3f( 1, 0, 0 ) ] * 6 ) )
+		mesh = IECoreScene.MeshPrimitive.createBox(imath.Box3f(imath.V3f(0),imath.V3f(1)))
+		mesh["Cd"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ imath.V3f( 1, 0, 0 ) ] * 6 ) )
 		sc1.writeObject( mesh, time )
 		sc1.writeTransform( IECore.M44dData(), time )
 
 		sc2 = sc1.createChild( str( 2 ) )
-		mesh = IECore.MeshPrimitive.createBox(IECore.Box3f(IECore.V3f(0),IECore.V3f(1)))
-		mesh["Cd"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ IECore.V3f( 0, 1, 0 ) ] * 6 ) )
+		mesh = IECoreScene.MeshPrimitive.createBox(imath.Box3f(imath.V3f(0),imath.V3f(1)))
+		mesh["Cd"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ imath.V3f( 0, 1, 0 ) ] * 6 ) )
 		sc2.writeObject( mesh, time )
 		sc2.writeTransform( IECore.M44dData(), time )
 
 		sc3 = sc2.createChild( str( 3 ) )
-		mesh = IECore.MeshPrimitive.createBox(IECore.Box3f(IECore.V3f(0),IECore.V3f(1)))
-		mesh["Cd"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ IECore.V3f( 0, 0, 1 ) ] * 6 ) )
+		mesh = IECoreScene.MeshPrimitive.createBox(imath.Box3f(imath.V3f(0),imath.V3f(1)))
+		mesh["Cd"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ imath.V3f( 0, 0, 1 ) ] * 6 ) )
 		sc3.writeObject( mesh, time )
 		sc3.writeTransform( IECore.M44dData(), time )
 
 		for frame in [ 0.5, 1, 1.5, 2, 5, 10 ] :
 
-			matrix = IECore.M44d.createTranslated( IECore.V3d( 1, frame, 0 ) )
+			matrix = imath.M44d().translate( imath.V3d( 1, frame, 0 ) )
 			sc1.writeTransform( IECore.M44dData( matrix ), float( frame ) / 24 )
 
-			mesh["Cd"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ IECore.V3f( frame, 1, 0 ) ] * 6 ) )
+			mesh["Cd"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.V3fVectorData( [ imath.V3f( frame, 1, 0 ) ] * 6 ) )
 			sc2.writeObject( mesh, float( frame ) / 24 )
-			matrix = IECore.M44d.createTranslated( IECore.V3d( 2, frame, 0 ) )
+			matrix = imath.M44d().translate( imath.V3d( 2, frame, 0 ) )
 			sc2.writeTransform( IECore.M44dData( matrix ), float( frame ) / 24 )
 
-			matrix = IECore.M44d.createTranslated( IECore.V3d( 3, frame, 0 ) )
+			matrix = imath.M44d().translate( imath.V3d( 3, frame, 0 ) )
 			sc3.writeTransform( IECore.M44dData( matrix ), float( frame ) / 24 )
 
 	def testAnimatedScene( self ) :
@@ -166,31 +168,31 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 		context.setFrame( 0 )
 
 		with context:
-			self.assertEqual( scene.transform( "/1" ), IECore.M44f() )
-			self.assertEqual( scene.transform( "/1/2" ), IECore.M44f() )
-			self.assertEqual( scene.transform( "/1/2/3" ), IECore.M44f() )
+			self.assertEqual( scene.transform( "/1" ), imath.M44f() )
+			self.assertEqual( scene.transform( "/1/2" ), imath.M44f() )
+			self.assertEqual( scene.transform( "/1/2/3" ), imath.M44f() )
 
 		for time in [ 0.5, 1, 1.5, 2, 5, 10 ] :
 
 			context.setFrame( time )
 
 			with context:
-				self.assertEqual( scene.transform( "/1" ), IECore.M44f.createTranslated( IECore.V3f( 1, time, 0 ) ) )
-				self.assertEqual( scene.transform( "/1/2" ), IECore.M44f.createTranslated( IECore.V3f( 2, time, 0 ) ) )
-				self.assertEqual( scene.transform( "/1/2/3" ), IECore.M44f.createTranslated( IECore.V3f( 3, time, 0 ) ) )
+				self.assertEqual( scene.transform( "/1" ), imath.M44f().translate( imath.V3f( 1, time, 0 ) ) )
+				self.assertEqual( scene.transform( "/1/2" ), imath.M44f().translate( imath.V3f( 2, time, 0 ) ) )
+				self.assertEqual( scene.transform( "/1/2/3" ), imath.M44f().translate( imath.V3f( 3, time, 0 ) ) )
 
 				mesh = scene.object( "/1/2" )
-				self.assertEqual( mesh["Cd"].data, IECore.V3fVectorData( [ IECore.V3f( time, 1, 0 ) ] * 6 ) )
+				self.assertEqual( mesh["Cd"].data, IECore.V3fVectorData( [ imath.V3f( time, 1, 0 ) ] * 6 ) )
 
 	def testEnabled( self ) :
 
-		sc = IECore.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
+		sc = IECoreScene.SceneCache( self.__testFile, IECore.IndexedIO.OpenMode.Write )
 
 		t = sc.createChild( "transform" )
-		t.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
+		t.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
 
 		s = t.createChild( "shape" )
-		s.writeObject( IECore.SpherePrimitive( 10 ), 0.0 )
+		s.writeObject( IECoreScene.SpherePrimitive( 10 ), 0.0 )
 
 		del sc, t, s
 
@@ -215,19 +217,19 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertSceneValid( s["out"] )
 		self.assertEqual( s["out"].childNames( "/" ), IECore.InternedStringVectorData() )
-		self.assertEqual( s["out"].bound( "/" ), IECore.Box3f() )
-		self.assertEqual( s["out"].transform( "/" ), IECore.M44f() )
+		self.assertEqual( s["out"].bound( "/" ), imath.Box3f() )
+		self.assertEqual( s["out"].transform( "/" ), imath.M44f() )
 		self.assertEqual( s["out"].attributes( "/" ), IECore.CompoundObject() )
 		self.assertEqual( s["out"].object( "/" ), IECore.NullObject() )
 
 	def testChildNamesHash( self ) :
 
-		s = IECore.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
+		s = IECoreScene.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
 		sphereGroup = s.createChild( "sphereGroup" )
-		sphereGroup.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
-		sphereGroup.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 2, 0, 0 ) ) ), 1.0 )
+		sphereGroup.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
+		sphereGroup.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 2, 0, 0 ) ) ), 1.0 )
 		sphere = sphereGroup.createChild( "sphere" )
-		sphere.writeObject( IECore.SpherePrimitive(), 0 )
+		sphere.writeObject( IECoreScene.SpherePrimitive(), 0 )
 
 		del s, sphereGroup, sphere
 
@@ -235,32 +237,33 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 		s["fileName"].setValue( "/tmp/test.scc" )
 		s["refreshCount"].setValue( self.uniqueInt( "/tmp/test.scc" ) ) # account for our changing of file contents between tests
 
-		t = GafferScene.SceneTimeWarp()
+		t = Gaffer.TimeWarp()
+		t.setup( GafferScene.ScenePlug() )
 		t["in"].setInput( s["out"] )
 		t["offset"].setValue( 1 )
 
 		self.assertSceneHashesEqual(
 			s["out"], t["out"],
-			childPlugNames = [ "childNames" ]
+			checks = { "childNames" }
 		)
 
 	def testStaticHashes( self ) :
 
-		s = IECore.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
+		s = IECoreScene.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
 
 		movingGroup = s.createChild( "movingGroup" )
-		movingGroup.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
-		movingGroup.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 2, 0, 0 ) ) ), 1.0 )
+		movingGroup.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
+		movingGroup.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 2, 0, 0 ) ) ), 1.0 )
 
 		deformingSphere = movingGroup.createChild( "deformingSphere" )
-		deformingSphere.writeObject( IECore.SpherePrimitive(), 0 )
-		deformingSphere.writeObject( IECore.SpherePrimitive( 2 ), 1 )
+		deformingSphere.writeObject( IECoreScene.SpherePrimitive(), 0 )
+		deformingSphere.writeObject( IECoreScene.SpherePrimitive( 2 ), 1 )
 
 		staticGroup = s.createChild( "staticGroup" )
-		staticGroup.writeTransform( IECore.M44dData( IECore.M44d.createTranslated( IECore.V3d( 1, 0, 0 ) ) ), 0.0 )
+		staticGroup.writeTransform( IECore.M44dData( imath.M44d().translate( imath.V3d( 1, 0, 0 ) ) ), 0.0 )
 
 		staticSphere = staticGroup.createChild( "staticSphere" )
-		staticSphere.writeObject( IECore.SpherePrimitive(), 0 )
+		staticSphere.writeObject( IECoreScene.SpherePrimitive(), 0 )
 
 		del s, movingGroup, deformingSphere, staticGroup, staticSphere
 
@@ -268,59 +271,60 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 		s["fileName"].setValue( "/tmp/test.scc" )
 		s["refreshCount"].setValue( self.uniqueInt( "/tmp/test.scc" ) ) # account for our changing of file contents between tests
 
-		t = GafferScene.SceneTimeWarp()
+		t = Gaffer.TimeWarp()
+		t.setup( GafferScene.ScenePlug() )
 		t["in"].setInput( s["out"] )
 		t["offset"].setValue( 1 )
 
 		self.assertPathHashesNotEqual(
 			s["out"], "/movingGroup",
 			t["out"], "/movingGroup",
-			childPlugNames = [ "transform", "bound" ]
+			checks = { "transform", "bound" }
 		)
 
 		self.assertPathHashesNotEqual(
 			s["out"], "/movingGroup/deformingSphere",
 			t["out"], "/movingGroup/deformingSphere",
-			childPlugNames = [ "bound", "object" ]
+			checks = { "bound", "object" }
 		)
 
 		self.assertPathHashesEqual(
 			s["out"], "/movingGroup",
 			t["out"], "/movingGroup",
-			childPlugNames = [ "attributes", "object" ]
+			checks = { "attributes", "object" }
 		)
 
 		self.assertPathHashesEqual(
 			s["out"], "/movingGroup/deformingSphere",
 			t["out"], "/movingGroup/deformingSphere",
-			childPlugNames = [ "attributes" ]
+			checks = { "attributes" }
 		)
 
 		self.assertPathHashesEqual(
 			s["out"], "/staticGroup",
 			t["out"], "/staticGroup",
-			childPlugNames = [ "object", "transform", "attributes", "bound" ]
+			checks = { "object", "transform", "attributes", "bound" }
 		)
 
 		self.assertPathHashesEqual(
 			s["out"], "/staticGroup/staticSphere",
 			t["out"], "/staticGroup/staticSphere",
-			childPlugNames = [ "object", "transform", "attributes", "bound" ]
+			checks = { "object", "transform", "attributes", "bound" }
 		)
 
 	def testTagFilteringWholeScene( self ) :
 
-		s = IECore.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
+		s = IECoreScene.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
 
 		sphereGroup = s.createChild( "sphereGroup" )
 		sphereGroup.writeTags( [ "chrome" ] )
 		sphere = sphereGroup.createChild( "sphere" )
-		sphere.writeObject( IECore.SpherePrimitive(), 0 )
+		sphere.writeObject( IECoreScene.SpherePrimitive(), 0 )
 
 		planeGroup = s.createChild( "planeGroup" )
 		plane = planeGroup.createChild( "plane" )
 		plane.writeTags( [ "wood", "something" ] )
-		plane.writeObject( IECore.MeshPrimitive.createPlane( IECore.Box2f( IECore.V2f( -1 ), IECore.V2f( 1 ) ) ), 0 )
+		plane.writeObject( IECoreScene.MeshPrimitive.createPlane( imath.Box2f( imath.V2f( -1 ), imath.V2f( 1 ) ) ), 0 )
 
 		del s, sphereGroup, sphere, planeGroup, plane
 
@@ -350,22 +354,22 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 		# as should be the hashes, except for childNames
 
-		self.assertSceneHashesEqual( s1["out"], s2["out"], childPlugNamesToIgnore = ( "childNames", ) )
-		self.assertSceneHashesEqual( s2["out"], s3["out"], childPlugNamesToIgnore = ( "childNames", ) )
+		self.assertSceneHashesEqual( s1["out"], s2["out"], checks = self.allPathChecks - { "childNames" } )
+		self.assertSceneHashesEqual( s2["out"], s3["out"], checks = self.allPathChecks - { "childNames" } )
 
 	def testTagFilteringPartialScene( self ) :
 
-		s = IECore.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
+		s = IECoreScene.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
 
 		sphereGroup = s.createChild( "sphereGroup" )
 		sphereGroup.writeTags( [ "chrome" ] )
 		sphere = sphereGroup.createChild( "sphere" )
-		sphere.writeObject( IECore.SpherePrimitive(), 0 )
+		sphere.writeObject( IECoreScene.SpherePrimitive(), 0 )
 
 		planeGroup = s.createChild( "planeGroup" )
 		plane = planeGroup.createChild( "plane" )
 		plane.writeTags( [ "wood", "something" ] )
-		plane.writeObject( IECore.MeshPrimitive.createPlane( IECore.Box2f( IECore.V2f( -1 ), IECore.V2f( 1 ) ) ), 0 )
+		plane.writeObject( IECoreScene.MeshPrimitive.createPlane( imath.Box2f( imath.V2f( -1 ), imath.V2f( 1 ) ) ), 0 )
 
 		del s, sphereGroup, sphere, planeGroup, plane
 
@@ -405,14 +409,14 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 		# check equality of the locations which are preserved
 
-		self.assertPathsEqual( s1["out"], "/", s2["out"], "/", childPlugNamesToIgnore = ( "childNames", ) )
-		self.assertPathsEqual( s1["out"], "/", s3["out"], "/", childPlugNamesToIgnore = ( "childNames", ) )
+		self.assertPathsEqual( s1["out"], "/", s2["out"], "/", checks = self.allPathChecks - { "childNames" } )
+		self.assertPathsEqual( s1["out"], "/", s3["out"], "/", checks = self.allPathChecks - { "childNames" } )
 
-		self.assertPathsEqual( s1["out"], "/sphereGroup/sphere", s2["out"], "/sphereGroup/sphere", childPlugNamesToIgnore = ( "childNames", ) )
-		self.assertPathsEqual( s1["out"], "/sphereGroup/sphere", s2["out"], "/sphereGroup/sphere", childPlugNamesToIgnore = ( "childNames", ) )
+		self.assertPathsEqual( s1["out"], "/sphereGroup/sphere", s2["out"], "/sphereGroup/sphere", checks = self.allPathChecks - { "childNames" } )
+		self.assertPathsEqual( s1["out"], "/sphereGroup/sphere", s2["out"], "/sphereGroup/sphere", checks = self.allPathChecks - { "childNames" } )
 
-		self.assertPathsEqual( s1["out"], "/planeGroup/plane", s3["out"], "/planeGroup/plane", childPlugNamesToIgnore = ( "childNames", ) )
-		self.assertPathsEqual( s1["out"], "/planeGroup/plane", s3["out"], "/planeGroup/plane", childPlugNamesToIgnore = ( "childNames", ) )
+		self.assertPathsEqual( s1["out"], "/planeGroup/plane", s3["out"], "/planeGroup/plane", checks = self.allPathChecks - { "childNames" } )
+		self.assertPathsEqual( s1["out"], "/planeGroup/plane", s3["out"], "/planeGroup/plane", checks = self.allPathChecks - { "childNames" } )
 
 	def testSupportedExtensions( self ) :
 
@@ -422,17 +426,17 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 
 	def testTagsAsSets( self ) :
 
-		s = IECore.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
+		s = IECoreScene.SceneCache( "/tmp/test.scc", IECore.IndexedIO.OpenMode.Write )
 
 		sphereGroup = s.createChild( "sphereGroup" )
 		sphereGroup.writeTags( [ "chrome" ] )
 		sphere = sphereGroup.createChild( "sphere" )
-		sphere.writeObject( IECore.SpherePrimitive(), 0 )
+		sphere.writeObject( IECoreScene.SpherePrimitive(), 0 )
 
 		planeGroup = s.createChild( "planeGroup" )
 		plane = planeGroup.createChild( "plane" )
 		plane.writeTags( [ "wood", "something" ] )
-		plane.writeObject( IECore.MeshPrimitive.createPlane( IECore.Box2f( IECore.V2f( -1 ), IECore.V2f( 1 ) ) ), 0 )
+		plane.writeObject( IECoreScene.MeshPrimitive.createPlane( imath.Box2f( imath.V2f( -1 ), imath.V2f( 1 ) ) ), 0 )
 
 		del s, sphereGroup, sphere, planeGroup, plane
 
@@ -491,6 +495,43 @@ class SceneReaderTest( GafferSceneTest.SceneTestCase ) :
 		# this used to cause a crash:
 		r1 = GafferScene.SceneReader()
 		self.assertEqual( r1["out"].set( "blahblah" ).value.paths(), [] )
+
+	def testAlembic( self ) :
+
+		r = GafferScene.SceneReader()
+		r["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
+		self.assertSceneValid( r["out"] )
+
+	def testTransform( self ) :
+
+		r = GafferScene.SceneReader()
+		r["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/groupedPlane.abc" )
+		self.assertEqual( r["out"].transform( "/group" ), imath.M44f() )
+
+		r["transform"]["translate"].setValue( imath.V3f( 1, 2, 3 ) )
+		self.assertEqual( r["out"].transform( "/group" ), r["transform"].matrix() )
+		self.assertSceneValid( r["out"] )
+
+	def testAlembicThreading( self ) :
+
+		mesh = IECoreScene.MeshPrimitive.createPlane( imath.Box2f( imath.V2f( -1 ), imath.V2f( 1 ) ) )
+		fileName = self.temporaryDirectory() + "/test.abc"
+
+		root = IECoreScene.SceneInterface.create( fileName, IECore.IndexedIO.OpenMode.Write )
+		root.writeBound( imath.Box3d( mesh.bound() ), 0 )
+		for i in range( 0, 1000 ) :
+			child = root.createChild( str( i ) )
+			child.writeObject( mesh, 0 )
+			child.writeBound( imath.Box3d( mesh.bound() ), 0 )
+
+		del root, child
+
+		sceneReader = GafferScene.SceneReader()
+		sceneReader["fileName"].setValue( fileName )
+
+		for i in range( 0, 20 ) :
+			sceneReader["refreshCount"].setValue( sceneReader["refreshCount"].getValue() + 1 )
+			GafferSceneTest.traverseScene( sceneReader["out"] )
 
 if __name__ == "__main__":
 	unittest.main()

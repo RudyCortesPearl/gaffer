@@ -38,6 +38,7 @@ import os
 import unittest
 import shutil
 import collections
+import imath
 
 import IECore
 
@@ -50,11 +51,11 @@ class ReferenceTest( GafferTest.TestCase ) :
 
 		GafferTest.TestCase.setUp( self )
 
-		# stash the SphereNode so we can restore it in
+		# stash the StringInOutNode so we can restore it in
 		# tearDown() - we're going to mischievously delete
 		# it from the GafferTest module to induce errors
 		# during testing.
-		self.__SphereNode = GafferTest.SphereNode
+		self.__StringInOutNode = GafferTest.StringInOutNode
 
 	def testLoad( self ) :
 
@@ -451,11 +452,11 @@ class ReferenceTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["b"] = Gaffer.Box()
-		s["b"]["n"] = GafferTest.SphereNode()
+		s["b"]["n"] = GafferTest.StringInOutNode()
 
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 
-		del GafferTest.SphereNode # induce a failure during loading
+		del GafferTest.StringInOutNode # induce a failure during loading
 
 		s2 = Gaffer.ScriptNode()
 		s2["r"] = Gaffer.Reference()
@@ -464,7 +465,7 @@ class ReferenceTest( GafferTest.TestCase ) :
 			self.assertRaises( Exception, s2["r"].load, self.temporaryDirectory() + "/test.grf" )
 
 		self.assertEqual( len( mh.messages ), 2 )
-		self.assertTrue( "has no attribute 'SphereNode'" in mh.messages[0].message )
+		self.assertTrue( "has no attribute 'StringInOutNode'" in mh.messages[0].message )
 		self.assertTrue( "KeyError: 'n'" in mh.messages[1].message )
 
 	def testErrorTolerantLoading( self ) :
@@ -473,7 +474,7 @@ class ReferenceTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["b"] = Gaffer.Box()
-		s["b"]["s"] = GafferTest.SphereNode()
+		s["b"]["s"] = GafferTest.StringInOutNode()
 		s["b"]["a"] = GafferTest.AddNode()
 
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
@@ -488,12 +489,12 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertTrue( isinstance( s2["r"]["a"], GafferTest.AddNode ) )
 
 		# save that script, and then mysteriously
-		# disable GafferTest.SphereNode.
+		# disable GafferTest.StringInOutNode.
 
 		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s2.save()
 
-		del GafferTest.SphereNode
+		del GafferTest.StringInOutNode
 
 		# load the script, and check that we could at least
 		# load in the other referenced node.
@@ -574,7 +575,7 @@ class ReferenceTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["b"] = Gaffer.Box()
-		s["b"]["s"] = GafferTest.SphereNode()
+		s["b"]["s"] = GafferTest.StringInOutNode()
 		s["b"]["a"] = GafferTest.AddNode()
 
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
@@ -584,9 +585,9 @@ class ReferenceTest( GafferTest.TestCase ) :
 		s2 = Gaffer.ScriptNode()
 		s2["r"] = Gaffer.Reference()
 		s2["r"].load( self.temporaryDirectory() + "/test.grf" )
-		s2["r"]["__pluggy"] = Gaffer.CompoundPlug( flags = Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
+		s2["r"]["__pluggy"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
 		s2["r"]["__pluggy"]["int"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
-		s2["r"]["__pluggy"]["compound"] = Gaffer.CompoundPlug( flags = Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
+		s2["r"]["__pluggy"]["compound"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
 		s2["r"]["__pluggy"]["compound"]["int"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
 
 		self.assertEqual( s2["r"]["__pluggy"].getFlags(), Gaffer.Plug.Flags.Dynamic | Gaffer.Plug.Flags.Default )
@@ -607,8 +608,8 @@ class ReferenceTest( GafferTest.TestCase ) :
 		s["b"] = Gaffer.Box()
 		s["b"]["p"] = Gaffer.IntPlug( defaultValue = 1, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		s["b"]["p"].setValue( 2 )
-		s["b"]["c"] = Gaffer.Color3fPlug( defaultValue = IECore.Color3f( 1 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		s["b"]["c"].setValue( IECore.Color3f( 0.5 ) )
+		s["b"]["c"] = Gaffer.Color3fPlug( defaultValue = imath.Color3f( 1 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["b"]["c"].setValue( imath.Color3f( 0.5 ) )
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 
 		s["r"] = Gaffer.Reference()
@@ -623,9 +624,9 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["r"]["p"].defaultValue(), 2 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 0.5 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 0.5 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 0.5 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 0.5 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# And we should be able to save and reload the script
 		# and have that still be the case.
@@ -639,17 +640,17 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["b"]["p"].getValue(), 2 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 0.5 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 0.5 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 0.5 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 0.5 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 0.5 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 0.5 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# If we change the value on the box and reexport,
 		# then the reference should pick up both the new value
 		# and the new default.
 
 		s["b"]["p"].setValue( 3 )
-		s["b"]["c"].setValue( IECore.Color3f( 0.25 ) )
+		s["b"]["c"].setValue( imath.Color3f( 0.25 ) )
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
@@ -658,10 +659,10 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["b"]["p"].getValue(), 3 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# And that should still hold after saving and reloading the script.
 
@@ -672,26 +673,26 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["b"]["p"].getValue(), 3 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# But if the user changes the value on the reference node,
 		# it should be kept.
 
 		s["r"]["p"].setValue( 100 )
-		s["r"]["c"].setValue( IECore.Color3f( 100 ) )
+		s["r"]["c"].setValue( imath.Color3f( 100 ) )
 
 		self.assertEqual( s["r"]["p"].getValue(), 100 )
 		self.assertEqual( s["r"]["p"].defaultValue(), 3 )
 		self.assertEqual( s["b"]["p"].getValue(), 3 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 100 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 100 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# And a save and load shouldn't change that.
 
@@ -703,17 +704,17 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["b"]["p"].getValue(), 3 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 100 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 0.25 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 100 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 0.25 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# And now the user has changed a value, only the
 		# default value should be updated if we load a new
 		# reference.
 
 		s["b"]["p"].setValue( 4 )
-		s["b"]["c"].setValue( IECore.Color3f( 4 ) )
+		s["b"]["c"].setValue( imath.Color3f( 4 ) )
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
@@ -722,10 +723,10 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["b"]["p"].getValue(), 4 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 100 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 4 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 4 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 100 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 4 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 4 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# And a save and load shouldn't change anything.
 
@@ -737,10 +738,10 @@ class ReferenceTest( GafferTest.TestCase ) :
 		self.assertEqual( s["b"]["p"].getValue(), 4 )
 		self.assertEqual( s["b"]["p"].defaultValue(), 1 )
 
-		self.assertEqual( s["r"]["c"].getValue(), IECore.Color3f( 100 ) )
-		self.assertEqual( s["r"]["c"].defaultValue(), IECore.Color3f( 4 ) )
-		self.assertEqual( s["b"]["c"].getValue(), IECore.Color3f( 4 ) )
-		self.assertEqual( s["b"]["c"].defaultValue(), IECore.Color3f( 1 ) )
+		self.assertEqual( s["r"]["c"].getValue(), imath.Color3f( 100 ) )
+		self.assertEqual( s["r"]["c"].defaultValue(), imath.Color3f( 4 ) )
+		self.assertEqual( s["b"]["c"].getValue(), imath.Color3f( 4 ) )
+		self.assertEqual( s["b"]["c"].defaultValue(), imath.Color3f( 1 ) )
 
 		# And since we know that all plugs in box exports
 		# have had their default values set to the current
@@ -784,7 +785,7 @@ class ReferenceTest( GafferTest.TestCase ) :
 		s["b"] = Gaffer.Box()
 
 		Gaffer.Metadata.registerValue( s["b"], "description", "Test description" )
-		Gaffer.Metadata.registerValue( s["b"], "nodeGadget:color", IECore.Color3f( 1, 0, 0 ) )
+		Gaffer.Metadata.registerValue( s["b"], "nodeGadget:color", imath.Color3f( 1, 0, 0 ) )
 
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 
@@ -792,7 +793,7 @@ class ReferenceTest( GafferTest.TestCase ) :
 		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
 		self.assertEqual( Gaffer.Metadata.value( s["r"], "description" ), "Test description" )
-		self.assertEqual( Gaffer.Metadata.value( s["r"], "nodeGadget:color" ), IECore.Color3f( 1, 0, 0 ) )
+		self.assertEqual( Gaffer.Metadata.value( s["r"], "nodeGadget:color" ), imath.Color3f( 1, 0, 0 ) )
 
 	def testVersionMetadata( self ) :
 
@@ -1149,11 +1150,296 @@ class ReferenceTest( GafferTest.TestCase ) :
 
 		assertReferenceConnections()
 
+	def testSearchPaths( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		referenceFile = "test.grf"
+
+		boxA = Gaffer.Box( "BoxA" )
+		boxA["p"] = Gaffer.StringPlug( defaultValue = "a", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s.addChild( boxA )
+		boxPathA = os.path.join( self.temporaryDirectory(), "a" )
+		os.makedirs( boxPathA )
+		fileA = os.path.join( boxPathA, referenceFile )
+		boxA.exportForReference( fileA )
+
+		boxB = Gaffer.Box( "BoxB" )
+		boxB["p"] = Gaffer.StringPlug( defaultValue = "b", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s.addChild( boxB )
+		boxPathB = os.path.join(self.temporaryDirectory(), "b")
+		os.makedirs( boxPathB )
+		fileB = os.path.join( boxPathB, referenceFile )
+		boxB.exportForReference( fileB )
+
+		searchPathA = ":".join( [boxPathA, boxPathB] )
+		searchPathB = ":".join( [boxPathB, boxPathA] )
+
+		os.environ["GAFFER_REFERENCE_PATHS"] = searchPathA
+		s["r"] = Gaffer.Reference()
+
+		s["r"].load(referenceFile)
+		self.assertEqual( s["r"].fileName(), referenceFile )
+		self.assertEqual( s["r"]["p"].getValue(), "a" )
+
+		os.environ["GAFFER_REFERENCE_PATHS"] = searchPathB
+		s["r"].load( referenceFile )
+		self.assertEqual( s["r"].fileName(), referenceFile )
+		self.assertEqual( s["r"]["p"].getValue(), "b" )
+
+	def testLoadThrowsOnMissingFile( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["r"] = Gaffer.Reference()
+
+		with self.assertRaisesRegexp( Exception, "Could not find file 'thisFileDoesntExist.grf'" ) :
+			s["r"].load( "thisFileDoesntExist.grf" )
+
+	def testHasMetadataEdit( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["p1"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["b"]["p2"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		Gaffer.Metadata.registerValue( s["b"]["p1"], "referenced", "original" )
+		Gaffer.Metadata.registerValue( s["b"]["p2"], "referenced", "original" )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced" ), "original" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced" ), "original" )
+
+		with Gaffer.UndoContext( s ) :
+			Gaffer.Metadata.registerValue( s["r"]["p1"], "referenced", "override" )
+
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced" ), "override" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced" ), "original" )
+
+		with Gaffer.UndoContext( s ) :
+			Gaffer.Metadata.registerValue( s["r"]["p1"], "referenced", "foo" )
+			Gaffer.Metadata.registerValue( s["r"]["p2"], "referenced", "bar" )
+
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced" ), "foo" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced" ), "bar" )
+
+		s.undo()
+
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced" ), "override" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced" ), "original" )
+
+		s.undo()
+
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced"), "original" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced"), "original" )
+
+		s.redo()
+
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced" ), "override" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced" ), "original" )
+
+		s.redo()
+
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p1"], "referenced" ) )
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p2"], "referenced" ) )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p1"], "referenced" ), "foo" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p2"], "referenced" ), "bar" )
+
+	def testHasMetadataEditAfterReload( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["p"] = Gaffer.IntPlug( defaultValue = 1, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		Gaffer.Metadata.registerValue( s["b"]["p"], "referenced", "original" )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p"], "referenced" ) )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "referenced" ), "original" )
+
+		Gaffer.Metadata.registerValue( s["r"]["p"], "referenced", "override" )
+		p = s["r"]["p"]
+		self.assertTrue( s["r"].hasMetadataEdit( p, "referenced" ) )
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p"], "referenced" ) )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "referenced" ), "override" )
+
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		# The old plug doesn't have an edit any more, because
+		# it doesn't even belong to the reference any more.
+		self.assertFalse( s["r"].isAncestorOf( p ) )
+		self.assertFalse( s["r"].hasMetadataEdit( p, "referenced" ) )
+
+		# But the new plug does have one.
+		self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p"], "referenced" ) )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "referenced"), "override" )
+
+	def testPlugMetadataOverrides( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["p"] = Gaffer.IntPlug( defaultValue = 1, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		Gaffer.Metadata.registerValue( s["b"]["p"], "preset:Red", 0 )
+		Gaffer.Metadata.registerValue( s["b"]["p"], "preset:Green", 1 )
+		Gaffer.Metadata.registerValue( s["b"]["p"], "preset:Blue", 2 )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		# Make sure the metadata exported on the plug was loaded by the Reference
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Red" ), 0 )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Green" ), 1 )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Blue" ), 2 )
+
+		# Overriding one of the existing entries
+		Gaffer.Metadata.registerValue( s["r"]["p"], "preset:Green", 100 )
+		# Add an entirely new metadata entry
+		Gaffer.Metadata.registerValue( s["r"]["p"], "preset:Alpha", 3 )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Alpha" ), 3 )
+
+		# Change exported metadata and reload.
+		# When reloading, the existing data on the Reference is preserved.
+		# When creating new Reference, the data on the new instance is as per the referenced box.
+		Gaffer.Metadata.registerValue( s["b"]["p"], "preset:Blue", 42 )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test2.grf" )
+		s["r"].load( self.temporaryDirectory() + "/test2.grf" )
+
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Red" ), 0 )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Green" ), 100 )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Blue" ), 42 )  # Reverted to referenced value
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"], "preset:Alpha" ), 3 )
+
+		def assertMetadata( script ) :
+
+			# Red hasn't been touched at all, expect value from the referenced box.
+			self.assertEqual( Gaffer.Metadata.value( script["r"]["p"], "preset:Red" ), 0 )
+			self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p"], "preset:Red" ) )
+
+			# Green has been overridden on the Reference node which needs to be preserved.
+			self.assertEqual( Gaffer.Metadata.value( script["r"]["p"], "preset:Green" ), 100 )
+			self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p"], "preset:Green" ) )
+
+			# Blue has been changed in the referenced box and the new value needs
+			# to come through as the old one hasn't been overridden.
+			self.assertEqual( Gaffer.Metadata.value( script["r"]["p"], "preset:Blue" ), 42 )
+			self.assertFalse( s["r"].hasMetadataEdit( s["r"]["p"], "preset:Blue" ) )
+
+			# Alpha has been added, which needs to be preserved.
+			self.assertEqual( Gaffer.Metadata.value( script["r"]["p"], "preset:Alpha" ), 3 )
+			self.assertTrue( s["r"].hasMetadataEdit( s["r"]["p"], "preset:Alpha" ) )
+
+		assertMetadata( s )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		assertMetadata( s2 )
+
+		# Make sure serialising several times doesn't change the serialised
+		# data. This could happen if serialised edits wouldn't lead to recorded
+		# edits on the new reference.
+
+		s3 = Gaffer.ScriptNode()
+		s3.execute( s2.serialise() )
+
+		assertMetadata( s3 )
+
+	def testChildPlugMetadata( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["p"] = Gaffer.Color3fPlug( defaultValue = imath.Color3f( 0 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		Gaffer.Metadata.registerValue( s["r"]["p"]["r"], "isRed", True )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		# The metadata needs to be serialised.
+		self.assertEqual( Gaffer.Metadata.value( s2["r"]["p"]["r"], "isRed" ), True )
+
+		# It also needs to be transferred on reload
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+		self.assertEqual( Gaffer.Metadata.value( s["r"]["p"]["r"], "isRed" ), True )
+
+	def testUserPlugMetadataSerialisation( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["r"] = Gaffer.Reference()
+		Gaffer.Metadata.registerValue( s["r"]["user"], "hasChild", True )
+
+		s["r"]["user"]["child"] = Gaffer.IntPlug( defaultValue = 1, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		Gaffer.Metadata.registerValue( s["r"]["user"]["child"], "hasChild", False )
+
+		# We don't register edits on user plugs.
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["user"], "hasChild" ) )
+		self.assertFalse( s["r"].hasMetadataEdit( s["r"]["user"]["child"], "hasChild" ) )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		# We do, however, expect changes to be serialised.
+		self.assertEqual( Gaffer.Metadata.value( s2["r"]["user"], "hasChild" ), True )
+		self.assertEqual( Gaffer.Metadata.value( s2["r"]["user"]["child"], "hasChild" ), False )
+
+	def testPlugPromotionPreservesMetadata( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+
+		s["b"]["p"] = Gaffer.Color3fPlug( defaultValue = imath.Color3f( 0 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		Gaffer.Metadata.registerValue( s["b"]["p"], "isColor", True )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["b2"] = Gaffer.Box()
+
+		s["b2"]["r"] = Gaffer.Reference()
+		s["b2"]["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		Gaffer.PlugAlgo.promote( s["b2"]["r"]["p"] )
+
+		self.assertEqual( Gaffer.Metadata.value( s["b2"]["p"], "isColor" ), True )
+
+
 	def tearDown( self ) :
 
 		GafferTest.TestCase.tearDown( self )
 
-		GafferTest.SphereNode = self.__SphereNode
+		GafferTest.StringInOutNode = self.__StringInOutNode
 
 		for f in (
 			"/tmp/test.grf",

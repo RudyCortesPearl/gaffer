@@ -48,7 +48,7 @@ IE_CORE_FORWARDDECLARE( FileSequencePathFilter )
 /// FileSequencePathFilters can filter the results
 /// of FileSystemPath::children() to provide a masked view
 /// that either includes or excludes FileSequences
-class FileSequencePathFilter : public PathFilter
+class GAFFER_API FileSequencePathFilter : public PathFilter
 {
 
 	public :
@@ -67,8 +67,8 @@ class FileSequencePathFilter : public PathFilter
 			All = Files | SequentialFiles | Sequences,
 		};
 
-		FileSequencePathFilter( Keep mode = Concise, IECore::CompoundDataPtr userData = NULL );
-		virtual ~FileSequencePathFilter();
+		FileSequencePathFilter( Keep mode = Concise, IECore::CompoundDataPtr userData = nullptr );
+		~FileSequencePathFilter() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::FileSequencePathFilter, FileSequencePathFilterTypeId, Gaffer::PathFilter );
 
@@ -77,7 +77,7 @@ class FileSequencePathFilter : public PathFilter
 
 	protected :
 
-		virtual void doFilter( std::vector<PathPtr> &paths ) const;
+		void doFilter( std::vector<PathPtr> &paths ) const override;
 
 	private :
 

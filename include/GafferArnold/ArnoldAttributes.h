@@ -37,22 +37,23 @@
 #ifndef GAFFERARNOLD_ARNOLDATTRIBUTES_H
 #define GAFFERARNOLD_ARNOLDATTRIBUTES_H
 
-#include "GafferScene/Attributes.h"
-
+#include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
+
+#include "GafferScene/Attributes.h"
 
 namespace GafferArnold
 {
 
-class ArnoldAttributes : public GafferScene::Attributes
+class GAFFERARNOLD_API ArnoldAttributes : public GafferScene::Attributes
 {
 
 	public :
 
 		ArnoldAttributes( const std::string &name=defaultName<ArnoldAttributes>() );
-		virtual ~ArnoldAttributes();
+		~ArnoldAttributes() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferArnold::ArnoldAttributes, ArnoldAttributesTypeId, GafferScene::Attributes );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldAttributes, ArnoldAttributesTypeId, GafferScene::Attributes );
 
 };
 

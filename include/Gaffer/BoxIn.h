@@ -42,15 +42,15 @@
 namespace Gaffer
 {
 
-class BoxIn : public BoxIO
+class GAFFER_API BoxIn : public BoxIO
 {
 
 	public :
 
 		BoxIn( const std::string &name=defaultName<BoxIn>() );
-		virtual ~BoxIn();
+		~BoxIn() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::BoxIn, BoxInTypeId, BoxIO );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::BoxIn, BoxInTypeId, BoxIO );
 
 };
 

@@ -35,42 +35,45 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <math.h>
+#include "GafferImageUI/ImageView.h"
+
+#include "GafferImageUI/ImageGadget.h"
+
+#include "GafferImage/Clamp.h"
+#include "GafferImage/Format.h"
+#include "GafferImage/DeepState.h"
+#include "GafferImage/Grade.h"
+#include "GafferImage/ImagePlug.h"
+#include "GafferImage/ImageSampler.h"
+
+#include "GafferUI/Gadget.h"
+#include "GafferUI/Pointer.h"
+#include "GafferUI/StandardStyle.h"
+#include "GafferUI/Style.h"
+
+#include "Gaffer/Context.h"
+#include "Gaffer/DeleteContextVariables.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECoreGL/IECoreGL.h"
+#include "IECoreGL/Shader.h"
+#include "IECoreGL/ShaderLoader.h"
+#include "IECoreGL/Texture.h"
+#include "IECoreGL/TextureLoader.h"
+#include "IECoreGL/ToGLTextureConverter.h"
+
+#include "IECore/BoxAlgo.h"
+#include "IECore/BoxOps.h"
+#include "IECore/FastFloat.h"
+
+#include "OpenEXR/ImathColorAlgo.h"
 
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
 #include "boost/format.hpp"
 #include "boost/lexical_cast.hpp"
 
-#include "OpenEXR/ImathColorAlgo.h"
-
-#include "IECore/FastFloat.h"
-#include "IECore/BoxOps.h"
-#include "IECore/BoxAlgo.h"
-
-#include "IECoreGL/ToGLTextureConverter.h"
-#include "IECoreGL/TextureLoader.h"
-#include "IECoreGL/Texture.h"
-#include "IECoreGL/ShaderLoader.h"
-#include "IECoreGL/Shader.h"
-#include "IECoreGL/IECoreGL.h"
-
-#include "Gaffer/Context.h"
-#include "Gaffer/StringPlug.h"
-
-#include "GafferUI/Gadget.h"
-#include "GafferUI/Style.h"
-#include "GafferUI/StandardStyle.h"
-#include "GafferUI/Pointer.h"
-
-#include "GafferImage/Format.h"
-#include "GafferImage/Grade.h"
-#include "GafferImage/ImagePlug.h"
-#include "GafferImage/Clamp.h"
-#include "GafferImage/ImageSampler.h"
-
-#include "GafferImageUI/ImageGadget.h"
-#include "GafferImageUI/ImageView.h"
+#include <cmath>
 
 using namespace boost;
 using namespace IECoreGL;
@@ -185,6 +188,95 @@ class ImageView::ChannelChooser : public boost::signals::trackable
 /// Implementation of ImageView::ColorInspector
 //////////////////////////////////////////////////////////////////////////
 
+namespace
+{
+
+class V2fContextVariable : public Gaffer::ComputeNode
+{
+
+	public :
+
+		V2fContextVariable( const std::string &name = "V2fContextVariable" )
+			:	ComputeNode( name )
+		{
+			storeIndexOfNextChild( g_firstPlugIndex );
+			addChild( new StringPlug( "name" ) );
+			addChild( new V2fPlug( "out", Plug::Out ) );
+		}
+
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( V2fContextVariable, V2fContextVariableTypeId, ComputeNode );
+
+		StringPlug *namePlug()
+		{
+			return getChild<StringPlug>( g_firstPlugIndex );
+		}
+
+		const StringPlug *namePlug() const
+		{
+			return getChild<StringPlug>( g_firstPlugIndex );
+		}
+
+		V2fPlug *outPlug()
+		{
+			return getChild<V2fPlug>( g_firstPlugIndex + 1 );
+		}
+
+		const V2fPlug *outPlug() const
+		{
+			return getChild<V2fPlug>( g_firstPlugIndex + 1 );
+		}
+
+		void affects( const Plug *input, AffectedPlugsContainer &outputs ) const override
+		{
+			ComputeNode::affects( input, outputs );
+
+			if( input == namePlug() )
+			{
+				outputs.push_back( outPlug()->getChild( 0 ) );
+				outputs.push_back( outPlug()->getChild( 1 ) );
+			}
+		}
+
+	protected :
+
+		void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const override
+		{
+			ComputeNode::hash( output, context, h );
+			if( output->parent() == outPlug() )
+			{
+				const std::string name = namePlug()->getValue();
+				h.append( context->get<V2f>( name, V2f( 0 ) ) );
+			}
+		}
+
+		void compute( ValuePlug *output, const Context *context ) const override
+		{
+			if( output->parent() == outPlug() )
+			{
+				const std::string name = namePlug()->getValue();
+				const V2f value = context->get<V2f>( name, V2f( 0 ) );
+				const size_t index = output == outPlug()->getChild( 0 ) ? 0 : 1;
+				static_cast<FloatPlug *>( output )->setValue( value[index] );
+			}
+			else
+			{
+				ComputeNode::compute( output, context );
+			}
+		}
+
+	private :
+
+		static size_t g_firstPlugIndex;
+
+};
+
+size_t V2fContextVariable::g_firstPlugIndex = 0;
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( V2fContextVariable )
+
+IE_CORE_DECLAREPTR( V2fContextVariable )
+
+} // namespace
+
 class ImageView::ColorInspector : public boost::signals::trackable
 {
 
@@ -192,29 +284,41 @@ class ImageView::ColorInspector : public boost::signals::trackable
 
 		ColorInspector( ImageView *view )
 			:	m_view( view ),
+				m_pixel( new V2fContextVariable ),
+				m_deleteContextVariables( new DeleteContextVariables ),
 				m_sampler( new ImageSampler )
 		{
 			PlugPtr plug = new Plug( "colorInspector" );
 			view->addChild( plug );
-
-			plug->addChild( new V2iPlug( "pixel" ) );
 			plug->addChild( new Color4fPlug( "color" ) );
+
+			// We use `m_pixel` to fetch a context variable to transfer
+			// the mouse position into `m_sampler`. We could use `mouseMoveSignal()`
+			// to instead call `m_sampler->pixelPlug()->setValue()`, but that
+			// would cause cancellation of the ImageView background compute every
+			// time the mouse was moved. The "colorInspector:pixel" variable is
+			// created in ImageViewUI's `_ColorInspectorPlugValueWidget`.
+			m_pixel->namePlug()->setValue( "colorInspector:pixel" );
+
+			// And we use a DeleteContextVariables node to make sure that our
+			// private context variable doesn't become visible to the upstream
+			// graph.
+			m_deleteContextVariables->setup( view->inPlug<ImagePlug>() );
+			m_deleteContextVariables->variablesPlug()->setValue( "colorInspector:pixel" );
 
 			// We want to sample the image before the display transforms
 			// are applied. We can't simply get this image from inPlug()
 			// because derived classes may have called insertConverter(),
 			// so we take it from the input to the display transform chain.
-			ImagePlug *image = view->getPreprocessor<Node>()->getChild<Clamp>( "__clamp" )->inPlug();
-			m_sampler->imagePlug()->setInput( image );
+
+			ImagePlug *image = view->getPreprocessor()->getChild<Clamp>( "__clamp" )->inPlug();
+			m_deleteContextVariables->inPlug()->setInput( image );
+			m_sampler->imagePlug()->setInput( m_deleteContextVariables->outPlug() );
+			m_sampler->pixelPlug()->setInput( m_pixel->outPlug() );
 
 			plug->getChild<Color4fPlug>( "color" )->setInput( m_sampler->colorPlug() );
 
-			m_view->viewportGadget()->mouseMoveSignal().connect( boost::bind( &ColorInspector::mouseMove, this, ::_2 ) );
-
 			ImageGadget *imageGadget = static_cast<ImageGadget *>( m_view->viewportGadget()->getPrimaryChild() );
-			imageGadget->buttonPressSignal().connect( boost::bind( &ColorInspector::buttonPress, this,  ::_2 ) );
-			imageGadget->dragBeginSignal().connect( boost::bind( &ColorInspector::dragBegin, this, ::_2 ) );
-			imageGadget->dragEndSignal().connect( boost::bind( &ColorInspector::dragEnd, this, ::_2 ) );
 			imageGadget->channelsChangedSignal().connect( boost::bind( &ColorInspector::channelsChanged, this ) );
 		}
 
@@ -223,70 +327,6 @@ class ImageView::ColorInspector : public boost::signals::trackable
 		Plug *plug()
 		{
 			return m_view->getChild<Plug>( "colorInspector" );
-		}
-
-		bool mouseMove( const ButtonEvent &event )
-		{
-			ImageGadget *imageGadget = static_cast<ImageGadget *>( m_view->viewportGadget()->getPrimaryChild() );
-			const LineSegment3f l = m_view->viewportGadget()->rasterToGadgetSpace( V2f( event.line.p0.x, event.line.p0.y ), imageGadget );
-			V2f pixel( 0 );
-			try
-			{
-				pixel = imageGadget->pixelAt( l );
-			}
-			catch( ... )
-			{
-				// pixelAt() can throw if there is an error
-				// computing the image being viewed. We
-				// leave the error reporting to other UI
-				// components.
-				return false;
-			}
-			const V2f pixelOrigin = V2f( floor( pixel.x ), floor( pixel.y ) );
-			m_sampler->pixelPlug()->setValue( pixelOrigin + V2f( 0.5 ) );
-			plug()->getChild<V2iPlug>( "pixel" )->setValue( pixelOrigin );
-			return false;
-		}
-
-		bool buttonPress( const ButtonEvent &event )
-		{
-			if( event.buttons != ButtonEvent::Left || event.modifiers )
-			{
-				return false;
-			}
-
-			return true; // accept press so we get dragBegin()
-		}
-
-		IECore::DataPtr dragBegin( const ButtonEvent &event )
-		{
-			if( event.buttons != ButtonEvent::Left || event.modifiers )
-			{
-				return NULL;
-			}
-
-			Color4f color;
-			try
-			{
-				Context::Scope scopedContext( m_view->getContext() );
-				color = plug()->getChild<Color4fPlug>( "color" )->getValue();
-			}
-			catch( ... )
-			{
-				// If there's an error computing the image, we can't
-				// start a drag.
-				return NULL;
-			}
-
-			Pointer::setCurrent( "rgba" );
-
-			return new Color4fData( color );
-		}
-
-		bool dragEnd( const ButtonEvent &event )
-		{
-			Pointer::setCurrent( "" );
-			return true;
 		}
 
 		void channelsChanged()
@@ -301,6 +341,8 @@ class ImageView::ColorInspector : public boost::signals::trackable
 		}
 
 		ImageView *m_view;
+		V2fContextVariablePtr m_pixel;
+		DeleteContextVariablesPtr m_deleteContextVariables;
 		ImageSamplerPtr m_sampler;
 
 };
@@ -309,7 +351,7 @@ class ImageView::ColorInspector : public boost::signals::trackable
 /// Implementation of ImageView
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( ImageView );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ImageView );
 
 ImageView::ViewDescription<ImageView> ImageView::g_viewDescription( GafferImage::ImagePlug::staticTypeId() );
 
@@ -326,9 +368,14 @@ ImageView::ImageView( const std::string &name )
 	ImagePlugPtr preprocessorInput = new ImagePlug( "in" );
 	preprocessor->addChild( preprocessorInput );
 
+	DeepStatePtr deepStateNode = new DeepState();
+	preprocessor->setChild( "__deepState", deepStateNode );
+	deepStateNode->inPlug()->setInput( preprocessorInput );
+	deepStateNode->deepStatePlug()->setValue( int( DeepState::TargetState::Flat ) );
+
 	ClampPtr clampNode = new Clamp();
 	preprocessor->setChild(  "__clamp", clampNode );
-	clampNode->inPlug()->setInput( preprocessorInput );
+	clampNode->inPlug()->setInput( deepStateNode->outPlug() );
 	clampNode->enabledPlug()->setValue( false );
 	clampNode->channelsPlug()->setValue( "*" );
 	clampNode->minClampToEnabledPlug()->setValue( true );
@@ -380,8 +427,8 @@ ImageView::ImageView( const std::string &name )
 	m_imageGadget->setContext( getContext() );
 	viewportGadget()->setPrimaryChild( m_imageGadget );
 
-	m_channelChooser = shared_ptr<ChannelChooser>( new ChannelChooser( this ) );
-	m_colorInspector = shared_ptr<ColorInspector>( new ColorInspector( this ) );
+	m_channelChooser.reset( new ChannelChooser( this ) );
+	m_colorInspector.reset( new ColorInspector( this ) );
 }
 
 void ImageView::insertConverter( Gaffer::NodePtr converter )
@@ -400,7 +447,7 @@ void ImageView::insertConverter( Gaffer::NodePtr converter )
 	PlugPtr newInput = converterInput->createCounterpart( "in", Plug::In );
 	setChild( "in", newInput );
 
-	NodePtr preprocessor = getPreprocessor<Node>();
+	NodePtr preprocessor = getPreprocessor();
 	Plug::OutputContainer outputsToRestore = preprocessor->getChild<ImagePlug>( "in" )->outputs();
 
 	PlugPtr newPreprocessorInput = converterInput->createCounterpart( "in", Plug::In );
@@ -460,24 +507,34 @@ const Gaffer::StringPlug *ImageView::displayTransformPlug() const
 	return getChild<StringPlug>( "displayTransform" );
 }
 
+GafferImage::DeepState *ImageView::deepStateNode()
+{
+	return getPreprocessor<Node>()->getChild<DeepState>( "__deepState" );
+}
+
+const GafferImage::DeepState *ImageView::deepStateNode() const
+{
+	return getPreprocessor<Node>()->getChild<DeepState>( "__deepState" );
+}
+
 GafferImage::Clamp *ImageView::clampNode()
 {
-	return getPreprocessor<Node>()->getChild<Clamp>( "__clamp" );
+	return getPreprocessor()->getChild<Clamp>( "__clamp" );
 }
 
 const GafferImage::Clamp *ImageView::clampNode() const
 {
-	return getPreprocessor<Node>()->getChild<Clamp>( "__clamp" );
+	return getPreprocessor()->getChild<Clamp>( "__clamp" );
 }
 
 GafferImage::Grade *ImageView::gradeNode()
 {
-	return getPreprocessor<Node>()->getChild<Grade>( "__grade" );
+	return getPreprocessor()->getChild<Grade>( "__grade" );
 }
 
 const GafferImage::Grade *ImageView::gradeNode() const
 {
-	return getPreprocessor<Node>()->getChild<Grade>( "__grade" );
+	return getPreprocessor()->getChild<Grade>( "__grade" );
 }
 
 void ImageView::setContext( Gaffer::ContextPtr context )
@@ -510,21 +567,31 @@ void ImageView::plugSet( Gaffer::Plug *plug )
 
 bool ImageView::keyPress( const GafferUI::KeyEvent &event )
 {
-	if( !event.modifiers )
+	if( event.key == "F" && !event.modifiers )
 	{
-		if(event.key == "Home")
+		const Box3f b = m_imageGadget->bound();
+		if( !b.isEmpty() && viewportGadget()->getCameraEditable() )
 		{
-			V2i viewport = viewportGadget()->getViewport();
-			V3f halfViewportSize(viewport.x / 2, viewport.y / 2, 0);
-			V3f imageCenter = m_imageGadget->bound().center();
-			viewportGadget()->frame(
-				Box3f(
-					V3f(imageCenter.x - halfViewportSize.x, imageCenter.y - halfViewportSize.y, 0),
-					V3f(imageCenter.x + halfViewportSize.x, imageCenter.y + halfViewportSize.y, 0)
-				)
-			);
+			viewportGadget()->frame( b );
 			return true;
 		}
+	}
+	else if( event.key == "Home" && !event.modifiers )
+	{
+		V2i viewport = viewportGadget()->getViewport();
+		V3f halfViewportSize(viewport.x / 2, viewport.y / 2, 0);
+		V3f imageCenter = m_imageGadget->bound().center();
+		viewportGadget()->frame(
+			Box3f(
+				V3f(imageCenter.x - halfViewportSize.x, imageCenter.y - halfViewportSize.y, 0),
+				V3f(imageCenter.x + halfViewportSize.x, imageCenter.y + halfViewportSize.y, 0)
+			)
+		);
+		return true;
+	}
+	else if( event.key == "Escape" )
+	{
+		m_imageGadget->setPaused( true );
 	}
 
 	return false;
@@ -559,27 +626,22 @@ void ImageView::insertDisplayTransform()
 	}
 	else
 	{
-		DisplayTransformCreatorMap &m = displayTransformCreators();
-		DisplayTransformCreatorMap::const_iterator it = m.find( displayTransformPlug()->getValue() );
-		if( it != m.end() )
-		{
-			displayTransform = it->second();
-		}
+		displayTransform = createDisplayTransform( name );
 		if( displayTransform )
 		{
 			m_displayTransforms[name] = displayTransform;
-			getPreprocessor<Node>()->addChild( displayTransform );
+			getPreprocessor()->addChild( displayTransform );
 		}
 	}
 
 	if( displayTransform )
 	{
 		displayTransform->inPlug()->setInput( gradeNode()->outPlug() );
-		getPreprocessor<Node>()->getChild<Plug>( "out" )->setInput( displayTransform->outPlug() );
+		getPreprocessor()->getChild<Plug>( "out" )->setInput( displayTransform->outPlug() );
 	}
 	else
 	{
-		getPreprocessor<Node>()->getChild<Plug>( "out" )->setInput( gradeNode()->outPlug() );
+		getPreprocessor()->getChild<Plug>( "out" )->setInput( gradeNode()->outPlug() );
 	}
 }
 
@@ -596,6 +658,17 @@ void ImageView::registeredDisplayTransforms( std::vector<std::string> &names )
 	{
 		names.push_back( it->first );
 	}
+}
+
+GafferImage::ImageProcessorPtr ImageView::createDisplayTransform( const std::string &name )
+{
+	const auto &m = displayTransformCreators();
+	auto it = m.find( name );
+	if( it != m.end() )
+	{
+		return it->second();
+	}
+	return nullptr;
 }
 
 ImageView::DisplayTransformCreatorMap &ImageView::displayTransformCreators()

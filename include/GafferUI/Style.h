@@ -38,15 +38,20 @@
 #ifndef GAFFERUI_STYLE_H
 #define GAFFERUI_STYLE_H
 
-#include "boost/signal.hpp"
+#include "GafferUI/Export.h"
+#include "GafferUI/TypeIds.h"
 
-#include "OpenEXR/ImathBox.h"
-
-#include "IECore/RunTimeTyped.h"
-#include "IECore/LineSegment.h"
 #include "IECoreGL/GL.h"
 
-#include "GafferUI/TypeIds.h"
+#include "IECore/Export.h"
+#include "IECore/LineSegment.h"
+#include "IECore/RunTimeTyped.h"
+
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathBox.h"
+IECORE_POP_DEFAULT_VISIBILITY
+
+#include "boost/signal.hpp"
 
 namespace IECoreGL
 {
@@ -60,13 +65,13 @@ namespace GafferUI
 
 IE_CORE_FORWARDDECLARE( Style );
 
-class Style : public IECore::RunTimeTyped
+class GAFFERUI_API Style : public IECore::RunTimeTyped
 {
 
 	public :
 
 		Style();
-		virtual ~Style();
+		~Style() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Style, StyleTypeId, IECore::RunTimeTyped );
 
@@ -80,7 +85,7 @@ class Style : public IECore::RunTimeTyped
 		/// Must be called once to allow the Style to set up any necessary state before calling
 		/// any of the render* methods below. The currently bound style is passed as it may
 		/// be possible to use it to optimise the binding of a new style of the same type.
-		virtual void bind( const Style *currentStyle=0 ) const = 0;
+		virtual void bind( const Style *currentStyle=nullptr ) const = 0;
 
 		enum TextType
 		{
@@ -96,7 +101,7 @@ class Style : public IECore::RunTimeTyped
 		//////////////////////////////////////////////////////////////////////////
 		//@{
 		virtual void renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const = 0;
-		virtual void renderLine( const IECore::LineSegment3f &line ) const = 0;
+		virtual void renderLine( const IECore::LineSegment3f &line, float width=0.5, const Imath::Color4f *userColor = nullptr ) const = 0;
 		virtual void renderSolidRectangle( const Imath::Box2f &box ) const = 0;
 		virtual void renderRectangle( const Imath::Box2f &box ) const = 0;
 		//@}
@@ -106,7 +111,7 @@ class Style : public IECore::RunTimeTyped
 		//@{
 		virtual Imath::Box3f characterBound( TextType textType ) const = 0;
 		virtual Imath::Box3f textBound( TextType textType, const std::string &text ) const = 0;
-		virtual void renderText( TextType textType, const std::string &text, State state = NormalState ) const = 0;
+		virtual void renderText( TextType textType, const std::string &text, State state = NormalState, const Imath::Color4f *userColor = nullptr ) const = 0;
 		virtual void renderWrappedText( TextType textType, const std::string &text, const Imath::Box2f &bound, State state = NormalState ) const = 0;
 		//@}
 
@@ -118,16 +123,18 @@ class Style : public IECore::RunTimeTyped
 		virtual void renderHorizontalRule( const Imath::V2f &center, float length, State state = NormalState ) const = 0;
 		//@}
 
-		/// @name NodeGraph UI elements
+		/// @name GraphEditor UI elements
 		//////////////////////////////////////////////////////////////////////////
 		//@{
-		virtual void renderNodeFrame( const Imath::Box2f &contents, float borderWidth, State state = NormalState, const Imath::Color3f *userColor = NULL ) const = 0;
-		virtual void renderNodule( float radius, State state = NormalState, const Imath::Color3f *userColor = NULL ) const = 0;
+		virtual void renderNodeFrame( const Imath::Box2f &contents, float borderWidth, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const = 0;
+		virtual void renderNodule( float radius, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const = 0;
 		/// The tangents give an indication of which direction is "out" from a node.
-		virtual void renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state = NormalState, const Imath::Color3f *userColor = NULL ) const = 0;
+		virtual void renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const = 0;
 		virtual Imath::V3f closestPointOnConnection( const Imath::V3f &p, const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent ) const = 0;
+		virtual void renderAuxiliaryConnection( const Imath::Box2f &srcNodeFrame, const Imath::Box2f &dstNodeFrame, State state ) const = 0;
+		virtual void renderAuxiliaryConnection( const Imath::V2f &srcPosition, const Imath::V2f &srcTangent, const Imath::V2f &dstPosition, const Imath::V2f &dstTangent, State state ) const = 0;
 
-		virtual void renderBackdrop( const Imath::Box2f &box, State state = NormalState, const Imath::Color3f *userColor = NULL ) const = 0;
+		virtual void renderBackdrop( const Imath::Box2f &box, State state = NormalState, const Imath::Color3f *userColor = nullptr ) const = 0;
 		//@}
 
 		/// @name 3D UI elements
@@ -138,11 +145,21 @@ class Style : public IECore::RunTimeTyped
 			X,
 			Y,
 			Z,
+			XY,
+			XZ,
+			YZ,
 			XYZ
 		};
 		virtual void renderTranslateHandle( Axes axes, State state = NormalState ) const = 0;
-		virtual void renderRotateHandle( Axes axes, State state = NormalState ) const = 0;
+		virtual void renderRotateHandle( Axes axes, State state = NormalState, const Imath::V3f &highlightVector = Imath::V3f( 0 ) ) const = 0;
 		virtual void renderScaleHandle( Axes axes, State state = NormalState ) const = 0;
+		//@}
+
+		/// @name Animation UI elements
+		//////////////////////////////////////////////////////////////////////////
+		//@{
+		virtual void renderAnimationCurve( const Imath::V2f &start, const Imath::V2f &end, const Imath::V2f &startTangent, const Imath::V2f &endTangent, State state, const Imath::Color3f *userColor = nullptr ) const = 0;
+		virtual void renderAnimationKey( const Imath::V2f &position, State state, float size = 2.0, const Imath::Color3f *userColor = nullptr ) const = 0;
 		//@}
 
 		typedef boost::signal<void (Style *)> UnarySignal;

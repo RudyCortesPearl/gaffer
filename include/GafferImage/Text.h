@@ -37,9 +37,9 @@
 #ifndef GAFFERIMAGE_TEXT_H
 #define GAFFERIMAGE_TEXT_H
 
-#include "Gaffer/BoxPlug.h"
-
 #include "GafferImage/Shape.h"
+
+#include "Gaffer/BoxPlug.h"
 
 namespace Gaffer
 {
@@ -52,15 +52,15 @@ IE_CORE_FORWARDDECLARE( Transform2DPlug )
 namespace GafferImage
 {
 
-class Text : public Shape
+class GAFFERIMAGE_API Text : public Shape
 {
 
 	public :
 
 		Text( const std::string &name=defaultName<Text>() );
-		virtual ~Text();
+		~Text() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Text, TextTypeId, Shape );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Text, TextTypeId, Shape );
 
 		enum HorizontalAlignment
 		{
@@ -97,24 +97,24 @@ class Text : public Shape
 		Gaffer::Transform2DPlug *transformPlug();
 		const Gaffer::Transform2DPlug *transformPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 		bool affectsLayout( const Gaffer::Plug *input ) const;
 		void hashLayout( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		IECore::ConstCompoundObjectPtr computeLayout( const Gaffer::Context *context ) const;
 
-		virtual bool affectsShapeDataWindow( const Gaffer::Plug *input ) const;
-		virtual void hashShapeDataWindow( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box2i computeShapeDataWindow( const Gaffer::Context *context ) const;
+		bool affectsShapeDataWindow( const Gaffer::Plug *input ) const override;
+		void hashShapeDataWindow( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		Imath::Box2i computeShapeDataWindow( const Gaffer::Context *context ) const override;
 
-		virtual bool affectsShapeChannelData( const Gaffer::Plug *input ) const;
-		virtual void hashShapeChannelData( const Imath::V2i &tileOrigin, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeShapeChannelData(  const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const;
+		bool affectsShapeChannelData( const Gaffer::Plug *input ) const override;
+		void hashShapeChannelData( const Imath::V2i &tileOrigin, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstFloatVectorDataPtr computeShapeChannelData(  const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const override;
 
 	private :
 

@@ -34,20 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Op.h"
-#include "IECore/MurmurHash.h"
-#include "IECore/SimpleTypedParameter.h"
+#include "GafferCortex/ExecutableOpHolder.h"
+
+#include "GafferCortex/CompoundParameterHandler.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/ValuePlug.h"
 
-#include "GafferCortex/ExecutableOpHolder.h"
-#include "GafferCortex/CompoundParameterHandler.h"
+#include "IECore/MurmurHash.h"
+#include "IECore/Op.h"
+#include "IECore/SimpleTypedParameter.h"
 
 using namespace IECore;
 using namespace GafferCortex;
 
-IE_CORE_DEFINERUNTIMETYPED( ExecutableOpHolder )
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ExecutableOpHolder )
 
 ExecutableOpHolder::ExecutableOpHolder( const std::string &name )
 	:	ParameterisedHolderTaskNode( name )
@@ -93,10 +94,9 @@ IECore::MurmurHash ExecutableOpHolder::hash( const Gaffer::Context *context ) co
 	h.append( classVersion );
 
 	Gaffer::Context::Scope scope( context );
-	const Gaffer::ValuePlug *parametersPlug = getChild<Gaffer::ValuePlug>( "parameters" );
-	if( parametersPlug )
+	if( const ParameterHandler *handler = parameterHandler() )
 	{
-		parametersPlug->hash( h );
+		h.append( handler->hash() );
 	}
 
 	return h;

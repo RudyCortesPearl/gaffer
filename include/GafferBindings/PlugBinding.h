@@ -38,24 +38,24 @@
 #ifndef GAFFERBINDINGS_PLUGBINDING_H
 #define GAFFERBINDINGS_PLUGBINDING_H
 
-#include "IECorePython/ScopedGILRelease.h"
-
-#include "Gaffer/Plug.h"
-
 #include "GafferBindings/GraphComponentBinding.h"
 #include "GafferBindings/Serialisation.h"
 
+#include "Gaffer/Plug.h"
+
+#include "IECorePython/ScopedGILRelease.h"
+
+#include <utility>
+
 namespace GafferBindings
 {
-
-void bindPlug();
 
 template<typename T, typename TWrapper=T>
 class PlugClass : public GraphComponentClass<T, TWrapper>
 {
 	public :
 
-		PlugClass( const char *docString = 0 );
+		PlugClass( const char *docString = nullptr );
 
 };
 
@@ -64,12 +64,13 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 {
 	public :
 
-		PlugWrapper( PyObject *self, const std::string &name, Gaffer::Plug::Direction direction, unsigned flags )
-			:	GraphComponentWrapper<WrappedType>( self, name, direction, flags )
+		template<typename... Args>
+		PlugWrapper( PyObject *self, Args&&... args )
+			:	GraphComponentWrapper<WrappedType>( self, std::forward<Args>( args )... )
 		{
 		}
 
-		virtual bool isInstanceOf( IECore::TypeId typeId ) const
+		bool isInstanceOf( IECore::TypeId typeId ) const override
 		{
 			// Optimise for common queries we know should fail.
 			// The standard wrapper implementation of isInstanceOf()
@@ -90,45 +91,66 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 			return GraphComponentWrapper<WrappedType>::isInstanceOf( typeId );
 		}
 
-		virtual bool acceptsInput( const Gaffer::Plug *input ) const
+		bool acceptsInput( const Gaffer::Plug *input ) const override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "acceptsInput" );
-				if( f )
+				try
 				{
-					return f( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( input ) ) );
+					boost::python::object f = this->methodOverride( "acceptsInput" );
+					if( f )
+					{
+						return f( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( input ) ) );
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::acceptsInput( input );
 		}
 
-		virtual void setInput( Gaffer::PlugPtr input )
+		void setInput( Gaffer::PlugPtr input ) override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "setInput" );
-				if( f )
+				try
 				{
-					f( boost::const_pointer_cast<Gaffer::Plug>( input ) );
-					return;
+					boost::python::object f = this->methodOverride( "setInput" );
+					if( f )
+					{
+						f( boost::const_pointer_cast<Gaffer::Plug>( input ) );
+						return;
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::setInput( input );
 		}
 
-		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Gaffer::Plug::Direction direction ) const
+		Gaffer::PlugPtr createCounterpart( const std::string &name, Gaffer::Plug::Direction direction ) const override
 		{
 			if( this->isSubclassed() )
 			{
 				IECorePython::ScopedGILLock gilLock;
-				boost::python::object f = this->methodOverride( "createCounterpart" );
-				if( f )
+				try
 				{
-					Gaffer::PlugPtr result = boost::python::extract<Gaffer::PlugPtr>( f( name, direction ) );
-					return result;
+					boost::python::object f = this->methodOverride( "createCounterpart" );
+					if( f )
+					{
+						Gaffer::PlugPtr result = boost::python::extract<Gaffer::PlugPtr>( f( name, direction ) );
+						return result;
+					}
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					IECorePython::ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::createCounterpart( name, direction );
@@ -136,19 +158,20 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 
 };
 
-class PlugSerialiser : public Serialisation::Serialiser
+class GAFFERBINDINGS_API PlugSerialiser : public Serialisation::Serialiser
 {
 
 	public :
 
-		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const;
-		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const;
-		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
-		virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const;
-		virtual bool childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const;
+		void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const override;
+		std::string constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const override;
+		std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const override;
+		bool childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const override;
+		bool childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const override;
 
 		static std::string directionRepr( Gaffer::Plug::Direction direction );
 		static std::string flagsRepr( unsigned flags );
+		static std::string repr( const Gaffer::Plug *plug, unsigned flagsMask = Gaffer::Plug::All );
 
 };
 

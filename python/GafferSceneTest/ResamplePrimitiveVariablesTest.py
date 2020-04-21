@@ -33,7 +33,11 @@
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ##########################################################################
+
+import imath
+
 import IECore
+import IECoreScene
 
 import GafferScene
 import GafferSceneTest
@@ -44,16 +48,16 @@ class ResamplePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		verticesPerFace = IECore.IntVectorData( [4] )
 		vertexIds = IECore.IntVectorData( [0, 1, 2, 3] )
-		p = IECore.V3fVectorData( [IECore.V3f( 0, 0, 0 ), IECore.V3f( 1, 0, 0 ), IECore.V3f( 1, 1, 0 ), IECore.V3f( 0, 1, 0 )] )
+		p = IECore.V3fVectorData( [imath.V3f( 0, 0, 0 ), imath.V3f( 1, 0, 0 ), imath.V3f( 1, 1, 0 ), imath.V3f( 0, 1, 0 )] )
 		a = IECore.FloatVectorData( [0, 1, 2, 3] )
 		b = IECore.FloatVectorData( [4, 5, 6, 7] )
 
 		c = IECore.FloatData( 42 )
 
-		mesh = IECore.MeshPrimitive( verticesPerFace, vertexIds, "linear", p )
-		mesh["a"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.FaceVarying, a )
-		mesh["b"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.FaceVarying, b )
-		mesh["c"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Constant, c )
+		mesh = IECoreScene.MeshPrimitive( verticesPerFace, vertexIds, "linear", p )
+		mesh["a"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.FaceVarying, a )
+		mesh["b"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.FaceVarying, b )
+		mesh["c"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Constant, c )
 
 		self.assertTrue( mesh.arePrimitiveVariablesValid() )
 		objectToScene = GafferScene.ObjectToScene()
@@ -72,12 +76,12 @@ class ResamplePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		resample["in"].setInput( quadScene["out"] )
 		resample["filter"].setInput( pathFilter["out"] )
-		resample["interpolation"].setValue( IECore.PrimitiveVariable.Interpolation.Constant ) # constant
+		resample["interpolation"].setValue( IECoreScene.PrimitiveVariable.Interpolation.Constant ) # constant
 		resample['names'].setValue( "a" )
 
 		actualObject = resample["out"].object( "/object" )
 
-		self.assertEqual( IECore.PrimitiveVariable.Interpolation.Constant, actualObject["a"].interpolation )
+		self.assertEqual( IECoreScene.PrimitiveVariable.Interpolation.Constant, actualObject["a"].interpolation )
 		self.assertEqual( actualObject["a"].data, IECore.FloatData( 1.5 ) )
 
 	def testNoFilterIsNOP( self ) :
@@ -87,12 +91,12 @@ class ResamplePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		resample = GafferScene.ResamplePrimitiveVariables()
 
 		resample["in"].setInput( quadScene["out"] )
-		resample["interpolation"].setValue( IECore.PrimitiveVariable.Interpolation.Constant ) # constant
+		resample["interpolation"].setValue( IECoreScene.PrimitiveVariable.Interpolation.Constant ) # constant
 		resample['names'].setValue( "a" )
 
 		actualObject = resample["out"].object( "/object" )
 
-		self.assertEqual( actualObject["a"].interpolation, IECore.PrimitiveVariable.Interpolation.FaceVarying )
+		self.assertEqual( actualObject["a"].interpolation, IECoreScene.PrimitiveVariable.Interpolation.FaceVarying )
 		self.assertEqual( actualObject["a"].data, IECore.FloatVectorData( [0, 1, 2, 3] ) )
 
 	def testConstantToVertex( self ) :
@@ -106,18 +110,18 @@ class ResamplePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		resample["in"].setInput( quadScene["out"] )
 		resample["filter"].setInput( pathFilter["out"] )
-		resample["interpolation"].setValue( IECore.PrimitiveVariable.Interpolation.Vertex )
+		resample["interpolation"].setValue( IECoreScene.PrimitiveVariable.Interpolation.Vertex )
 		resample['names'].setValue( "c" )
 
 		actualObject = resample["out"].object( "/object" )
 
-		self.assertEqual( IECore.PrimitiveVariable.Interpolation.Vertex, actualObject["c"].interpolation )
+		self.assertEqual( IECoreScene.PrimitiveVariable.Interpolation.Vertex, actualObject["c"].interpolation )
 		self.assertEqual( actualObject["c"].data, IECore.FloatVectorData( [42, 42, 42, 42] ) )
 
 	def testInvalidPrimitiveThrowsException(self):
 
-		nurbsPrimitive = IECore.NURBSPrimitive()
-		nurbsPrimitive["a"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex,  IECore.FloatVectorData( [0, 1, 2, 3] ) )
+		nurbsPrimitive = IECoreScene.NURBSPrimitive()
+		nurbsPrimitive["a"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Vertex,  IECore.FloatVectorData( [0, 1, 2, 3] ) )
 
 		objectToScene = GafferScene.ObjectToScene()
 		objectToScene["object"].setValue( nurbsPrimitive )
@@ -129,7 +133,7 @@ class ResamplePrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 
 		resample["in"].setInput( objectToScene["out"] )
 		resample["filter"].setInput( pathFilter["out"] )
-		resample["interpolation"].setValue( IECore.PrimitiveVariable.Interpolation.Invalid )  # invalid
+		resample["interpolation"].setValue( IECoreScene.PrimitiveVariable.Interpolation.Invalid )  # invalid
 		resample['names'].setValue( "a" )
 
 		self.assertRaises( RuntimeError, lambda : resample["out"].object( "/object" ) )

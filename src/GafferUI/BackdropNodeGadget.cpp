@@ -34,23 +34,27 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/algorithm/string.hpp"
+#include "GafferUI/BackdropNodeGadget.h"
 
-#include "IECore/NullObject.h"
-#include "IECore/BoxOps.h"
-
-#include "IECoreGL/Selector.h"
+#include "GafferUI/GraphGadget.h"
+#include "GafferUI/ImageGadget.h"
+#include "GafferUI/Pointer.h"
+#include "GafferUI/Style.h"
+#include "GafferUI/ViewportGadget.h"
 
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ScriptNode.h"
 #include "Gaffer/StringPlug.h"
+#include "Gaffer/UndoScope.h"
 
-#include "GafferUI/BackdropNodeGadget.h"
-#include "GafferUI/GraphGadget.h"
-#include "GafferUI/Style.h"
-#include "GafferUI/Pointer.h"
-#include "GafferUI/ViewportGadget.h"
+#include "IECoreGL/Selector.h"
+
+#include "IECore/BoxOps.h"
+#include "IECore/NullObject.h"
+
+#include "boost/algorithm/string.hpp"
+#include "boost/bind.hpp"
 
 using namespace Imath;
 using namespace IECore;
@@ -63,11 +67,20 @@ namespace
 void titleAndDescriptionFromPlugs( const StringPlug *titlePlug, const StringPlug *descriptionPlug,
 	std::string &title, std::string &description )
 {
+	const auto script = titlePlug->ancestor<ScriptNode>();
+	const Context *context = script ? script->context() : nullptr;
+	Context::Scope scope( context );
+
 	title = "ERROR : Getting title";
 	try
 	{
 		title = titlePlug->getValue();
 		description = descriptionPlug->getValue();
+		if( context )
+		{
+			title = context->substitute( title );
+			description = context->substitute( description );
+		}
 	}
 	catch( const std::exception &e )
 	{
@@ -77,7 +90,7 @@ void titleAndDescriptionFromPlugs( const StringPlug *titlePlug, const StringPlug
 
 } // namespace
 
-IE_CORE_DEFINERUNTIMETYPED( BackdropNodeGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( BackdropNodeGadget );
 
 static const float g_margin = 3.0f;
 static IECore::InternedString g_boundPlugName( "__uiBound" );
@@ -86,7 +99,7 @@ static IECore::InternedString g_colorKey( "nodeGadget:color" );
 BackdropNodeGadget::NodeGadgetTypeDescription<BackdropNodeGadget> BackdropNodeGadget::g_nodeGadgetTypeDescription( Gaffer::Backdrop::staticTypeId() );
 
 BackdropNodeGadget::BackdropNodeGadget( Gaffer::NodePtr node )
-	:	NodeGadget( node ), m_hovered( false ), m_horizontalDragEdge( 0 ), m_verticalDragEdge( 0 )
+	:	NodeGadget( node ), m_hovered( false ), m_horizontalDragEdge( 0 ), m_verticalDragEdge( 0 ), m_mergeGroupId( 0 )
 {
 	if( !runTimeCast<Backdrop>( node ) )
 	{
@@ -106,6 +119,12 @@ BackdropNodeGadget::BackdropNodeGadget( Gaffer::NodePtr node )
 	}
 
 	node->plugDirtiedSignal().connect( boost::bind( &BackdropNodeGadget::plugDirtied, this, ::_1 ) );
+	if( auto *script = node->scriptNode() )
+	{
+		script->context()->changedSignal().connect(
+			boost::bind( &BackdropNodeGadget::contextChanged, this )
+		);
+	}
 
 	mouseMoveSignal().connect( boost::bind( &BackdropNodeGadget::mouseMove, this, ::_1, ::_2 ) );
 	buttonPressSignal().connect( boost::bind( &BackdropNodeGadget::buttonPress, this, ::_1, ::_2 ) );
@@ -143,7 +162,7 @@ std::string BackdropNodeGadget::getToolTip( const IECore::LineSegment3f &line ) 
 
 	if( title.size() )
 	{
-		result += "<h3>" + title + "</h3>";
+		result += "# " + title;
 	}
 	if( description.size() )
 	{
@@ -151,7 +170,6 @@ std::string BackdropNodeGadget::getToolTip( const IECore::LineSegment3f &line ) 
 		{
 			result += "\n\n";
 		}
-		boost::replace_all( description, "\n", "<br>" );
 		result += description;
 	}
 
@@ -172,7 +190,7 @@ void BackdropNodeGadget::frame( const std::vector<Gaffer::Node *> &nodes )
 		NodeGadget *nodeGadget = graph->nodeGadget( *it );
 		if( nodeGadget )
 		{
-			b.extendBy( nodeGadget->transformedBound( NULL ) );
+			b.extendBy( nodeGadget->transformedBound( nullptr ) );
 		}
 	}
 
@@ -229,8 +247,13 @@ Imath::Box3f BackdropNodeGadget::bound() const
 	return Box3f( V3f( b.min.x, b.min.y, 0.0f ), V3f( b.max.x, b.max.y, 0.0f ) );
 }
 
-void BackdropNodeGadget::doRender( const Style *style ) const
+void BackdropNodeGadget::doRenderLayer( Layer layer, const Style *style ) const
 {
+	if( layer != GraphLayer::Backdrops )
+	{
+		return;
+	}
+
 	// this is our bound in gadget space
 	Box2f bound = boundPlug()->getValue();
 
@@ -306,6 +329,12 @@ void BackdropNodeGadget::doRender( const Style *style ) const
 	}
 
 	glPopMatrix();
+}
+
+void BackdropNodeGadget::contextChanged()
+{
+	// Title and description may depend on the context
+	requestRender();
 }
 
 void BackdropNodeGadget::plugDirtied( const Gaffer::Plug *plug )
@@ -413,6 +442,8 @@ bool BackdropNodeGadget::dragMove( Gadget *gadget, const DragDropEvent &event )
 		b.max.y = std::max( event.line.p0.y, b.min.y + g_margin * 4.0f);
 	}
 
+	const std::string mergeGroup = boost::str( boost::format( "BackdropNodeGadget%1%%2%" ) % this % m_mergeGroupId );
+	UndoScope undoScope( node()->scriptNode(), UndoScope::Enabled, mergeGroup );
 	boundPlug()->setValue( b );
 	return true;
 }
@@ -420,6 +451,7 @@ bool BackdropNodeGadget::dragMove( Gadget *gadget, const DragDropEvent &event )
 bool BackdropNodeGadget::dragEnd( Gadget *gadget, const DragDropEvent &event )
 {
 	Pointer::setCurrent( "" );
+	m_mergeGroupId++;
 	return true;
 }
 

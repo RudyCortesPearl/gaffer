@@ -37,18 +37,18 @@
 #ifndef GAFFER_CONTEXTMONITOR_H
 #define GAFFER_CONTEXTMONITOR_H
 
-#include <vector>
-#include <map>
+#include "Gaffer/Monitor.h"
 
-#include "tbb/enumerable_thread_specific.h"
+#include "IECore/MurmurHash.h"
+#include "IECore/RefCounted.h"
 
 #include "boost/unordered_map.hpp"
 #include "boost/unordered_set.hpp"
 
-#include "IECore/RefCounted.h"
-#include "IECore/MurmurHash.h"
+#include "tbb/enumerable_thread_specific.h"
 
-#include "Gaffer/Monitor.h"
+#include <map>
+#include <vector>
 
 namespace Gaffer
 {
@@ -59,15 +59,17 @@ IE_CORE_FORWARDDECLARE( Context )
 
 /// A monitor which collects statistics about
 /// what contexts plugs are evaluated in.
-class ContextMonitor : public Monitor
+class GAFFER_API ContextMonitor : public Monitor
 {
 
 	public :
 
 		/// Statistics are only collected for the root and its
 		/// descendants.
-		ContextMonitor( const GraphComponent *root = NULL );
-		virtual ~ContextMonitor();
+		ContextMonitor( const GraphComponent *root = nullptr );
+		~ContextMonitor() override;
+
+		IE_CORE_DECLAREMEMBERPTR( ContextMonitor )
 
 		struct Statistics
 		{
@@ -101,8 +103,8 @@ class ContextMonitor : public Monitor
 
 	protected :
 
-		virtual void processStarted( const Process *process );
-		virtual void processFinished( const Process *process );
+		void processStarted( const Process *process ) override;
+		void processFinished( const Process *process ) override;
 
 	private :
 
@@ -124,6 +126,8 @@ class ContextMonitor : public Monitor
 		mutable Statistics m_combinedStatistics;
 
 };
+
+IE_CORE_DECLAREPTR( ContextMonitor )
 
 } // namespace Gaffer
 

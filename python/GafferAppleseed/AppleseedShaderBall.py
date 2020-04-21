@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -50,7 +52,7 @@ class AppleseedShaderBall( GafferScene.ShaderBall ) :
 
 		# Appleseed doesn't support primitives spheres
 		self["__sphere"]["type"].setValue( self["__sphere"].Type.Mesh )
-		self["__sphere"]["divisions"].setValue( IECore.V2i( 60, 120 ) )
+		self["__sphere"]["divisions"].setValue( imath.V2i( 60, 120 ) )
 
 		self["__skyDome"] = GafferAppleseed.AppleseedLight()
 		self["__skyDome"].loadShader( "latlong_map_environment_edf" )
@@ -60,7 +62,7 @@ class AppleseedShaderBall( GafferScene.ShaderBall ) :
 
 		self["__parentLights"] = GafferScene.Parent()
 		self["__parentLights"]["in"].setInput( self._outPlug().getInput() )
-		self["__parentLights"]["child"].setInput( self["__skyDome"]["out"] )
+		self["__parentLights"]["children"][0].setInput( self["__skyDome"]["out"] )
 		self["__parentLights"]["parent"].setValue( "/" )
 
 		self["__appleseedOptions"] = GafferAppleseed.AppleseedOptions()

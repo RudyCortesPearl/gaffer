@@ -37,11 +37,15 @@
 #ifndef GAFFER_MONITORALGO_H
 #define GAFFER_MONITORALGO_H
 
+#include "Gaffer/Export.h"
+
 #include <string>
 
 namespace Gaffer
 {
 
+class ContextMonitor;
+class Node;
 class PerformanceMonitor;
 
 namespace MonitorAlgo
@@ -63,13 +67,14 @@ enum PerformanceMetric
 	Last = HashesPerCompute
 };
 
-std::string formatStatistics( const PerformanceMonitor &monitor, size_t maxLinesPerMetric = 50 );
-std::string formatStatistics( const PerformanceMonitor &monitor, PerformanceMetric metric, size_t maxLines = 50 );
+GAFFER_API std::string formatStatistics( const PerformanceMonitor &monitor, size_t maxLinesPerMetric = 50 );
+GAFFER_API std::string formatStatistics( const PerformanceMonitor &monitor, PerformanceMetric metric, size_t maxLines = 50 );
+
+GAFFER_API void annotate( Node &root, const PerformanceMonitor &monitor );
+GAFFER_API void annotate( Node &root, const PerformanceMonitor &monitor, PerformanceMetric metric );
+GAFFER_API void annotate( Node &root, const ContextMonitor &monitor );
 
 } // namespace MonitorAlgo
-
-/// \todo Remove this temporary backwards compatibility.
-using namespace MonitorAlgo;
 
 } // namespace Gaffer
 

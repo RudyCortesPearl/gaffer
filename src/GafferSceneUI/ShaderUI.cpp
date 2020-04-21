@@ -34,18 +34,18 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-
-#include "Gaffer/UndoScope.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Metadata.h"
-#include "Gaffer/MetadataAlgo.h"
+#include "GafferScene/Shader.h"
 
 #include "GafferUI/Nodule.h"
-#include "GafferUI/PlugAdder.h"
 #include "GafferUI/NoduleLayout.h"
+#include "GafferUI/PlugAdder.h"
 
-#include "GafferScene/Shader.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/UndoScope.h"
+
+#include "boost/bind.hpp"
 
 using namespace std;
 using namespace Gaffer;
@@ -63,11 +63,11 @@ class ShaderPlugAdder : public PlugAdder
 
 	public :
 
-		ShaderPlugAdder( ShaderPtr shader, StandardNodeGadget::Edge edge )
-			: PlugAdder( edge ), m_shader( shader )
+		ShaderPlugAdder( GraphComponentPtr plugsParent )
+			:	m_plugsParent( plugsParent )
 		{
-			shader->parametersPlug()->childAddedSignal().connect( boost::bind( &ShaderPlugAdder::childAdded, this ) );
-			shader->parametersPlug()->childRemovedSignal().connect( boost::bind( &ShaderPlugAdder::childRemoved, this ) );
+			plugsParent->childAddedSignal().connect( boost::bind( &ShaderPlugAdder::childAdded, this ) );
+			plugsParent->childRemovedSignal().connect( boost::bind( &ShaderPlugAdder::childRemoved, this ) );
 			Metadata::plugValueChangedSignal().connect( boost::bind( &ShaderPlugAdder::plugMetadataChanged, this, ::_1, ::_2, ::_3, ::_4 ) );
 
 			buttonReleaseSignal().connect( boost::bind( &ShaderPlugAdder::buttonRelease, this, ::_2 ) );
@@ -77,25 +77,30 @@ class ShaderPlugAdder : public PlugAdder
 
 	protected :
 
-		bool acceptsPlug( const Plug *plug ) const
+		bool canCreateConnection( const Plug *endpoint ) const override
 		{
-			vector<Plug *> plugs = showablePlugs( plug );
+			vector<Plug *> plugs = showablePlugs( endpoint );
 			return !plugs.empty();
 		}
 
-		void addPlug( Plug *connectionEndPoint )
+		void createConnection( Plug *endpoint ) override
 		{
-			vector<Plug *> plugs = showablePlugs( connectionEndPoint );
+			vector<Plug *> plugs = showablePlugs( endpoint );
 			Plug *plug = plugMenuSignal()( "Connect To", plugs );
 			if( !plug )
 			{
 				return;
 			}
 
-			UndoScope undoScope( m_shader->scriptNode() );
-
 			Metadata::registerValue( plug, g_visibleKey, new IECore::BoolData( true ) );
-			plug->setInput( connectionEndPoint );
+			if( plug->direction() == Plug::In )
+			{
+				plug->setInput( endpoint );
+			}
+			else
+			{
+				endpoint->setInput( plug );
+			}
 		}
 
 	private :
@@ -109,16 +114,16 @@ class ShaderPlugAdder : public PlugAdder
 				return false;
 			}
 
-			UndoScope undoScope( m_shader->scriptNode() );
+			UndoScope undoScope( m_plugsParent->ancestor<ScriptNode>() );
 			Metadata::registerValue( plug, g_visibleKey, new IECore::BoolData( true ) );
 			return true;
 		}
 
-		vector<Plug *> showablePlugs( const Plug *input = NULL ) const
+		vector<Plug *> showablePlugs( const Plug *input = nullptr ) const
 		{
 			vector<Plug *> result;
 
-			for( PlugIterator it( m_shader->parametersPlug() ); !it.done(); ++it )
+			for( PlugIterator it( m_plugsParent.get() ); !it.done(); ++it )
 			{
 				Plug *plug = it->get();
 				if( !plug->getFlags( Plug::AcceptsInputs ) )
@@ -141,7 +146,7 @@ class ShaderPlugAdder : public PlugAdder
 				{
 					continue;
 				}
-				if( readOnly( plug ) )
+				if( MetadataAlgo::readOnly( plug ) )
 				{
 					continue;
 				}
@@ -166,9 +171,9 @@ class ShaderPlugAdder : public PlugAdder
 			updateVisibility();
 		}
 
-		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+		void plugMetadataChanged( IECore::TypeId nodeTypeId, const IECore::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
 		{
-			if( childAffectedByChange( m_shader->parametersPlug(), nodeTypeId, plugPath, plug ) )
+			if( MetadataAlgo::childAffectedByChange( m_plugsParent.get(), nodeTypeId, plugPath, plug ) )
 			{
 				if( key == g_visibleKey || key == g_noduleTypeKey )
 				{
@@ -177,7 +182,7 @@ class ShaderPlugAdder : public PlugAdder
 			}
 		}
 
-		ShaderPtr m_shader;
+		GraphComponentPtr m_plugsParent;
 
 };
 
@@ -193,13 +198,7 @@ struct Registration
 
 		static GadgetPtr create( GraphComponentPtr parent )
 		{
-			ShaderPtr shader = IECore::runTimeCast<Shader>( parent );
-			if( !shader )
-			{
-				throw IECore::Exception( "ShaderPlugAdder requires a Shader" );
-			}
-
-			return new ShaderPlugAdder( shader, StandardNodeGadget::TopEdge );
+			return new ShaderPlugAdder( parent );
 		}
 
 };

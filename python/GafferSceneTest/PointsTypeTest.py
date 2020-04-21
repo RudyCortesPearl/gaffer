@@ -35,8 +35,10 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -46,10 +48,13 @@ class PointsTypeTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
 
-		points = IECore.PointsPrimitive( 1 )
-		points["P"] = IECore.PrimitiveVariable(
-			IECore.PrimitiveVariable.Interpolation.Vertex,
-			IECore.V3fVectorData( [ IECore.V3f( 1, 2, 3 ) ] ),
+		points = IECoreScene.PointsPrimitive( 1 )
+		points["P"] = IECoreScene.PrimitiveVariable(
+			IECoreScene.PrimitiveVariable.Interpolation.Vertex,
+			IECore.V3fVectorData(
+				[ imath.V3f( 1, 2, 3 ) ],
+				IECore.GeometricData.Interpretation.Point
+			),
 		)
 
 		objectToScene = GafferScene.ObjectToScene()
@@ -87,7 +92,7 @@ class PointsTypeTest( GafferSceneTest.SceneTestCase ) :
 
 		# Test unchanged settings.
 
-		points["type"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Constant, IECore.StringData( "particles" ) )
+		points["type"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Constant, IECore.StringData( "particles" ) )
 		objectToScene["object"].setValue( points )
 
 		assertExpectedOutput( type = "particles", unchanged = True )
@@ -115,7 +120,7 @@ class PointsTypeTest( GafferSceneTest.SceneTestCase ) :
 		p["in"].setInput( c["out"] )
 
 		self.assertSceneValid( p["out"] )
-		self.failUnless( isinstance( p["out"].object( "/camera" ), IECore.Camera ) )
+		self.failUnless( isinstance( p["out"].object( "/camera" ), IECoreScene.Camera ) )
 		self.assertEqual( p["out"].object( "/camera" ), c["out"].object( "/camera" ) )
 		self.assertTrue(
 			p["out"].object( "/camera", _copy = False ).isSame( c["out"].object( "/camera", _copy = False ) )

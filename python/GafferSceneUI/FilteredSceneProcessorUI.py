@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import functools
+
 import IECore
 
 import Gaffer
@@ -92,7 +94,7 @@ def __nodeGadget( node ) :
 GafferUI.NodeGadget.registerNodeGadget( GafferScene.FilteredSceneProcessor, __nodeGadget )
 
 ##########################################################################
-# NodeGraph context menu
+# GraphEditor context menu
 ##########################################################################
 
 def __selectAffected( node, context ) :
@@ -102,30 +104,24 @@ def __selectAffected( node, context ) :
 		scenes = [ node["in"] ]
 	else :
 		filter = node
-		scenes = []
-		def walkOutputs( plug ) :
-			for output in plug.outputs() :
-				node = output.node()
-				if isinstance( node, GafferScene.FilteredSceneProcessor ) and output.isSame( node["filter"] ) :
-					scenes.append( node["in"] )
-				walkOutputs( output )
+		scenes = [ n["in"] for n in GafferScene.SceneAlgo.filteredNodes( filter ) ]
 
-		walkOutputs( filter["out"] )
+	scenes = [ s[0] if isinstance( s, Gaffer.ArrayPlug ) else s for s in scenes ]
 
-	pathMatcher = GafferScene.PathMatcher()
+	pathMatcher = IECore.PathMatcher()
 	with context :
 		for scene in scenes :
 			GafferScene.SceneAlgo.matchingPaths( filter, scene, pathMatcher )
 
 	GafferSceneUI.ContextAlgo.setSelectedPaths( context, pathMatcher )
 
-def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
+def appendNodeContextMenuDefinitions( graphEditor, node, menuDefinition ) :
 
 	if not isinstance( node, ( GafferScene.FilteredSceneProcessor, GafferScene.Filter ) ) :
 		return
 
 	menuDefinition.append( "/FilteredSceneProcessorDivider", { "divider" : True } )
-	menuDefinition.append( "/Select Affected Objects", { "command" : IECore.curry( __selectAffected, node, nodeGraph.getContext() ) } )
+	menuDefinition.append( "/Select Affected Objects", { "command" : functools.partial( __selectAffected, node, graphEditor.getContext() ) } )
 
 ##########################################################################
 # NodeEditor tool menu
@@ -137,4 +133,4 @@ def appendNodeEditorToolMenuDefinitions( nodeEditor, node, menuDefinition ) :
 		return
 
 	menuDefinition.append( "/FilteredSceneProcessorDivider", { "divider" : True } )
-	menuDefinition.append( "/Select Affected Objects", { "command" : IECore.curry( __selectAffected, node, nodeEditor.getContext() ) } )
+	menuDefinition.append( "/Select Affected Objects", { "command" : functools.partial( __selectAffected, node, nodeEditor.getContext() ) } )

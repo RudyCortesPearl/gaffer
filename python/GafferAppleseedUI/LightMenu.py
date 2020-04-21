@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import functools
+
 import appleseed
 
 import IECore
@@ -52,6 +54,12 @@ def appendLights( menuDefinition, prefix="/Appleseed" ) :
 		if model in lightModelsToExpose :
 			__addToMenu( menuDefinition, prefix + "/Light/", model )
 
+	edfModelsToExpose = [ "diffuse_edf" ]
+
+	for model in appleseed.EDF.get_input_metadata() :
+		if model in edfModelsToExpose :
+			__addToMenu( menuDefinition, prefix + "/Light/", model )
+
 def __lightCreator( name ) :
 
 	light = GafferAppleseed.AppleseedLight( name )
@@ -67,12 +75,15 @@ def __addToMenu( menuDefinition, prefix, model, displayName = None ) :
 	menuDefinition.append(
 		menuPath,
 		{
-			"command" : GafferUI.NodeMenu.nodeCreatorWrapper( IECore.curry( __lightCreator, model ) ),
+			"command" : GafferUI.NodeMenu.nodeCreatorWrapper( functools.partial( __lightCreator, model ) ),
 			"searchText" : "as" + displayName.replace( " ", "" ),
 		}
 	)
 
 def __displayName( model ) :
+
+	if model == "diffuse_edf":
+		return "Rect"
 
 	displayName = " ".join( [ IECore.CamelCase.toSpaced( x ) for x in model.split( "_" ) ] )
 	displayName = displayName.replace(" Light", "" )

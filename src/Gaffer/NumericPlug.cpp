@@ -35,10 +35,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "OpenEXR/ImathFun.h"
-
 #include "Gaffer/NumericPlug.h"
+
 #include "Gaffer/TypedPlug.h"
+
+#include "OpenEXR/ImathFun.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -50,8 +51,8 @@ namespace Gaffer
 {
 
 // RunTimeTyped specialisation
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::IntPlug, IntPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::FloatPlug, FloatPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::IntPlug, IntPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::FloatPlug, FloatPlugTypeId )
 
 }
 

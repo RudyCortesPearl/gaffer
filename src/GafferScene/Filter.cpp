@@ -34,15 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-
 #include "GafferScene/Filter.h"
+
 #include "GafferScene/FilterPlug.h"
+
+#include "Gaffer/Context.h"
 
 using namespace GafferScene;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( Filter );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Filter );
 
 const IECore::InternedString Filter::inputSceneContextName( "scene:filter:inputScene" );
 size_t Filter::g_firstPlugIndex = 0;
@@ -52,7 +53,7 @@ Filter::Filter( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
-	addChild( new FilterPlug( "out", Gaffer::Plug::Out, Plug::Default & ( ~Plug::Cacheable ) ) );
+	addChild( new FilterPlug( "out", Gaffer::Plug::Out ) );
 }
 
 Filter::~Filter()
@@ -128,7 +129,7 @@ void Filter::compute( ValuePlug *output, const Context *context ) const
 {
 	if( output == outPlug() )
 	{
-		unsigned match = NoMatch;
+		unsigned match = IECore::PathMatcher::NoMatch;
 		if( enabledPlug()->getValue() )
 		{
 			match = computeMatch( getInputScene( context ), context );
@@ -140,6 +141,15 @@ void Filter::compute( ValuePlug *output, const Context *context ) const
 	ComputeNode::compute( output, context );
 }
 
+Gaffer::ValuePlug::CachePolicy Filter::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == outPlug() )
+	{
+		return ValuePlug::CachePolicy::Uncached;
+	}
+	return ComputeNode::computeCachePolicy( output );
+}
+
 void Filter::hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	/// \todo See comments in hash() method.
@@ -147,5 +157,5 @@ void Filter::hashMatch( const ScenePlug *scene, const Gaffer::Context *context, 
 
 unsigned Filter::computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const
 {
-	return NoMatch;
+	return IECore::PathMatcher::NoMatch;
 }

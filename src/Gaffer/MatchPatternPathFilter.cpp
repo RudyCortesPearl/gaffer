@@ -35,12 +35,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "Gaffer/MatchPatternPathFilter.h"
 
+#include "Gaffer/Path.h"
+
+#include "IECore/MessageHandler.h"
 #include "IECore/SimpleTypedData.h"
 
-#include "Gaffer/MatchPatternPathFilter.h"
-#include "Gaffer/Path.h"
+#include "boost/bind.hpp"
 
 using namespace Gaffer;
 
@@ -48,7 +50,7 @@ static IECore::InternedString g_namePropertyName( "name" );
 
 IE_CORE_DEFINERUNTIMETYPED( MatchPatternPathFilter );
 
-MatchPatternPathFilter::MatchPatternPathFilter( const std::vector<StringAlgo::MatchPattern> &patterns, IECore::InternedString propertyName, bool leafOnly, IECore::CompoundDataPtr userData )
+MatchPatternPathFilter::MatchPatternPathFilter( const std::vector<IECore::StringAlgo::MatchPattern> &patterns, IECore::InternedString propertyName, bool leafOnly, IECore::CompoundDataPtr userData )
 	:	PathFilter( userData ), m_patterns( patterns ), m_propertyName( propertyName ), m_leafOnly( leafOnly ), m_inverted( false )
 {
 }
@@ -57,7 +59,7 @@ MatchPatternPathFilter::~MatchPatternPathFilter()
 {
 }
 
-void MatchPatternPathFilter::setMatchPatterns( const std::vector<StringAlgo::MatchPattern> &patterns )
+void MatchPatternPathFilter::setMatchPatterns( const std::vector<IECore::StringAlgo::MatchPattern> &patterns )
 {
 	if( patterns == m_patterns )
 	{
@@ -67,7 +69,7 @@ void MatchPatternPathFilter::setMatchPatterns( const std::vector<StringAlgo::Mat
 	changedSignal()( this );
 }
 
-const std::vector<StringAlgo::MatchPattern> &MatchPatternPathFilter::getMatchPatterns() const
+const std::vector<IECore::StringAlgo::MatchPattern> &MatchPatternPathFilter::getMatchPatterns() const
 {
 	return m_patterns;
 }
@@ -121,38 +123,46 @@ bool MatchPatternPathFilter::invert( bool b ) const
 
 bool MatchPatternPathFilter::remove( PathPtr path ) const
 {
-	if( m_leafOnly && !path->isLeaf() )
+	try
 	{
-		return false;
-	}
+		if( m_leafOnly && !path->isLeaf() )
+		{
+			return false;
+		}
 
-	IECore::ConstStringDataPtr propertyData;
-	const std::string *propertyValue = NULL;
-	if( m_propertyName == g_namePropertyName )
-	{
-		if( !path->names().size() )
+		IECore::ConstStringDataPtr propertyData;
+		const std::string *propertyValue = nullptr;
+		if( m_propertyName == g_namePropertyName )
 		{
-			return invert( true );
+			if( !path->names().size() )
+			{
+				return invert( true );
+			}
+			// quicker to retrieve the value from the path than as a property
+			propertyValue = &(path->names().back().string());
 		}
-		// quicker to retrieve the value from the path than as a property
-		propertyValue = &(path->names().back().string());
-	}
-	else
-	{
-		propertyData = IECore::runTimeCast<const IECore::StringData>( path->property( m_propertyName ) );
-		if( !propertyData )
+		else
 		{
-			throw IECore::Exception( "Expected StringData" );
+			propertyData = IECore::runTimeCast<const IECore::StringData>( path->property( m_propertyName ) );
+			if( !propertyData )
+			{
+				throw IECore::Exception( "Expected StringData" );
+			}
+			propertyValue = &propertyData->readable();
 		}
-		propertyValue = &propertyData->readable();
-	}
 
-	for( std::vector<StringAlgo::MatchPattern>::const_iterator it = m_patterns.begin(), eIt = m_patterns.end(); it != eIt; ++it )
-	{
-		if( StringAlgo::match( propertyValue->c_str(), *it ) )
+		for( std::vector<IECore::StringAlgo::MatchPattern>::const_iterator it = m_patterns.begin(), eIt = m_patterns.end(); it != eIt; ++it )
 		{
-			return invert( false );
+			if( IECore::StringAlgo::match( propertyValue->c_str(), *it ) )
+			{
+				return invert( false );
+			}
 		}
+		return invert( true );
 	}
-	return invert( true );
+	catch( const std::exception &e )
+	{
+		IECore::msg( IECore::Msg::Error, "MatchPatternPathFilter", e.what() );
+		return true;
+	}
 }

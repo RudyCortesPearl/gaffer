@@ -34,20 +34,20 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-#include "Gaffer/StringPlug.h"
+#include "GafferScene/SetFilter.h"
 
 #include "GafferScene/ScenePlug.h"
-#include "GafferScene/PathMatcherData.h"
-#include "GafferScene/SetFilter.h"
 #include "GafferScene/SetAlgo.h"
+
+#include "Gaffer/Context.h"
+#include "Gaffer/StringPlug.h"
 
 using namespace GafferScene;
 using namespace Gaffer;
 using namespace IECore;
 using namespace std;
 
-IE_CORE_DEFINERUNTIMETYPED( SetFilter );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SetFilter );
 
 size_t SetFilter::g_firstPlugIndex = 0;
 
@@ -74,12 +74,12 @@ const Gaffer::StringPlug *SetFilter::setExpressionPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
-PathMatcherDataPlug *SetFilter::expressionResultPlug()
+Gaffer::PathMatcherDataPlug *SetFilter::expressionResultPlug()
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 1 );
 }
 
-const PathMatcherDataPlug *SetFilter::expressionResultPlug() const
+const Gaffer::PathMatcherDataPlug *SetFilter::expressionResultPlug() const
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 1 );
 }
@@ -151,7 +151,7 @@ void SetFilter::hashMatch( const ScenePlug *scene, const Gaffer::Context *contex
 	/// of filters. If we manage that, then we should go back to throwing an exception here if
 	/// the context doesn't contain a path. We should then do the same in the PathFilter.
 	typedef IECore::TypedData<ScenePlug::ScenePath> ScenePathData;
-	const ScenePathData *pathData = context->get<ScenePathData>( ScenePlug::scenePathContextName, 0 );
+	const ScenePathData *pathData = context->get<ScenePathData>( ScenePlug::scenePathContextName, nullptr );
 	if( pathData )
 	{
 		const ScenePlug::ScenePath &path = pathData->readable();
@@ -168,7 +168,7 @@ unsigned SetFilter::computeMatch( const ScenePlug *scene, const Gaffer::Context 
 {
 	if( !scene )
 	{
-		return NoMatch;
+		return IECore::PathMatcher::NoMatch;
 	}
 
 	const ScenePlug::ScenePath &path = context->get<ScenePlug::ScenePath>( ScenePlug::scenePathContextName );

@@ -37,108 +37,162 @@
 #ifndef GAFFERSCENEUI_SCENEGADGET_H
 #define GAFFERSCENEUI_SCENEGADGET_H
 
-#include "IECoreGL/State.h"
+#include "GafferSceneUI/Export.h"
+#include "GafferSceneUI/TypeIds.h"
 
-#include "Gaffer/Context.h"
+#include "GafferScene/RenderController.h"
+#include "GafferScene/ScenePlug.h"
 
 #include "GafferUI/Gadget.h"
 
-#include "GafferScene/ScenePlug.h"
-#include "GafferScene/PathMatcherData.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/ParallelAlgo.h"
 
-#include "GafferSceneUI/TypeIds.h"
+#include "IECoreGL/State.h"
 
 namespace GafferSceneUI
 {
 
 IE_CORE_FORWARDDECLARE( SceneGadget );
 
-/// \todo Implement IECoreGLPreview::Renderer, and
-/// use an internal InteractiveGLRender node to do
-/// all the hard work.
-class SceneGadget : public GafferUI::Gadget
+class GAFFERSCENEUI_API SceneGadget : public GafferUI::Gadget
 {
 
 	public :
 
 		SceneGadget();
-		virtual ~SceneGadget();
+		~SceneGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::SceneGadget, SceneGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneUI::SceneGadget, SceneGadgetTypeId, Gadget );
 
-		virtual Imath::Box3f bound() const;
+		/// Scene
+		/// =====
+		///
+		/// These methods specify the scene and how it is drawn.
 
 		void setScene( GafferScene::ConstScenePlugPtr scene );
 		const GafferScene::ScenePlug *getScene() const;
 
-		void setContext( Gaffer::ContextPtr context );
-		Gaffer::Context *getContext();
+		void setContext( Gaffer::ConstContextPtr context );
 		const Gaffer::Context *getContext() const;
 
 		/// Limits the expanded parts of the scene to those in the specified paths.
-		/// Without this, the whole scene is shown. A copy is not taken, but the
-		/// SceneGadget will not modify the expanded paths.
-		void setExpandedPaths( GafferScene::ConstPathMatcherDataPtr expandedPaths );
-		const GafferScene::PathMatcherData *getExpandedPaths() const;
+		void setExpandedPaths( const IECore::PathMatcher &expandedPaths );
+		const IECore::PathMatcher &getExpandedPaths() const;
 
 		void setMinimumExpansionDepth( size_t depth );
 		size_t getMinimumExpansionDepth() const;
 
-		/// Returns the IECoreGL::State object used as the base display
-		/// style for the Renderable. This may be modified freely to
-		/// change the display style.
-		IECoreGL::State *baseState();
+		/// Returns the selection.
+		const IECore::PathMatcher &getSelection() const;
+		/// Sets the selection.
+		void setSelection( const IECore::PathMatcher &selection );
+
+		/// Specifies options to control the OpenGL renderer. These are used
+		/// to specify wireframe/point drawing and colours etc. A copy of
+		/// `options` is taken.
+		void setOpenGLOptions( const IECore::CompoundObject *options );
+		const IECore::CompoundObject *getOpenGLOptions() const;
+
+		/// Update process
+		/// ==============
+		///
+		/// The SceneGadget updates progressively by performing
+		/// all computations on background threads, displaying
+		/// results as they become available. These methods control
+		/// that process.
+
+		void setPaused( bool paused );
+		bool getPaused() const;
+
+		/// Specifies a set of paths that block drawing until they are
+		/// up to date. Use sparingly.
+		void setBlockingPaths( const IECore::PathMatcher &blockingPaths );
+		const IECore::PathMatcher &getBlockingPaths() const;
+
+		/// Specifies a set of paths that are given priorty when performing
+		/// asynchronous updates.
+		void setPriorityPaths( const IECore::PathMatcher &priorityPaths );
+		const IECore::PathMatcher &getPriorityPaths() const;
+
+		enum State
+		{
+			Paused,
+			Running,
+			Complete
+		};
+
+		State state() const;
+
+		typedef boost::signal<void (SceneGadget *)> SceneGadgetSignal;
+		SceneGadgetSignal &stateChangedSignal();
+
+		/// Blocks until the update is completed. This is primarily of
+		/// use for the unit tests.
+		void waitForCompletion();
+
+		/// Scene queries
+		/// =============
+		///
+		/// These queries are performed against the current state of the scene,
+		/// which might still be being updated asynchronously. Call `waitForCompletion()`
+		/// first if you need a final answer and are willing to block the UI
+		/// waiting for it.
+
+		Imath::Box3f bound() const override;
+
+		/// Specifies which object types are selectable via `objectAt()` and `objectsAt()`.
+		/// May be null, which means all object types are selectable. A copy of `typeNames`
+		/// is taken.
+		void setSelectionMask( const IECore::StringVectorData *typeNames );
+		const IECore::StringVectorData *getSelectionMask() const;
 
 		/// Finds the path of the frontmost object intersecting the specified line
 		/// through gadget space. Returns true on success and false if there is no
 		/// such object.
 		bool objectAt( const IECore::LineSegment3f &lineInGadgetSpace, GafferScene::ScenePlug::ScenePath &path ) const;
+		/// As above. Additionally hitPoint is filled with the approximate intersection point in gadget space.
+		bool objectAt( const IECore::LineSegment3f &lineInGadgetSpace, GafferScene::ScenePlug::ScenePath &path, Imath::V3f &hitPoint ) const;
 		/// Fills paths with all objects intersected by a rectangle in screen space,
 		/// defined by two corners in gadget space (as required for drag selection).
 		size_t objectsAt(
 			const Imath::V3f &corner0InGadgetSpace,
 			const Imath::V3f &corner1InGadgetSpace,
-			GafferScene::PathMatcher &paths
+			IECore::PathMatcher &paths
 		) const;
 
-		/// Returns the selection.
-		const GafferScene::PathMatcherData *getSelection() const;
-		/// Sets the selection. A copy is not taken, but the selection
-		/// is const and will not be modified by the SceneGadget.
-		void setSelection( GafferScene::ConstPathMatcherDataPtr selection );
 		/// Returns the bounding box of all the selected objects.
 		Imath::Box3f selectionBound() const;
 
 		/// Implemented to return the name of the object under the mouse.
-		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
+		std::string getToolTip( const IECore::LineSegment3f &line ) const override;
 
 	protected :
 
-		virtual void doRender( const GafferUI::Style *style ) const;
+		void doRenderLayer( Layer layer, const GafferUI::Style *style ) const override;
 
 	private :
 
-		void plugDirtied( const Gaffer::Plug *plug );
-		void contextChanged( const IECore::InternedString &name );
-		void updateSceneGraph() const;
-		void renderSceneGraph( const IECoreGL::State *stateToBind ) const;
+		void updateRenderer();
+		void renderScene() const;
+		IECore::PathMatcher convertSelection( IECore::UIntVectorDataPtr ids ) const;
+		void visibilityChanged();
 
-		boost::signals::scoped_connection m_plugDirtiedConnection;
-		boost::signals::scoped_connection m_contextChangedConnection;
+		bool m_paused;
+		IECore::PathMatcher m_blockingPaths;
+		IECore::PathMatcher m_priorityPaths;
+		SceneGadgetSignal m_stateChangedSignal;
 
-		GafferScene::ConstScenePlugPtr m_scene;
-		Gaffer::ContextPtr m_context;
-		mutable unsigned m_dirtyFlags;
-		GafferScene::ConstPathMatcherDataPtr m_expandedPaths;
-		size_t m_minimumExpansionDepth;
+		IECoreScenePreview::RendererPtr m_renderer;
+		mutable GafferScene::RenderController m_controller;
+		mutable std::shared_ptr<Gaffer::BackgroundTask> m_updateTask;
+		bool m_updateErrored;
+		std::atomic_bool m_renderRequestPending;
 
-		class SceneGraph;
-		class UpdateTask;
+		IECore::ConstCompoundObjectPtr m_openGLOptions;
+		IECore::PathMatcher m_selection;
 
-		IECoreGL::StatePtr m_baseState;
-		boost::shared_ptr<SceneGraph> m_sceneGraph;
-
-		GafferScene::ConstPathMatcherDataPtr m_selection;
+		IECore::StringVectorDataPtr m_selectionMask;
 
 };
 

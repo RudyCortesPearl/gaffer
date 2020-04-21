@@ -34,20 +34,23 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/LRUCache.h"
+#include "GafferUI/ImageGadget.h"
+
+#include "GafferUI/Style.h"
+#include "Gaffer/Private/IECorePreview/LRUCache.h"
+
+#include "IECoreGL/Texture.h"
+#include "IECoreGL/TextureLoader.h"
+#include "IECoreGL/ToGLTextureConverter.h"
+
+#include "IECoreImage/ImageReader.h"
+
 #include "IECore/Exception.h"
 #include "IECore/SearchPath.h"
-#include "IECore/ImageReader.h"
-
-#include "IECoreGL/ToGLTextureConverter.h"
-#include "IECoreGL/TextureLoader.h"
-#include "IECoreGL/Texture.h"
-
-#include "GafferUI/ImageGadget.h"
-#include "GafferUI/Style.h"
 
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreImage;
 using namespace IECoreGL;
 using namespace GafferUI;
 
@@ -61,7 +64,7 @@ namespace
 Box3f boundGetter( const std::string &fileName, size_t &cost )
 {
 	const char *s = getenv( "GAFFERUI_IMAGE_PATHS" );
-	IECore::SearchPath sp( s ? s : "", ":" );
+	IECore::SearchPath sp( s ? s : "" );
 
 	boost::filesystem::path path = sp.find( fileName );
 	if( path.empty() )
@@ -87,6 +90,16 @@ Box3f boundGetter( const std::string &fileName, size_t &cost )
 	return Box3f( -size/2.0f, size/2.0f );
 }
 
+void applyTextureParameters( IECoreGL::Texture *texture )
+{
+	IECoreGL::Texture::ScopedBinding binding( *texture );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -1.0 );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
+}
+
 const IECoreGL::Texture *loadTexture( IECore::ConstRunTimeTypedPtr &imageOrTextureOrFileName )
 {
 	if( const Texture *texture = runTimeCast<const Texture>( imageOrTextureOrFileName.get() ) )
@@ -109,12 +122,7 @@ const IECoreGL::Texture *loadTexture( IECore::ConstRunTimeTypedPtr &imageOrTextu
 
 	if( texture )
 	{
-		IECoreGL::Texture::ScopedBinding binding( *texture );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -1.0 );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
+		applyTextureParameters( texture.get() );
 	}
 
 	imageOrTextureOrFileName = texture;
@@ -128,7 +136,7 @@ const IECoreGL::Texture *loadTexture( IECore::ConstRunTimeTypedPtr &imageOrTextu
 // ImageGadget
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( ImageGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ImageGadget );
 
 ImageGadget::ImageGadget( const std::string &fileName )
 	:	Gadget( defaultName<ImageGadget>() )
@@ -137,16 +145,19 @@ ImageGadget::ImageGadget( const std::string &fileName )
 	// we'll load the actual texture later when we're sure a GL context exists,
 	// but we need to find the bounding box now so that bound() will always be correct.
 
-	typedef LRUCache<std::string, Box3f> ImageBoundCache;
+	typedef IECorePreview::LRUCache<std::string, Box3f> ImageBoundCache;
 	static ImageBoundCache g_imageBoundCache( boundGetter, 10000 );
 	m_bound = g_imageBoundCache.get( fileName );
 
 	m_imageOrTextureOrFileName = new StringData( fileName );
 }
 
-ImageGadget::ImageGadget( IECore::ConstImagePrimitivePtr image )
-	:	Gadget( defaultName<ImageGadget>() ), m_bound( image->bound() ), m_imageOrTextureOrFileName( image->copy() )
+ImageGadget::ImageGadget( IECoreImage::ConstImagePrimitivePtr image )
+	:	Gadget( defaultName<ImageGadget>() ), m_imageOrTextureOrFileName( image->copy() )
 {
+	const V2i pixelSize = image->getDisplayWindow().size() + V2i( 1 );
+	const V3f size( pixelSize.x, pixelSize.y, 0.0f );
+	m_bound = Box3f( -size/2.0f, size/2.0f );
 }
 
 ImageGadget::~ImageGadget()
@@ -155,25 +166,41 @@ ImageGadget::~ImageGadget()
 
 IECoreGL::TextureLoader *ImageGadget::textureLoader()
 {
-	static TextureLoaderPtr loader = NULL;
+	static TextureLoaderPtr loader = nullptr;
 	if( !loader )
 	{
 		const char *s = getenv( "GAFFERUI_IMAGE_PATHS" );
-		IECore::SearchPath sp( s ? s : "", ":" );
+		IECore::SearchPath sp( s ? s : "" );
 		loader = new TextureLoader( sp );
 	}
 	return loader.get();
 }
 
-void ImageGadget::doRender( const Style *style ) const
+IECoreGL::ConstTexturePtr ImageGadget::loadTexture( const std::string &fileName )
 {
-	if( const Texture *texture = loadTexture( m_imageOrTextureOrFileName ) )
+	TexturePtr texture = textureLoader()->load( fileName );
+	if( texture )
+	{
+		applyTextureParameters( texture.get() );
+	}
+	return texture;
+}
+
+void ImageGadget::doRenderLayer( Layer layer, const Style *style ) const
+{
+	Gadget::doRenderLayer( layer, style );
+	if( layer != Layer::Main )
+	{
+		return;
+	}
+
+	if( const Texture *texture = ::loadTexture( m_imageOrTextureOrFileName ) )
 	{
 		Box2f b( V2f( m_bound.min.x, m_bound.min.y ), V2f( m_bound.max.x, m_bound.max.y ) );
 		style->renderImage( b, texture );
 	}
 
-	Gadget::doRender( style );
+	Gadget::doRenderLayer( layer, style );
 }
 
 Imath::Box3f ImageGadget::bound() const

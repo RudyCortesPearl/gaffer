@@ -37,6 +37,7 @@
 import unittest
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -60,15 +61,15 @@ class ParametersTest( GafferSceneTest.SceneTestCase ) :
 		self.assertScenesEqual( parameters["out"], group["out"] )
 		self.assertSceneHashesEqual( parameters["out"], group["out"] )
 
-		parameters["parameters"].addMember( "test", 10 )
+		parameters["parameters"].addChild( Gaffer.NameValuePlug( "test", 10 ) )
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/*" ] ) )
 		parameters["filter"].setInput( filter["out"] )
 
 		self.assertSceneValid( parameters["out"] )
-		self.assertScenesEqual( parameters["out"], group["out"], childPlugNamesToIgnore = ( "object", ) )
-		self.assertSceneHashesEqual( parameters["out"], group["out"], childPlugNamesToIgnore = ( "object", ) )
+		self.assertScenesEqual( parameters["out"], group["out"], checks = self.allSceneChecks - { "object" } )
+		self.assertSceneHashesEqual( parameters["out"], group["out"], checks = self.allSceneChecks - { "object" } )
 
 		cameraIn = group["out"].object( "/group/camera" )
 		cameraOut = parameters["out"].object( "/group/camera" )
@@ -76,7 +77,7 @@ class ParametersTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( cameraOut.parameters()["test"], IECore.IntData( 10 ) )
 		del cameraOut.parameters()["test"]
 		self.assertEqual( cameraIn, cameraOut )
-		self.assertTrue( isinstance( cameraOut, IECore.Camera ) )
+		self.assertTrue( isinstance( cameraOut, IECoreScene.Camera ) )
 
 		proceduralIn = group["out"].object( "/group/procedural" )
 		proceduralOut = parameters["out"].object( "/group/procedural" )
@@ -84,12 +85,13 @@ class ParametersTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( proceduralOut.parameters()["test"], IECore.IntData( 10 ) )
 		del proceduralOut.parameters()["test"]
 		self.assertEqual( proceduralIn, proceduralOut )
-		self.assertTrue( isinstance( proceduralOut, IECore.ExternalProcedural ) )
+		self.assertTrue( isinstance( proceduralOut, IECoreScene.ExternalProcedural ) )
 
 	def testAffects( self ) :
 
 		parameters = GafferScene.Parameters()
-		p = parameters["parameters"].addOptionalMember( "test", 10 )
+		p = Gaffer.NameValuePlug( "test", 10, True )
+		parameters["parameters"].addChild( p )
 
 		self.assertEqual( parameters.affects( p["name"] ), [ parameters["out"]["object"] ] )
 		self.assertEqual( parameters.affects( p["enabled"] ), [ parameters["out"]["object"] ] )

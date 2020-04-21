@@ -37,8 +37,17 @@
 #ifndef GAFFERIMAGE_IMAGEALGO_H
 #define GAFFERIMAGE_IMAGEALGO_H
 
-#include <vector>
+#include "IECoreImage/ImagePrimitive.h"
+
+#include "GafferImage/Export.h"
+
+#include "IECore/Export.h"
+
+IECORE_PUSH_DEFAULT_VISIBILITY
 #include "OpenEXR/ImathBox.h"
+IECORE_POP_DEFAULT_VISIBILITY
+
+#include <vector>
 
 namespace GafferImage
 {
@@ -67,7 +76,7 @@ namespace ImageAlgo
 ///     - "Z" is the depth channel
 
 /// Returns the names of all layers present in the specified channels.
-std::vector<std::string> layerNames( const std::vector<std::string> &channelNames );
+GAFFERIMAGE_API std::vector<std::string> layerNames( const std::vector<std::string> &channelNames );
 
 /// Returns the name of the layer the channel belongs to.
 /// This is simply the portion of the channelName up to the
@@ -92,6 +101,10 @@ inline bool channelExists( const ImagePlug *image, const std::string &channelNam
 /// Returns true if the specified channel exists in channelNames
 inline bool channelExists( const std::vector<std::string> &channelNames, const std::string &channelName );
 
+/// Parallel processing functions
+/// ==============================
+///
+
 enum TileOrder
 {
 	Unordered,
@@ -100,20 +113,22 @@ enum TileOrder
 };
 
 // Call the functor in parallel, once per tile
-template <class ThreadableFunctor>
+template <class TileFunctor>
 void parallelProcessTiles(
 	const ImagePlug *imagePlug,
-	ThreadableFunctor &functor, // Signature : void functor( const ImagePlug *imagePlug, const V2i &tileOrigin )
-	const Imath::Box2i &window = Imath::Box2i() // Uses dataWindow if not specified.
+	TileFunctor &&functor, // Signature : void functor( const ImagePlug *imagePlug, const V2i &tileOrigin )
+	const Imath::Box2i &window = Imath::Box2i(), // Uses dataWindow if not specified.
+	TileOrder tileOrder = Unordered
 );
 
 // Call the functor in parallel, once per tile per channel
-template <class ThreadableFunctor>
+template <class TileFunctor>
 void parallelProcessTiles(
 	const ImagePlug *imagePlug,
 	const std::vector<std::string> &channelNames,
-	ThreadableFunctor &functor, // Signature : void functor( const ImagePlug *imagePlug, const string &channelName, const V2i &tileOrigin )
-	const Imath::Box2i &window = Imath::Box2i() // Uses dataWindow if not specified.
+	TileFunctor &&functor, // Signature : void functor( const ImagePlug *imagePlug, const string &channelName, const V2i &tileOrigin )
+	const Imath::Box2i &window = Imath::Box2i(), // Uses dataWindow if not specified.
+	TileOrder tileOrder = Unordered
 );
 
 // Process all tiles in parallel using TileFunctor, passing the
@@ -121,8 +136,8 @@ void parallelProcessTiles(
 template <class TileFunctor, class GatherFunctor>
 void parallelGatherTiles(
 	const ImagePlug *image,
-	TileFunctor &tileFunctor, // Signature : TileFunctor::Result tileFunctor( const ImagePlug *imagePlug, const V2i &tileOrigin )
-	GatherFunctor &gatherFunctor, // Signature : void gatherFunctor( const ImagePlug *imagePlug, const V2i &tileOrigin, TileFunctor::Result )
+	const TileFunctor &tileFunctor, // Signature : T tileFunctor( const ImagePlug *imagePlug, const V2i &tileOrigin )
+	GatherFunctor &&gatherFunctor, // Signature : void gatherFunctor( const ImagePlug *imagePlug, const V2i &tileOrigin, T &tileFunctorResult )
 	const Imath::Box2i &window = Imath::Box2i(), // Uses dataWindow if not specified.
 	TileOrder tileOrder = Unordered
 );
@@ -133,16 +148,42 @@ template <class TileFunctor, class GatherFunctor>
 void parallelGatherTiles(
 	const ImagePlug *image,
 	const std::vector<std::string> &channelNames,
-	TileFunctor &tileFunctor, // Signature : TileFunctor::Result tileFunctor( const ImagePlug *imagePlug, const string &channelName, const V2i &tileOrigin )
-	GatherFunctor &gatherFunctor, // Signature : void gatherFunctor( const ImagePlug *imagePlug, const string &channelName, const V2i &tileOrigin, TileFunctor::Result )
+	const TileFunctor &tileFunctor, // Signature : T tileFunctor( const ImagePlug *imagePlug, const string &channelName, const V2i &tileOrigin )
+	GatherFunctor &&gatherFunctor, // Signature : void gatherFunctor( const ImagePlug *imagePlug, const string &channelName, const V2i &tileOrigin, T &tileFunctorResult )
 	const Imath::Box2i &window = Imath::Box2i(), // Uses dataWindow if not specified.
 	TileOrder tileOrder = Unordered
 );
 
-} // namespace ImageAlgo
+/// Whole image operations
+/// ==============================
+///
+/// The functions process the whole image at once.  Not generally used in core Gaffer processing, since we
+/// prefer to process just one tile at a time, but useful for testing and interoperability
 
-/// \todo Remove this temporary backwards compatibility.
-using namespace ImageAlgo;
+/// Returns a pointer to an IECore::ImagePrimitive. Note that the image's
+/// coordinate system will be converted to the OpenEXR and Cortex specification
+/// and have it's origin in the top left of it's display window with the positive
+/// Y axis pointing downwards rather than Gaffer's internal representation where
+/// the origin is in the bottom left of the display window with the Y axis
+/// ascending towards the top of the display window.
+GAFFERIMAGE_API IECoreImage::ImagePrimitivePtr image( const ImagePlug *imagePlug );
+
+/// Return a hash that will vary if any aspect of the return from image( ... ) varies
+GAFFERIMAGE_API IECore::MurmurHash imageHash( const ImagePlug *imagePlug );
+
+/// Return all pixel data as a big CompoundData with entries for each channel
+/// and tile.  Among other things, this makes it possible to efficiently test
+/// from Python whether two ImagePlugs have identical pixel data.  Unlike the
+/// image() method above, it works on deep images.
+GAFFERIMAGE_API IECore::ConstCompoundDataPtr tiles( const ImagePlug *imagePlug );
+
+/// Deep Utils
+/// ==============================
+
+/// If the provided sample offsets do not match, raise an exception that indicates where the mismatch occured.
+GAFFERIMAGE_API void throwIfSampleOffsetsMismatch( const IECore::IntVectorData* sampleOffsetsA, const IECore::IntVectorData* sampleOffsetsB, const Imath::V2i &tileOrigin, const std::string &message );
+
+} // namespace ImageAlgo
 
 } // namespace GafferImage
 

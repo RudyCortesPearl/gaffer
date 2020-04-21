@@ -35,9 +35,12 @@
 ##########################################################################
 
 import os
+import imath
 
 import IECore
+import IECoreScene
 
+import Gaffer
 import GafferSceneTest
 import GafferArnold
 
@@ -50,30 +53,31 @@ class ArnoldVDBTest( GafferSceneTest.SceneTestCase ) :
 		# Just an empty procedural at this point.
 		self.assertEqual( v["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "volume" ] ) )
 		self.assertSceneValid( v["out"] )
-		self.assertEqual( v["out"].bound( "/volume" ), IECore.Box3f( IECore.V3f( -0.5 ), IECore.V3f( 0.5 ) ) )
-		self.assertTrue( isinstance( v["out"].object( "/volume" ), IECore.ExternalProcedural ) )
+		self.assertEqual( v["out"].bound( "/volume" ), imath.Box3f( imath.V3f( -0.5 ), imath.V3f( 0.5 ) ) )
+		self.assertTrue( isinstance( v["out"].object( "/volume" ), IECoreScene.ExternalProcedural ) )
 
 		# If we enter a valid vdb filename, then we should get something
 		# with the right bounds, and the right parameters in the procedural.
 		v["fileName"].setValue( os.path.join( os.path.dirname( __file__ ), "volumes", "sphere.vdb" ) )
-		self.assertEqual( v["out"].bound( "/volume" ), IECore.Box3f( IECore.V3f( -1.1, 1.1, -1.1 ), IECore.V3f( 1.1, 2.9, 1.1 ) ) )
+		self.assertEqual( v["out"].bound( "/volume" ), imath.Box3f( imath.V3f( -1.1, 1.1, -1.1 ), imath.V3f( 1.1, 2.9, 1.1 ) ) )
 
 		procedural = v["out"].object( "/volume" )
-		self.assertTrue( isinstance( procedural, IECore.ExternalProcedural ) )
-		self.assertEqual( procedural.getFileName(), v["dso"].getValue() )
+		self.assertTrue( isinstance( procedural, IECoreScene.ExternalProcedural ) )
 		self.assertEqual( procedural.getBound(), v["out"].bound( "/volume" ) )
-		self.assertEqual( procedural.parameters()["ai:nodeType" ].value, "volume" )
+		self.assertEqual( procedural.getFileName(), "volume" )
 		self.assertEqual( procedural.parameters()["filename" ].value, v["fileName"].getValue() )
 		self.assertEqual( procedural.parameters()["grids" ], IECore.StringVectorData( [ v["grids"].getValue() ] ) )
 
 		# Invalid grid names should create errors.
 		v["grids"].setValue( "notAGrid" )
-		self.assertRaisesRegexp( RuntimeError, "has no grid named \"notAGrid\"", v["out"].bound, "/volume" )
+		with self.assertRaisesRegexp( Gaffer.ProcessException, "has no grid named \"notAGrid\"" ) as caught :
+			v["out"].bound( "/volume" )
 
 		# As should invalid file names.
 		v["grids"].setValue( "density" )
 		v["fileName"].setValue( "notAFile.vdb" )
-		self.assertRaisesRegexp( RuntimeError, "No such file or directory", v["out"].bound, "/volume" )
+		with self.assertRaisesRegexp( Gaffer.ProcessException, "No such file or directory" ) :
+			v["out"].bound( "/volume" )
 
 	def testStepSize( self ) :
 

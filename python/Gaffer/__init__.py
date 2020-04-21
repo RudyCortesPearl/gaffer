@@ -38,6 +38,7 @@
 __import__( "IECore" )
 
 from _Gaffer import *
+import _Range
 from About import About
 from Application import Application
 from WeakMethod import WeakMethod
@@ -52,7 +53,9 @@ from PythonExpressionEngine import PythonExpressionEngine
 from SequencePath import SequencePath
 from GraphComponentPath import GraphComponentPath
 from OutputRedirection import OutputRedirection
+from Monitor import Monitor
 
 import NodeAlgo
+import ExtensionAlgo
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "Gaffer" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "Gaffer" )

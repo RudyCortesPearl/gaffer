@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import os
 import inspect
 import unittest
 
@@ -46,14 +47,11 @@ import GafferSceneTest
 
 class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 
-	def testDefaultName( self ) :
-
-		s = GafferScene.SceneSwitch()
-		self.assertEqual( s.getName(), "SceneSwitch" )
-
 	def testEnabledPlug( self ) :
 
-		s = GafferScene.SceneSwitch()
+		s = Gaffer.Switch()
+		s.setup( GafferScene.ScenePlug() )
+
 		self.assertTrue( isinstance( s["enabled"], Gaffer.BoolPlug ) )
 		self.assertTrue( s["enabled"].isSame( s.enabledPlug() ) )
 		self.assertFalse( "enabled1" in s )
@@ -63,9 +61,14 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 		plane = GafferScene.Plane()
 		sphere = GafferScene.Sphere()
 
-		switch = GafferScene.SceneSwitch()
+		switch = Gaffer.Switch()
+		switch.setup( GafferScene.ScenePlug() )
+
 		switch["in"][0].setInput( plane["out"] )
 		switch["in"][1].setInput( sphere["out"] )
+
+		add = GafferTest.AddNode()
+		switch["index"].setInput( add["sum"] )
 
 		for p in [ switch["in"][0], switch["in"][1] ] :
 			for n in p.keys() :
@@ -84,7 +87,9 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 		plane = GafferScene.Plane()
 		sphere = GafferScene.Sphere()
 
-		switch = GafferScene.SceneSwitch()
+		switch = Gaffer.Switch()
+		switch.setup( GafferScene.ScenePlug() )
+
 		switch["in"][0].setInput( plane["out"] )
 		switch["in"][1].setInput( sphere["out"] )
 
@@ -105,7 +110,9 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 
 		script = Gaffer.ScriptNode()
 
-		script["switch"] = GafferScene.SceneSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferScene.ScenePlug() )
+
 		script["plane"] = GafferScene.Plane()
 		script["sphere"] = GafferScene.Sphere()
 
@@ -131,7 +138,8 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 		script["plane"] = GafferScene.Plane()
 		script["sphere"] = GafferScene.Sphere()
 
-		script["switch"] = GafferScene.SceneSwitch()
+		script["switch"] = Gaffer.Switch()
+		script["switch"].setup( GafferScene.ScenePlug() )
 		script["switch"]["in"][0].setInput( script["plane"]["out"] )
 		script["switch"]["in"][1].setInput( script["sphere"]["out"] )
 
@@ -152,7 +160,8 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 
 		switches = []
 		for i in range( 0, 10 ) :
-			switch = GafferScene.SceneSwitch()
+			switch = Gaffer.Switch()
+			switch.setup( GafferScene.ScenePlug() )
 			for i in range( 0, 10 ) :
 				switch["in"][i].setInput( lastPlug )
 			switches.append( switch )
@@ -160,6 +169,69 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 
 		s2 = GafferScene.Sphere()
 		self.assertTrue( switches[0]["in"][0].acceptsInput( s2["out"] ) )
+
+	def testLoadFileFromVersion0_49( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/sceneSwitch-0.49.1.0.gfr" )
+		s.load()
+
+		self.assertEqual( s["SceneSwitch"]["in"][0].getInput(), s["Plane"]["out"] )
+		self.assertEqual( s["SceneSwitch"]["in"][1].getInput(), s["Sphere"]["out"] )
+
+	def testNoUnnecessaryDirtyPropagationCrossTalk( self ) :
+
+		#           plane
+		#             |
+		#     primitiveVariables
+		#            / \
+		#            | deleteFaces
+		#            | |
+		#            | |
+		#           switch
+
+		plane = GafferScene.Plane()
+
+		primitiveVariables = GafferScene.PrimitiveVariables()
+		primitiveVariables["in"].setInput( plane["out"] )
+		pv = Gaffer.NameValuePlug( "test", IECore.IntData( 0 ) )
+		primitiveVariables["primitiveVariables"].addChild( pv )
+
+		# DeleteFaces has a dependency between the object and the
+		# bound, so dirtying the input object also dirties the
+		# output bound. There is cross-talk between the plugs.
+		deleteFaces = GafferScene.DeleteFaces()
+		deleteFaces["in"].setInput( primitiveVariables["out"] )
+
+		switch = Gaffer.Switch()
+		switch.setup( primitiveVariables["out"] )
+		switch["in"][0].setInput( primitiveVariables["out"] )
+		switch["in"][1].setInput( deleteFaces["out"] )
+
+		# When the Switch index is constant 0, we know that DeleteFaces
+		# is not the active branch. So we don't expect dirtying the input
+		# object to dirty the output bound.
+		cs = GafferTest.CapturingSlot( switch.plugDirtiedSignal() )
+		pv["value"].setValue( 1 )
+		self.assertIn( switch["out"]["object"], { x[0] for x in cs } )
+		self.assertNotIn( switch["out"]["bound"], { x[0] for x in cs } )
+
+		# When the Switch index is constant 1, we know that DeleteFaces
+		# is the active branch, so we do expect crosstalk.
+		switch["index"].setValue( 1 )
+		del cs[:]
+		pv["value"].setValue( 2 )
+		self.assertIn( switch["out"]["object"], { x[0] for x in cs } )
+		self.assertIn( switch["out"]["bound"], { x[0] for x in cs } )
+
+		# And when the Switch index is computed (indeterminate during
+		# dirty propagation) we also expect crosstalk.
+		add = GafferTest.AddNode()
+		switch["index"].setInput( add["sum"] )
+		del cs[:]
+		pv["value"].setValue( 3 )
+		self.assertIn( switch["out"]["object"], { x[0] for x in cs } )
+		self.assertIn( switch["out"]["bound"], { x[0] for x in cs } )
 
 if __name__ == "__main__":
 	unittest.main()

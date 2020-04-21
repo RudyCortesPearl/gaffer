@@ -38,59 +38,58 @@
 #ifndef GAFFERSCENE_SCENEPLUG_H
 #define GAFFERSCENE_SCENEPLUG_H
 
-#include "Gaffer/TypedObjectPlug.h"
-#include "Gaffer/TypedPlug.h"
+#include "GafferScene/Export.h"
+#include "GafferScene/TypeIds.h"
+
 #include "Gaffer/BoxPlug.h"
 #include "Gaffer/Context.h"
-
-#include "GafferScene/TypeIds.h"
-#include "GafferScene/PathMatcherDataPlug.h"
+#include "Gaffer/TypedObjectPlug.h"
+#include "Gaffer/TypedPlug.h"
 
 namespace GafferScene
 {
 
 /// The ScenePlug is used to pass scenegraphs between nodes in the gaffer graph. It is a compound
 /// type, with subplugs for different aspects of the scene.
-class ScenePlug : public Gaffer::ValuePlug
+class GAFFERSCENE_API ScenePlug : public Gaffer::ValuePlug
 {
 
 	public :
 
 		ScenePlug( const std::string &name=defaultName<ScenePlug>(), Direction direction=In, unsigned flags=Default );
-		virtual ~ScenePlug();
+		~ScenePlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ScenePlug, ScenePlugTypeId, ValuePlug );
+		GAFFER_PLUG_DECLARE_TYPE( GafferScene::ScenePlug, ScenePlugTypeId, ValuePlug );
 
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
-		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const override;
+		Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 		/// Only accepts ScenePlug inputs.
-		virtual bool acceptsInput( const Gaffer::Plug *input ) const;
+		bool acceptsInput( const Gaffer::Plug *input ) const override;
 
 		/// @name Child plugs
 		/// Different aspects of the scene are passed through different
 		/// child plugs.
 		////////////////////////////////////////////////////////////////////
 		//@{
-		/// The plug used to pass the bounding box of the current node in
+		/// The plug used to pass the bounding box of the current location in
 		/// the scene graph. The bounding box is supplied /without/ the
 		/// transform applied.
 		Gaffer::AtomicBox3fPlug *boundPlug();
 		const Gaffer::AtomicBox3fPlug *boundPlug() const;
-		/// The plug used to pass the transform for the current node.
+		/// The plug used to pass the transform for the current location.
 		Gaffer::M44fPlug *transformPlug();
 		const Gaffer::M44fPlug *transformPlug() const;
-		/// The plug used to pass the attribute state for the current node.
-		/// This is represented as a collection of IECore::StateRenderables.
+		/// The plug used to pass the attribute state for the current location.
 		Gaffer::CompoundObjectPlug *attributesPlug();
 		const Gaffer::CompoundObjectPlug *attributesPlug() const;
-		/// The plug used to pass the object for the current node.
+		/// The plug used to pass the object for the current location.
 		Gaffer::ObjectPlug *objectPlug();
 		const Gaffer::ObjectPlug *objectPlug() const;
-		/// The plug used to pass the names of the child nodes of the current node
-		/// in the scene graph.
+		/// The plug used to pass the names of the child locations of the current
+		/// location in the scene graph.
 		Gaffer::InternedStringVectorDataPlug *childNamesPlug();
 		const Gaffer::InternedStringVectorDataPlug *childNamesPlug() const;
-		/// The plug used to pass renderer options including displays etc,
+		/// The plug used to pass renderer options including output etc,
 		/// represented as a CompoundObject. Note that this is not sensitive
 		/// to the "scene:path" context entry.
 		Gaffer::CompoundObjectPlug *globalsPlug();
@@ -105,8 +104,8 @@ class ScenePlug : public Gaffer::ValuePlug
 		/// Used to represent an individual set. This is sensitive
 		/// to the scene:setName context variable which specifies
 		/// which set to compute.
-		PathMatcherDataPlug *setPlug();
-		const PathMatcherDataPlug *setPlug() const;
+		Gaffer::PathMatcherDataPlug *setPlug();
+		const Gaffer::PathMatcherDataPlug *setPlug() const;
 		//@}
 
 		/// @name Context management
@@ -134,8 +133,14 @@ class ScenePlug : public Gaffer::ValuePlug
 		/// specifying the scene path.
 		struct PathScope : public Gaffer::Context::EditableScope
 		{
+			/// Standard constructors, for modifying context on the current thread.
 			PathScope( const Gaffer::Context *context );
 			PathScope( const Gaffer::Context *context, const ScenePath &scenePath );
+
+			/// Specialised constructors used to transfer state to TBB tasks. See
+			/// ThreadState documentation for more details.
+			PathScope( const Gaffer::ThreadState &threadState );
+			PathScope( const Gaffer::ThreadState &threadState, const ScenePath &scenePath );
 
 			void setPath( const ScenePath &scenePath );
 		};
@@ -144,8 +149,14 @@ class ScenePlug : public Gaffer::ValuePlug
 		/// specifying the set name.
 		struct SetScope : public Gaffer::Context::EditableScope
 		{
+			/// Standard constructors, for modifying context on the current thread.
 			SetScope( const Gaffer::Context *context );
 			SetScope( const Gaffer::Context *context, const IECore::InternedString &setName );
+
+			/// Specialised constructors used to transfer state to TBB tasks. See
+			/// ThreadState documentation for more details.
+			SetScope( const Gaffer::ThreadState &threadState );
+			SetScope( const Gaffer::ThreadState &threadState, const IECore::InternedString &setName );
 
 			void setSetName( const IECore::InternedString &setName );
 		};
@@ -157,7 +168,11 @@ class ScenePlug : public Gaffer::ValuePlug
 		/// reducing pressure on the hash cache.
 		struct GlobalScope : public Gaffer::Context::EditableScope
 		{
+			/// Standard constructor, for modifying context on the current thread.
 			GlobalScope( const Gaffer::Context *context );
+			/// Specialised constructor used to transfer state to TBB tasks. See
+			/// ThreadState documentation for more details.
+			GlobalScope( const Gaffer::ThreadState &threadState );
 		};
 		//@}
 
@@ -168,8 +183,13 @@ class ScenePlug : public Gaffer::ValuePlug
 		/// multiple plugs in the same context, better performance can be
 		/// achieved using the appropriate scope class and calling hash() or
 		/// getValue() directly.
+		///
+		/// > Note : It is a programming error to trigger a compute for a
+		/// > location which does not exist. Use the `exists()` method to
+		/// > verify existence where necessary.
 		////////////////////////////////////////////////////////////////////
 		//@{
+		/// Returns the bound for the specified location.
 		Imath::Box3f bound( const ScenePath &scenePath ) const;
 		/// Returns the local transform at the specified scene path.
 		Imath::M44f transform( const ScenePath &scenePath ) const;
@@ -191,7 +211,7 @@ class ScenePlug : public Gaffer::ValuePlug
 		/// uses GlobalScope to remove unnecessary context variables which
 		/// could otherwise lead to poor cache performance.
 		IECore::ConstInternedStringVectorDataPtr setNames() const;
-		ConstPathMatcherDataPtr set( const IECore::InternedString &setName ) const;
+		IECore::ConstPathMatcherDataPtr set( const IECore::InternedString &setName ) const;
 
 		IECore::MurmurHash boundHash( const ScenePath &scenePath ) const;
 		IECore::MurmurHash transformHash( const ScenePath &scenePath ) const;
@@ -207,11 +227,33 @@ class ScenePlug : public Gaffer::ValuePlug
 		IECore::MurmurHash setHash( const IECore::InternedString &setName ) const;
 		//@}
 
+		/// Returns true if the specified location exists. This is achieved
+		/// by querying `childNames()` at all ancestor locations, but with
+		/// significantly better performance than is achievable via the public
+		/// API alone.
+		bool exists( const ScenePath &scenePath ) const;
+		/// As above, but for the location specified by the current context.
+		bool exists() const;
+
 		/// Utility function to convert a string into a path by splitting on '/'.
 		/// \todo Many of the places we use this, it would be preferable if the source data was already
 		/// a path. Perhaps a ScenePathPlug could take care of this for us?
 		static void stringToPath( const std::string &s, ScenePlug::ScenePath &path );
 		static void pathToString( const ScenePlug::ScenePath &path, std::string &s );
+
+	private :
+
+		// Private plugs that are used to implement the `exists()` method.
+		// Values for these are computed automatically by SceneNode, hence
+		// the friendship.
+
+		friend class SceneNode;
+
+		Gaffer::BoolPlug *existsPlug();
+		const Gaffer::BoolPlug *existsPlug() const;
+
+		Gaffer::InternedStringVectorDataPlug *sortedChildNamesPlug();
+		const Gaffer::InternedStringVectorDataPlug *sortedChildNamesPlug() const;
 
 };
 
@@ -227,6 +269,6 @@ typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plu
 
 } // namespace GafferScene
 
-std::ostream &operator << ( std::ostream &o, const GafferScene::ScenePlug::ScenePath &path );
+GAFFERSCENE_API std::ostream &operator << ( std::ostream &o, const GafferScene::ScenePlug::ScenePath &path );
 
 #endif // GAFFERSCENE_SCENEPLUG_H

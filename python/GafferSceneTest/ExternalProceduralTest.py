@@ -35,9 +35,12 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
+import Gaffer
 import GafferScene
 import GafferSceneTest
 
@@ -50,15 +53,15 @@ class ExternalProceduralTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertSceneValid( n["out"] )
 
-		n["bound"].setValue( IECore.Box3f( IECore.V3f( 1, 2, 3 ), IECore.V3f( 4, 5, 6 ) ) )
+		n["bound"].setValue( imath.Box3f( imath.V3f( 1, 2, 3 ), imath.V3f( 4, 5, 6 ) ) )
 		n["fileName"].setValue( "test.so" )
-		n["parameters"].addMember( "testFloat", 1.0 )
+		n["parameters"].addChild( Gaffer.NameValuePlug( "testFloat", 1.0 ) )
 
 		p = n["out"].object( "/procedural" )
 
-		self.assertTrue( isinstance( p, IECore.ExternalProcedural ) )
+		self.assertTrue( isinstance( p, IECoreScene.ExternalProcedural ) )
 		self.assertEqual( p.getFileName(), "test.so" )
-		self.assertEqual( p.getBound(), IECore.Box3f( IECore.V3f( 1, 2, 3 ), IECore.V3f( 4, 5, 6 ) ) )
+		self.assertEqual( p.getBound(), imath.Box3f( imath.V3f( 1, 2, 3 ), imath.V3f( 4, 5, 6 ) ) )
 		self.assertEqual( p.parameters().keys(), [ "testFloat" ] )
 		self.assertEqual( p.parameters()["testFloat"], IECore.FloatData( 1.0 ) )
 

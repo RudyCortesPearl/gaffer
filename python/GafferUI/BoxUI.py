@@ -34,7 +34,6 @@
 #
 ##########################################################################
 
-import re
 import os
 import functools
 
@@ -59,28 +58,31 @@ Gaffer.Metadata.registerNode(
 	node.
 	""",
 
-	"nodeGraph:childrenViewable", True,
+	"icon", "boxNode.png",
+
+	"graphEditor:childrenViewable", True,
 
 	# Add a + button for creating new plugs in the Settings tab.
 	"layout:customWidget:addButton:widgetType", "GafferUI.UserPlugs.plugCreationWidget",
 	"layout:customWidget:addButton:section", "Settings",
 	"layout:customWidget:addButton:index", -2,
 
-	# Add + buttons for creating new plugs in the NodeGraph
-	"noduleLayout:customGadget:addButtonTop:gadgetType", "GafferUI.BoxUI.PlugAdder.Top",
+	# Add + buttons for creating new plugs in the GraphEditor
+	"noduleLayout:customGadget:addButtonTop:gadgetType", "GafferUI.BoxUI.PlugAdder",
 	"noduleLayout:customGadget:addButtonTop:section", "top",
-	"noduleLayout:customGadget:addButtonBottom:gadgetType", "GafferUI.BoxUI.PlugAdder.Bottom",
+	"noduleLayout:customGadget:addButtonBottom:gadgetType", "GafferUI.BoxUI.PlugAdder",
 	"noduleLayout:customGadget:addButtonBottom:section", "bottom",
-	"noduleLayout:customGadget:addButtonLeft:gadgetType", "GafferUI.BoxUI.PlugAdder.Left",
+	"noduleLayout:customGadget:addButtonLeft:gadgetType", "GafferUI.BoxUI.PlugAdder",
 	"noduleLayout:customGadget:addButtonLeft:section", "left",
-	"noduleLayout:customGadget:addButtonRight:gadgetType", "GafferUI.BoxUI.PlugAdder.Right",
+	"noduleLayout:customGadget:addButtonRight:gadgetType", "GafferUI.BoxUI.PlugAdder",
 	"noduleLayout:customGadget:addButtonRight:section", "right",
 
 	plugs = {
 
 		"*" : [
 
-			"labelPlugValueWidget:renameable", True,
+			"deletable", True,
+			"renameable", True,
 
 		],
 
@@ -107,24 +109,24 @@ Gaffer.Metadata.registerNode(
 # for particular applications append it if it suits their purposes.
 def nodeMenuCreateCommand( menu ) :
 
-	nodeGraph = menu.ancestor( GafferUI.NodeGraph )
-	assert( nodeGraph is not None )
+	graphEditor = menu.ancestor( GafferUI.GraphEditor )
+	assert( graphEditor is not None )
 
-	script = nodeGraph.scriptNode()
-	graphGadget = nodeGraph.graphGadget()
+	script = graphEditor.scriptNode()
+	graphGadget = graphEditor.graphGadget()
 
 	box = Gaffer.Box.create( graphGadget.getRoot(), script.selection() )
 	Gaffer.BoxIO.insert( box )
 	return box
 
-## \deprecated Use NodeGraph.appendSubGraphMenuDefinitions()
-def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
+## \deprecated Use GraphEditor.appendSubGraphMenuDefinitions()
+def appendNodeContextMenuDefinitions( graphEditor, node, menuDefinition ) :
 
 	if not isinstance( node, Gaffer.Box ) :
 		return
 
 	menuDefinition.append( "/BoxDivider", { "divider" : True } )
-	menuDefinition.append( "/Show Contents...", { "command" : IECore.curry( __showContents, nodeGraph, node ) } )
+	menuDefinition.append( "/Show Contents...", { "command" : functools.partial( __showContents, graphEditor, node ) } )
 
 ## A callback suitable for use with NodeEditor.toolMenuSignal() - it provides
 # menu options specific to Boxes. We don't actually register it automatically,
@@ -143,9 +145,9 @@ def appendNodeEditorToolMenuDefinitions( nodeEditor, node, menuDefinition ) :
 		menuDefinition.append( "/UpgradeDivider", { "divider" : True } )
 		menuDefinition.append( "/Upgrade to use BoxIO", { "command" : functools.partial( __upgradeToUseBoxIO, node = node ) } )
 
-def __showContents( nodeGraph, box ) :
+def __showContents( graphEditor, box ) :
 
-	GafferUI.NodeGraph.acquire( box )
+	GafferUI.GraphEditor.acquire( box )
 
 def __exportForReferencing( menu, node ) :
 
@@ -194,80 +196,8 @@ def __upgradeToUseBoxIO( node ) :
 	with Gaffer.UndoScope( node.scriptNode() ) :
 		Gaffer.BoxIO.insert( node )
 
-# PlugValueWidget registrations
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Box, re.compile( "in[0-9]*" ), None )
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Box, re.compile( "out[0-9]*" ), None )
-
-def __correspondingInternalPlug( plug ) :
-
-	node = plug.node()
-	if plug.direction() == plug.Direction.In :
-		for output in plug.outputs() :
-			if node.isAncestorOf( output.node() ) :
-				return output
-	elif plug.direction() == plug.Direction.Out :
-		input = plug.getInput()
-		if input is not None and node.isAncestorOf( input.node() ) :
-			return input
-
-	return None
-
-def __plugValueWidgetCreator( plug ) :
-
-	# When a plug has been promoted, we get the widget that would
-	# have been used to represent the internal plug, and then
-	# call setPlug() with the external plug. This allows us to
-	# transfer custom uis from inside the node to outside the node.
-	#
-	# But If the types don't match, we can't expect the
-	# UI for the internal plug to work with the external
-	# plug. Typically the types will match, because the
-	# external plug was created by PlugAlgo.promote(), but
-	# it's possible to use scripting to connect different
-	# types, for instance to drive an internal IntPlug with
-	# an external BoolPlug. In this case we make no attempt
-	# to transfer the internal UI.
-	#
-	# \todo A better solution may be to mandate the use of Metadata to
-	# choose a widget type for each plug, and then just make sure we
-	# pass on the internal Metadata.
-	internalPlug = __correspondingInternalPlug( plug )
-	if type( internalPlug ) is type( plug ) :
-		widget = GafferUI.PlugValueWidget.create( internalPlug )
-		if widget is not None :
-			widget.setPlug( plug )
-		return widget
-
-	return GafferUI.PlugValueWidget.create( plug, useTypeOnly=True )
-
-## \todo We're registering the Box PlugValueWidget creator for the Reference node too, because
-# we want the two to have the same appearance. We perhaps should just have one registration for
-# the SubGraph (the base class for Box and Reference) instead, but it's not yet totally clear
-# whether or not we'll have future SubGraph subclasses that will want a different behaviour.
-for nodeType in ( Gaffer.Box, Gaffer.Reference ) :
-
-	GafferUI.PlugValueWidget.registerCreator( nodeType, "*" , __plugValueWidgetCreator )
-
 # Shared menu code
 ##########################################################################
-
-def __deletePlug( plug ) :
-
-	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
-		plug.parent().removeChild( plug )
-
-def __appendPlugDeletionMenuItems( menuDefinition, plug, readOnly = False ) :
-
-	if not isinstance( plug.parent(), Gaffer.Box ) :
-		return
-
-	menuDefinition.append( "/DeleteDivider", { "divider" : True } )
-	menuDefinition.append( "/Delete", {
-		"command" : functools.partial( __deletePlug, plug ),
-		"active" : not readOnly,
-	} )
 
 def __promote( plug ) :
 
@@ -279,16 +209,7 @@ def __unpromote( plug ) :
 	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		Gaffer.PlugAlgo.unpromote( plug )
 
-def __promoteToBoxEnabledPlug( box, plug ) :
-
-	with Gaffer.UndoScope( box.ancestor( Gaffer.ScriptNode ) ) :
-		enabledPlug = box.getChild( "enabled" )
-		if enabledPlug is None :
-			enabledPlug = Gaffer.BoolPlug( "enabled", defaultValue = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		box["enabled"] = enabledPlug
-		plug.setInput( enabledPlug )
-
-def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnly = False ) :
+def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnlyUI = False ) :
 
 	node = plug.node()
 	if node is None :
@@ -297,6 +218,14 @@ def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnly = False ) :
 	box = node.ancestor( Gaffer.Box )
 	if box is None :
 		return
+
+	readOnly = readOnlyUI or Gaffer.MetadataAlgo.readOnly( plug )
+
+	parentLabel = {
+		Gaffer.ArrayPlug : "Array",
+		Gaffer.TransformPlug : "Transform",
+		Gaffer.Transform2DPlug : "Transform",
+	}.get( type( plug.parent() ) )
 
 	if Gaffer.PlugAlgo.canPromote( plug ) :
 
@@ -308,18 +237,11 @@ def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnly = False ) :
 			"active" : not readOnly,
 		} )
 
-		if isinstance( plug.parent(), Gaffer.ArrayPlug ) and Gaffer.PlugAlgo.canPromote( plug.parent() ) :
-			menuDefinition.append( "/Promote %s array to %s" % ( plug.parent().getName(), box.getName() ), {
+		if parentLabel and Gaffer.PlugAlgo.canPromote( plug.parent() ) :
+			menuDefinition.append( "/Promote %s to %s" % ( parentLabel, box.getName() ), {
 				"command" : functools.partial( __promote, plug.parent() ),
 				"active" : not readOnly,
 			} )
-
-		if isinstance( node, Gaffer.DependencyNode ) :
-			if plug.isSame( node.enabledPlug() ) :
-				menuDefinition.append( "/Promote to %s.enabled" % box.getName(), {
-					"command" : functools.partial( __promoteToBoxEnabledPlug, box, plug ),
-					"active" : not readOnly,
-				} )
 
 	elif Gaffer.PlugAlgo.isPromoted( plug ) :
 
@@ -328,14 +250,15 @@ def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnly = False ) :
 		if len( menuDefinition.items() ) :
 			menuDefinition.append( "/BoxDivider", { "divider" : True } )
 
-		if isinstance( plug.parent(), Gaffer.ArrayPlug ) and Gaffer.PlugAlgo.isPromoted( plug.parent() ) :
-			menuDefinition.append( "/Unpromote %s array from %s" % ( plug.parent().getName(), box.getName() ), {
+		if parentLabel and Gaffer.PlugAlgo.isPromoted( plug.parent() ) :
+			menuDefinition.append( "/Unpromote %s from %s" % ( parentLabel, box.getName() ), {
 				"command" : functools.partial( __unpromote, plug.parent() ),
 				"active" : not readOnly,
 			} )
 		else :
-			# we dont want to allow unpromoting for children of promoted arrays as it
-			# causes unpredicted behaviour, and it doesn't seem useful in general.
+			# We dont want to allow unpromoting for individual children of promoted
+			# parents because that would lead to ArrayPlugs and TransformPlugs with
+			# the unexpected number of children, which would cause crashes.
 			menuDefinition.append( "/Unpromote from %s" % box.getName(), {
 				"command" : functools.partial( __unpromote, plug ),
 				"active" : not readOnly,
@@ -346,12 +269,11 @@ def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnly = False ) :
 
 def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 
-	__appendPlugDeletionMenuItems( menuDefinition, plugValueWidget.getPlug(), readOnly = plugValueWidget.getReadOnly() )
-	__appendPlugPromotionMenuItems( menuDefinition, plugValueWidget.getPlug(), readOnly = plugValueWidget.getReadOnly() )
+	__appendPlugPromotionMenuItems( menuDefinition, plugValueWidget.getPlug(), readOnlyUI = plugValueWidget.getReadOnly() )
 
-__plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu, scoped = False )
 
-# NodeGraph plug context menu
+# GraphEditor plug context menu
 ##########################################################################
 
 def __renamePlug( menu, plug ) :
@@ -370,9 +292,9 @@ def __setPlugMetadata( plug, key, value ) :
 	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		Gaffer.Metadata.registerValue( plug, key, value )
 
-def __edgePlugs( nodeGraph, plug ) :
+def __edgePlugs( graphEditor, plug ) :
 
-	nodeGadget = nodeGraph.graphGadget().nodeGadget( plug.node() )
+	nodeGadget = graphEditor.graphGadget().nodeGadget( plug.node() )
 	nodule = nodeGadget.nodule( plug )
 	return [ n.plug() for n in nodule.parent().children( GafferUI.Nodule ) ]
 
@@ -384,7 +306,7 @@ def __reorderPlugs( plugs, plug, newIndex ) :
 		for index, plug in enumerate( plugs ) :
 			Gaffer.Metadata.registerValue( plug, "noduleLayout:index", index )
 
-def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
+def __graphEditorPlugContextMenu( graphEditor, plug, menuDefinition ) :
 
 	# The context menu might be showing for the child nodule
 	# of a CompoundNodule, but most of our operations only
@@ -402,7 +324,7 @@ def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
 			"/Rename...",
 			{
 				"command" : functools.partial( __renamePlug, plug = parentPlug ),
-				"active" : not readOnly,
+				"active" : not readOnly and Gaffer.Metadata.value( parentPlug, "renameable" ),
 			}
 		)
 
@@ -421,7 +343,7 @@ def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
 				}
 			)
 
-		edgePlugs = __edgePlugs( nodeGraph, parentPlug )
+		edgePlugs = __edgePlugs( graphEditor, parentPlug )
 		edgeIndex = edgePlugs.index( parentPlug )
 		menuDefinition.append(
 			"/Move " + ( "Up" if currentEdge in ( "left", "right" ) else "Left" ),
@@ -439,7 +361,6 @@ def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
 			}
 		)
 
-	__appendPlugDeletionMenuItems( menuDefinition, parentPlug, readOnly )
 	__appendPlugPromotionMenuItems( menuDefinition, plug, readOnly )
 
-__nodeGraphPlugContextMenuConnection = GafferUI.NodeGraph.plugContextMenuSignal().connect( __nodeGraphPlugContextMenu )
+GafferUI.GraphEditor.plugContextMenuSignal().connect( __graphEditorPlugContextMenu, scoped = False )

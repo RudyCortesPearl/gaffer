@@ -37,6 +37,7 @@
 
 import os
 import weakref
+import functools
 
 import IECore
 import Gaffer
@@ -46,7 +47,7 @@ def appendDefinitions( menuDefinition, prefix ) :
 
 	menuDefinition.append( prefix + "/About Gaffer...", { "command" : about } )
 	menuDefinition.append( prefix + "/Preferences...", { "command" : preferences } )
-	menuDefinition.append( prefix + "/Documentation...", { "command" : IECore.curry( GafferUI.showURL, os.path.expandvars( "$GAFFER_ROOT/doc/gaffer/html/index.html" ) ) } )
+	menuDefinition.append( prefix + "/Documentation...", { "command" : functools.partial( GafferUI.showURL, os.path.expandvars( "$GAFFER_ROOT/doc/gaffer/html/index.html" ) ) } )
 	menuDefinition.append( prefix + "/Quit", { "command" : quit, "shortCut" : "Ctrl+Q" } )
 
 def quit( menu ) :
@@ -77,7 +78,7 @@ def quit( menu ) :
 	# Defer the actual removal of scripts till an idle event - removing all
 	# the scripts will result in the removal of the window our menu item is
 	# parented to, which would cause a crash as it's deleted away from over us.
-	GafferUI.EventLoop.addIdleCallback( IECore.curry( __removeAllScripts, application ) )
+	GafferUI.EventLoop.addIdleCallback( functools.partial( __removeAllScripts, application ) )
 
 def __removeAllScripts( application ) :
 
@@ -117,15 +118,8 @@ def preferences( menu ) :
 		window.__closeButtonConnection = closeButton.clickedSignal().connect( __closePreferences )
 		saveButton = window._addButton( "Save" )
 		window.__saveButtonConnection = saveButton.clickedSignal().connect( __savePreferences )
-
-		with GafferUI.ListContainer() as column :
-			GafferUI.NodeUI.create( application["preferences"] )
-			GafferUI.Spacer( IECore.V2i( 0 ), parenting = { "expand" : True } )
-
-		window._setWidget( column )
-
+		window._setWidget( GafferUI.NodeUI.create( application["preferences"] ) )
 		__preferencesWindows[application] = weakref.ref( window )
-
 		scriptWindow.addChildWindow( window )
 
 	window.setVisible( True )

@@ -35,16 +35,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Exception.h"
-
 #include "GafferUI/ScaleHandle.h"
+
 #include "GafferUI/ViewportGadget.h"
+
+#include "IECore/Exception.h"
 
 using namespace Imath;
 using namespace IECore;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( ScaleHandle );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ScaleHandle );
 
 ScaleHandle::ScaleHandle( Style::Axes axes )
 	:	Handle( defaultName<ScaleHandle>() ), m_axes( Style::X )
@@ -63,11 +64,6 @@ void ScaleHandle::setAxes( Style::Axes axes )
 		return;
 	}
 
-	if( axes > Style::Z && axes != Style::XYZ )
-	{
-		throw IECore::Exception( "Unsupported axes" );
-	}
-
 	m_axes = axes;
  	requestRender();
 }
@@ -77,18 +73,82 @@ Style::Axes ScaleHandle::getAxes() const
 	return m_axes;
 }
 
-float ScaleHandle::scaling( const DragDropEvent &event ) const
+Imath::V3i ScaleHandle::axisMask() const
 {
-	if( m_axes == Style::XYZ )
+	switch( m_axes )
 	{
-		const ViewportGadget *viewport = ancestor<ViewportGadget>();
-		const V2f p = viewport->gadgetToRasterSpace( event.line.p1, this );
-		const float d = (p.x - m_uniformDragStartPosition.x) / (float)viewport->getViewport().x;
-		return 1.0f + d * 3.0f;
+		case Style::X :
+			return V3i( 1, 0, 0 );
+		case Style::Y :
+			return V3i( 0, 1, 0 );
+		case Style::Z :
+			return V3i( 0, 0, 1 );
+		case Style::XY :
+			return V3i( 1, 1, 0 );
+		case Style::XZ :
+			return V3i( 1, 0, 1 );
+		case Style::YZ :
+			return V3i( 0, 1, 1 );
+		case Style::XYZ :
+			return V3i( 1, 1, 1 );
+		default :
+			return V3i( 0 );
+	}
+}
+
+Imath::V3f ScaleHandle::scaling( const DragDropEvent &event )
+{
+	float scale = 1;
+
+	if( m_axes != Style::XYZ )
+	{
+		// When performing per-axis scale, the user has clicked and dragged a
+		// handle. This means the start position is far enough away from the
+		// origin that we can treat the click point as scale=1 and the gadget's
+		// origin as scale=0.
+		scale = m_drag.updatedPosition( event ) / m_drag.startPosition() - 1;
 	}
 	else
 	{
-		return m_drag.position( event ) / m_drag.startPosition();
+		// When performing uniform scales, the handle is at the origin, so the
+		// pattern we use above gets very twitchy. We instead need to treat the
+		// click point as scale=1 and relative movement in +ve x as a scale
+		// increase and anything in -ve x as a scale decrease.
+		scale = m_drag.updatedPosition( event ) - m_drag.startPosition();
+	}
+
+	// snap
+	if( event.modifiers & ButtonEvent::Control )
+	{
+		// Offset such that it behaves like round not floor.
+		const float snapIncrement = event.modifiers & ButtonEvent::Shift ? 0.1f : 1.0f;
+		const float snapOffset = snapIncrement * 0.5f;
+		scale = scale - fmodf( scale - snapOffset, snapIncrement ) + snapOffset;
+	}
+
+	scale = 1 + scale;
+
+	// guard against scaling to 0
+	scale = scale == 0 ? 1 : scale;
+
+	switch( m_axes )
+	{
+		case Style::X :
+			return V3f( scale, 1, 1 );
+		case Style::Y :
+			return V3f( 1, scale, 1 );
+		case Style::Z :
+			return V3f( 1, 1, scale );
+		case Style::XY :
+			return V3f( scale, scale, 1 );
+		case Style::XZ :
+			return V3f( scale, 1, scale );
+		case Style::YZ :
+			return V3f( 1, scale, scale );
+		case Style::XYZ :
+			return V3f( scale );
+		default :
+			return V3f( 1 );
 	}
 }
 
@@ -99,15 +159,27 @@ void ScaleHandle::renderHandle( const Style *style, Style::State state ) const
 
 void ScaleHandle::dragBegin( const DragDropEvent &event )
 {
-	if( m_axes == Style::XYZ )
+	switch( m_axes )
 	{
-		const ViewportGadget *viewport = ancestor<ViewportGadget>();
-		m_uniformDragStartPosition = viewport->gadgetToRasterSpace( event.line.p1, this );
-	}
-	else
-	{
-		V3f handle( 0.0f );
-		handle[m_axes] = 1.0f;
-		m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), handle ), event );
+		case Style::X :
+			m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 1, 0, 0 ) ), event );
+			break;
+		case Style::Y :
+			m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 0, 1, 0 ) ), event );
+			break;
+		case Style::Z :
+			m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 0, 0, 1 ) ), event );
+			break;
+		case Style::XY :
+			m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 1, 1, 0 ) ), event );
+			break;
+		case Style::XZ :
+			m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 1, 0, 1 ) ), event );
+			break;
+		case Style::YZ :
+			m_drag = LinearDrag( this, LineSegment3f( V3f( 0 ), V3f( 0, 1, 1 ) ), event );
+			break;
+		case Style::XYZ :
+			m_drag = LinearDrag( this, V2f( 1, 0 ), event );
 	}
 }

@@ -35,8 +35,10 @@
 ##########################################################################
 
 import os
+import imath
 
 import IECore
+import IECoreImage
 
 import GafferUI
 
@@ -111,17 +113,13 @@ class Image( GafferUI.Widget ) :
 	@staticmethod
 	def _qtPixmapFromImagePrimitive( image ) :
 
-		assert( image.arePrimitiveVariablesValid() )
+		image = image.copy()
+		IECoreImage.ColorAlgo.transformImage( image, "linear", "sRGB" )
 
-		image = IECore.LinearToSRGBOp()(
-			input = image,
-			channels = IECore.StringVectorData( image.keys() ),
-		)
-
-		y = image["Y"].data if "Y" in image else None
-		r = image["R"].data if "R" in image else None
-		g = image["G"].data if "G" in image else None
-		b = image["B"].data if "B" in image else None
+		y = image["Y"] if "Y" in image else None
+		r = image["R"] if "R" in image else None
+		g = image["G"] if "G" in image else None
+		b = image["B"] if "B" in image else None
 
 		if r and g and b :
 			channels = [ r, g, b ]
@@ -132,7 +130,7 @@ class Image( GafferUI.Widget ) :
 
 		if "A" in image :
 			channels.reverse()
-			channels.append( image["A"].data )
+			channels.append( image["A"] )
 			format = QtGui.QImage.Format_ARGB32_Premultiplied
 		else :
 			format = QtGui.QImage.Format_RGB888
@@ -142,7 +140,7 @@ class Image( GafferUI.Widget ) :
 			targetType = IECore.UCharVectorData.staticTypeId(),
 		)
 
-		imageSize = image.dataWindow.size() + IECore.V2i( 1 )
+		imageSize = image.dataWindow.size() + imath.V2i( 1 )
 
 		s = interleaved.toString()
 		image = QtGui.QImage( s, imageSize.x, imageSize.y, format )
@@ -171,7 +169,7 @@ class Image( GafferUI.Widget ) :
 
 		return cls._qtPixmapCache().get( fileName )
 
-	__imageSearchPaths = IECore.SearchPath( os.environ.get( "GAFFERUI_IMAGE_PATHS", "" ), ":" )
+	__imageSearchPaths = IECore.SearchPath( os.environ.get( "GAFFERUI_IMAGE_PATHS", "" ) )
 	@classmethod
 	def __cacheGetter( cls, fileName ) :
 
@@ -182,7 +180,7 @@ class Image( GafferUI.Widget ) :
 		reader = IECore.Reader.create( resolvedFileName )
 
 		image = reader.read()
-		if not isinstance( image, IECore.ImagePrimitive ) :
+		if not isinstance( image, IECoreImage.ImagePrimitive ) :
 			raise Exception( "File \"%s\" is not an image file" % resolvedFileName )
 
 		result = cls._qtPixmapFromImagePrimitive( image )

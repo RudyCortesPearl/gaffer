@@ -36,15 +36,16 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Node.h"
-#include "Gaffer/ScriptNode.h"
+
 #include "Gaffer/Metadata.h"
+#include "Gaffer/ScriptNode.h"
 
 using namespace std;
 using namespace Gaffer;
 
 size_t Node::g_firstPlugIndex;
 
-IE_CORE_DEFINERUNTIMETYPED( Node );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Node );
 
 Node::Node( const std::string &name )
 	:	GraphComponent( name )
@@ -149,7 +150,7 @@ void Node::parentChanging( Gaffer::GraphComponent *newParent )
 		vector<PlugPtr> toDisconnect;
 		for( RecursivePlugIterator it( this ); !it.done(); ++it )
 		{
-			if( Plug *input = (*it)->getInput<Plug>() )
+			if( Plug *input = (*it)->getInput() )
 			{
 				if( !this->isAncestorOf( input ) )
 				{
@@ -167,7 +168,7 @@ void Node::parentChanging( Gaffer::GraphComponent *newParent )
 
 		for( vector<PlugPtr>::const_iterator it = toDisconnect.begin(), eIt = toDisconnect.end(); it != eIt; ++it )
 		{
-			(*it)->setInput( NULL );
+			(*it)->setInput( nullptr );
 		}
 	}
 }

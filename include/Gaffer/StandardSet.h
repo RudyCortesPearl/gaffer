@@ -40,9 +40,9 @@
 
 #include "Gaffer/Set.h"
 
-#include "boost/multi_index_container.hpp"
-#include "boost/multi_index/random_access_index.hpp"
 #include "boost/multi_index/ordered_index.hpp"
+#include "boost/multi_index/random_access_index.hpp"
+#include "boost/multi_index_container.hpp"
 
 namespace Gaffer
 {
@@ -77,13 +77,13 @@ struct MemberAcceptanceCombiner
 
 /// The StandardSet provides a Set implementation where membership is explicitly set using add() and remove()
 /// methods. Membership may be restricted using the memberAcceptanceSignal().
-class StandardSet : public Gaffer::Set
+class GAFFER_API StandardSet : public Gaffer::Set
 {
 
 	public :
 
-		StandardSet();
-		virtual ~StandardSet();
+		StandardSet( bool removeOrphans = false );
+		~StandardSet() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::StandardSet, StandardSetTypeId, Gaffer::Set );
 
@@ -127,16 +127,28 @@ class StandardSet : public Gaffer::Set
 		void clear();
 		//@}
 
+		/// @name Orphan removal
+		/// When orphan removal is on, all GraphComponent set members
+		/// are removed from the set automatically when they are removed
+		/// from their parent GraphComponent.
+		////////////////////////////////////////////////////////////////////
+		//@{
+		void setRemoveOrphans( bool removeOrphans );
+		bool getRemoveOrphans() const;
+		//@}
+
 		/// @name Implementation of the Set interface
 		////////////////////////////////////////////////////////////////////
 		//@{
-		virtual bool contains( const Member *object ) const;
-		virtual Member *member( size_t index );
-		virtual const Member *member( size_t index ) const;
-		virtual size_t size() const;
+		bool contains( const Member *object ) const override;
+		Member *member( size_t index ) override;
+		const Member *member( size_t index ) const override;
+		size_t size() const override;
 		//@}
 
 	private :
+
+		void parentChanged( GraphComponent *member );
 
 		MemberAcceptanceSignal m_memberAcceptanceSignal;
 
@@ -152,6 +164,7 @@ class StandardSet : public Gaffer::Set
 		typedef const MemberContainer::nth_index<1>::type SequencedIndex;
 
 		MemberContainer m_members;
+		bool m_removeOrphans;
 
 };
 

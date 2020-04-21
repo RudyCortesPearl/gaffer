@@ -35,18 +35,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferUI/LinearContainer.h"
+
+#include "GafferUI/Style.h"
 
 #include "IECore/Exception.h"
 
-#include "GafferUI/LinearContainer.h"
-#include "GafferUI/Style.h"
+#include "boost/bind.hpp"
 
 using namespace std;
 using namespace Imath;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( LinearContainer );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( LinearContainer );
 
 LinearContainer::LinearContainer( const std::string &name, Orientation orientation,
 	Alignment alignment, float spacing, Direction direction )
@@ -159,10 +160,10 @@ Imath::Box3f LinearContainer::bound() const
 	return ContainerGadget::bound();
 }
 
-void LinearContainer::doRender( const Style *style ) const
+void LinearContainer::doRenderLayer( Layer layer, const Style *style ) const
 {
 	calculateChildTransforms();
-	ContainerGadget::doRender( style );
+	ContainerGadget::doRenderLayer( layer, style );
 }
 
 void LinearContainer::calculateChildTransforms() const

@@ -35,103 +35,39 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/SplineData.h"
-
-#include "Gaffer/TypedPlug.h"
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/CompoundNumericPlug.h"
-#include "Gaffer/TypedObjectPlug.h"
 #include "Gaffer/CompoundDataPlug.h"
-#include "Gaffer/SplinePlug.h"
-#include "Gaffer/BoxPlug.h"
+
+#include "Gaffer/PlugAlgo.h"
 #include "Gaffer/StringPlug.h"
-#include "Gaffer/TransformPlug.h"
 
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
 
 //////////////////////////////////////////////////////////////////////////
-// CompoundData::MemberPlug implementation.
+// Internal utilities
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( CompoundDataPlug::MemberPlug );
-
-CompoundDataPlug::MemberPlug::MemberPlug( const std::string &name, Direction direction, unsigned flags )
-	:	ValuePlug( name, direction, flags )
+namespace
 {
-}
 
-StringPlug *CompoundDataPlug::MemberPlug::namePlug()
+const ValuePlug *valuePlug( const NameValuePlug *p )
 {
-	return getChild<StringPlug>( 0 );
-}
-
-const StringPlug *CompoundDataPlug::MemberPlug::namePlug() const
-{
-	return getChild<StringPlug>( 0 );
-}
-
-BoolPlug *CompoundDataPlug::MemberPlug::enabledPlug()
-{
-	return children().size() > 2 ? getChild<BoolPlug>( 2 ) : NULL;
-}
-
-const BoolPlug *CompoundDataPlug::MemberPlug::enabledPlug() const
-{
-	return children().size() > 2 ? getChild<BoolPlug>( 2 ) : NULL;
-}
-
-bool CompoundDataPlug::MemberPlug::acceptsChild( const Gaffer::GraphComponent *potentialChild ) const
-{
-	if( !ValuePlug::acceptsChild( potentialChild ) )
+	if( auto v = p->valuePlug<Gaffer::ValuePlug>() )
 	{
-		return false;
+		return v;
 	}
 
-	if(
-		potentialChild->isInstanceOf( StringPlug::staticTypeId() ) &&
-		potentialChild->getName() == "name" &&
-		!getChild<Plug>( "name" )
-	)
-	{
-		return true;
-	}
-	else if(
-		potentialChild->isInstanceOf( ValuePlug::staticTypeId() ) &&
-		potentialChild->getName() == "value" &&
-		!getChild<Plug>( "value" )
-	)
-	{
-		return true;
-	}
-	else if(
-		potentialChild->isInstanceOf( BoolPlug::staticTypeId() ) &&
-		potentialChild->getName() == "enabled" &&
-		!getChild<Plug>( "enabled" )
-	)
-	{
-		return true;
-	}
-
-	return false;
+	throw IECore::Exception( "Not a ValuePlug" );
 }
 
-PlugPtr CompoundDataPlug::MemberPlug::createCounterpart( const std::string &name, Direction direction ) const
-{
-	PlugPtr result = new MemberPlug( name, direction, getFlags() );
-	for( PlugIterator it( this ); !it.done(); ++it )
-	{
-		result->addChild( (*it)->createCounterpart( (*it)->getName(), direction ) );
-	}
-	return result;
-}
+} // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // CompoundDataPlug implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( CompoundDataPlug )
+GAFFER_PLUG_DEFINE_TYPE( CompoundDataPlug )
 
 CompoundDataPlug::CompoundDataPlug( const std::string &name, Direction direction, unsigned flags )
 	:	ValuePlug( name, direction, flags )
@@ -149,7 +85,7 @@ bool CompoundDataPlug::acceptsChild( const GraphComponent *potentialChild ) cons
 		return false;
 	}
 
-	return potentialChild->isInstanceOf( MemberPlug::staticTypeId() );
+	return potentialChild->isInstanceOf( NameValuePlug::staticTypeId() );
 }
 
 PlugPtr CompoundDataPlug::createCounterpart( const std::string &name, Direction direction ) const
@@ -162,41 +98,6 @@ PlugPtr CompoundDataPlug::createCounterpart( const std::string &name, Direction 
 	return result;
 }
 
-CompoundDataPlug::MemberPlug *CompoundDataPlug::addMember( const std::string &name, const IECore::Data *defaultValue, const std::string &plugName, unsigned plugFlags )
-{
-	return addMember( name, createPlugFromData( "value", direction(), plugFlags, defaultValue ).get(), plugName );
-}
-
-CompoundDataPlug::MemberPlug *CompoundDataPlug::addMember( const std::string &name, ValuePlug *valuePlug, const std::string &plugName )
-{
-	MemberPlugPtr plug = new MemberPlug( plugName, direction(), valuePlug->getFlags() );
-
-	StringPlugPtr namePlug = new StringPlug( "name", direction(), name, valuePlug->getFlags() );
-	plug->addChild( namePlug );
-
-	valuePlug->setName( "value" );
-	plug->addChild( valuePlug );
-
-	addChild( plug );
-	return plug.get();
-}
-
-CompoundDataPlug::MemberPlug *CompoundDataPlug::addOptionalMember( const std::string &name, const IECore::Data *defaultValue, const std::string &plugName, unsigned plugFlags, bool enabled )
-{
-	MemberPlug *plug = addMember( name, defaultValue, plugName, plugFlags );
-	BoolPlugPtr e = new BoolPlug( "enabled", direction(), enabled, plugFlags );
-	plug->addChild( e );
-	return plug;
-}
-
-CompoundDataPlug::MemberPlug *CompoundDataPlug::addOptionalMember( const std::string &name, ValuePlug *valuePlug, const std::string &plugName, bool enabled )
-{
-	MemberPlug *plug = addMember( name, valuePlug, plugName );
-	BoolPlugPtr e = new BoolPlug( "enabled", direction(), enabled, valuePlug->getFlags() );
-	plug->addChild( e );
-	return plug;
-}
-
 void CompoundDataPlug::addMembers( const IECore::CompoundData *parameters, bool useNameAsPlugName )
 {
 	std::string plugName = "member1";
@@ -205,15 +106,16 @@ void CompoundDataPlug::addMembers( const IECore::CompoundData *parameters, bool 
 		if( useNameAsPlugName )
 		{
 			plugName = it->first;
+			std::replace_if( plugName.begin(), plugName.end(), []( char c ) { return !::isalnum( c ); }, '_' );
 		}
-		addMember( it->first, it->second.get(), plugName );
+		addChild( new NameValuePlug( it->first.string(), it->second.get(), plugName, Plug::In, Plug::Default | Plug::Dynamic ) );
 	}
 }
 
 void CompoundDataPlug::fillCompoundData( IECore::CompoundDataMap &compoundDataMap ) const
 {
 	std::string name;
-	for( MemberPlugIterator it( this ); !it.done(); ++it )
+	for( NameValuePlugIterator it( this ); !it.done(); ++it )
 	{
 		IECore::DataPtr data = memberDataAndName( it->get(), name );
 		if( data )
@@ -226,18 +128,18 @@ void CompoundDataPlug::fillCompoundData( IECore::CompoundDataMap &compoundDataMa
 IECore::MurmurHash CompoundDataPlug::hash() const
 {
 	IECore::MurmurHash h;
-	for( MemberPlugIterator it( this ); !it.done(); ++it )
+	for( NameValuePlugIterator it( this ); !it.done(); ++it )
 	{
-		const MemberPlug *plug = it->get();
+		const NameValuePlug *plug = it->get();
 		bool active = true;
-		if( plug->children().size() == 3 )
+		if( auto enabledPlug = plug->enabledPlug() )
 		{
-			active = plug->getChild<BoolPlug>( 2 )->getValue();
+			active = enabledPlug->getValue();
 		}
 		if( active )
 		{
-			plug->getChild<ValuePlug>( 0 )->hash( h );
-			plug->getChild<ValuePlug>( 1 )->hash( h );
+			plug->namePlug()->hash( h );
+			valuePlug( plug )->hash( h );
 		}
 	}
 	return h;
@@ -251,7 +153,7 @@ void CompoundDataPlug::hash( IECore::MurmurHash &h ) const
 void CompoundDataPlug::fillCompoundObject( IECore::CompoundObject::ObjectMap &compoundObjectMap ) const
 {
 	std::string name;
-	for( MemberPlugIterator it( this ); !it.done(); ++it )
+	for( NameValuePlugIterator it( this ); !it.done(); ++it )
 	{
 		IECore::DataPtr data = memberDataAndName( it->get(), name );
 		if( data )
@@ -261,319 +163,31 @@ void CompoundDataPlug::fillCompoundObject( IECore::CompoundObject::ObjectMap &co
 	}
 }
 
-IECore::DataPtr CompoundDataPlug::memberDataAndName( const MemberPlug *parameterPlug, std::string &name ) const
+IECore::DataPtr CompoundDataPlug::memberDataAndName( const NameValuePlug *parameterPlug, std::string &name ) const
 {
-	if( parameterPlug->children().size() == 3 )
+	if( auto enabledPlug = parameterPlug->enabledPlug() )
 	{
-		if( !parameterPlug->getChild<BoolPlug>( 2 )->getValue() )
+		if( !enabledPlug->getValue() )
 		{
-			return 0;
+			return nullptr;
 		}
 	}
 
 	if( parameterPlug->children().size() < 2 )
 	{
-		// we can end up here either if someone has very naughtily deleted
-		// some plugs, or if we're being called during loading and the
-		// child plugs haven't been fully constructed.
-		return 0;
+		// Serialisations made prior to the introduction of NameValuePlug
+		// add the child plugs _after_ the NameValuePlug has been parented
+		// to us, exposing us to incomplete plugs. Ignore them. More recent
+		// serialisations do not have this problem.
+		return nullptr;
 	}
 
-	name = parameterPlug->getChild<StringPlug>( 0 )->getValue();
+	name = parameterPlug->namePlug()->getValue();
 	if( !name.size() )
 	{
-		return 0;
+		return nullptr;
 	}
 
-	const ValuePlug *valuePlug = parameterPlug->getChild<ValuePlug>( 1 );
-	return extractDataFromPlug( valuePlug );
+	return PlugAlgo::extractDataFromPlug( valuePlug( parameterPlug ) );
 }
 
-ValuePlugPtr CompoundDataPlug::createPlugFromData( const std::string &name, Plug::Direction direction, unsigned flags, const IECore::Data *value )
-{
-	switch( value->typeId() )
-	{
-		case FloatDataTypeId :
-		{
-			FloatPlugPtr valuePlug = new FloatPlug(
-				name,
-				direction,
-				static_cast<const FloatData *>( value )->readable(),
-				Imath::limits<float>::min(),
-				Imath::limits<float>::max(),
-				flags
-			);
-			return valuePlug;
-		}
-		case IntDataTypeId :
-		{
-			IntPlugPtr valuePlug = new IntPlug(
-				name,
-				direction,
-				static_cast<const IntData *>( value )->readable(),
-				Imath::limits<int>::min(),
-				Imath::limits<int>::max(),
-				flags
-			);
-			return valuePlug;
-		}
-		case StringDataTypeId :
-		{
-			StringPlugPtr valuePlug = new StringPlug(
-				name,
-				direction,
-				static_cast<const StringData *>( value )->readable(),
-				flags
-			);
-			return valuePlug;
-		}
-		case BoolDataTypeId :
-		{
-			BoolPlugPtr valuePlug = new BoolPlug(
-				name,
-				direction,
-				static_cast<const BoolData *>( value )->readable(),
-				flags
-			);
-			return valuePlug;
-		}
-		case V2iDataTypeId :
-		{
-			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V2iData *>( value ) );
-		}
-		case V3iDataTypeId :
-		{
-			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V3iData *>( value ) );
-		}
-		case V2fDataTypeId :
-		{
-			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V2fData *>( value ) );
-		}
-		case V3fDataTypeId :
-		{
-			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V3fData *>( value ) );
-		}
-		case Color3fDataTypeId :
-		{
-			return compoundNumericValuePlug( name, direction, flags, static_cast<const Color3fData *>( value ) );
-		}
-		case Color4fDataTypeId :
-		{
-			return compoundNumericValuePlug( name, direction, flags, static_cast<const Color4fData *>( value ) );
-		}
-		case Box2fDataTypeId :
-		{
-			return boxValuePlug( name, direction, flags, static_cast<const Box2fData *>( value ) );
-		}
-		case Box2iDataTypeId :
-		{
-			return boxValuePlug( name, direction, flags, static_cast<const Box2iData *>( value ) );
-		}
-		case Box3fDataTypeId :
-		{
-			return boxValuePlug( name, direction, flags, static_cast<const Box3fData *>( value ) );
-		}
-		case Box3iDataTypeId :
-		{
-			return boxValuePlug( name, direction, flags, static_cast<const Box3iData *>( value ) );
-		}
-		case M44fDataTypeId :
-		{
-			M44fPlugPtr valuePlug = new M44fPlug(
-				name,
-				direction,
-				static_cast<const M44fData *>( value )->readable(),
-				flags
-			);
-		}
-		case FloatVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const FloatVectorData *>( value ) );
-		}
-		case IntVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const IntVectorData *>( value ) );
-		}
-		case StringVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const StringVectorData *>( value ) );
-		}
-		case InternedStringVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const InternedStringVectorData *>( value ) );
-		}
-		case BoolVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const BoolVectorData *>( value ) );
-		}
-		case V2iVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const V2iVectorData *>( value ) );
-		}
-		case V3fVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const V3fVectorData *>( value ) );
-		}
-		case Color3fVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const Color3fVectorData *>( value ) );
-		}
-		case M44fVectorDataTypeId :
-		{
-			return typedObjectValuePlug( name, direction, flags, static_cast<const M44fVectorData *>( value ) );
-		}
-		default :
-			throw IECore::Exception(
-				boost::str( boost::format( "Data for \"%s\" has unsupported value data type \"%s\"" ) % name % value->typeName() )
-			);
-	}
-}
-
-template<typename T>
-ValuePlugPtr CompoundDataPlug::boxValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value )
-{
-	return new BoxPlug<typename T::ValueType>(
-		name,
-		direction,
-		value->readable(),
-		flags
-	);
-}
-
-template<typename T>
-ValuePlugPtr CompoundDataPlug::compoundNumericValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value )
-{
-	typedef typename T::ValueType ValueType;
-	typedef typename ValueType::BaseType BaseType;
-	typedef CompoundNumericPlug<ValueType> PlugType;
-
-	typename PlugType::Ptr result = new PlugType(
-		name,
-		direction,
-		value->readable(),
-		ValueType( Imath::limits<BaseType>::min() ),
-		ValueType( Imath::limits<BaseType>::max() ),
-		flags
-	);
-
-	return result;
-}
-
-template<typename T>
-ValuePlugPtr CompoundDataPlug::geometricCompoundNumericValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value )
-{
-	typedef typename T::ValueType ValueType;
-	typedef typename ValueType::BaseType BaseType;
-	typedef CompoundNumericPlug<ValueType> PlugType;
-
-	typename PlugType::Ptr result = new PlugType(
-		name,
-		direction,
-		value->readable(),
-		ValueType( Imath::limits<BaseType>::min() ),
-		ValueType( Imath::limits<BaseType>::max() ),
-		flags,
-		value->getInterpretation()
-	);
-
-	return result;
-}
-
-template<typename T>
-ValuePlugPtr CompoundDataPlug::typedObjectValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value )
-{
-	typename TypedObjectPlug<T>::Ptr result = new TypedObjectPlug<T>(
-		name,
-		direction,
-		value,
-		flags
-	);
-
-	return result;
-}
-
-IECore::DataPtr CompoundDataPlug::extractDataFromPlug( const ValuePlug *plug )
-{
-	switch( static_cast<Gaffer::TypeId>(plug->typeId()) )
-	{
-		case FloatPlugTypeId :
-			return new FloatData( static_cast<const FloatPlug *>( plug )->getValue() );
-		case IntPlugTypeId :
-			return new IntData( static_cast<const IntPlug *>( plug )->getValue() );
-		case StringPlugTypeId :
-			return new StringData( static_cast<const StringPlug *>( plug )->getValue() );
-		case BoolPlugTypeId :
-			return new BoolData( static_cast<const BoolPlug *>( plug )->getValue() );
-		case V2iPlugTypeId :
-		{
-			const V2iPlug *v2iPlug = static_cast<const V2iPlug *>( plug );
-			V2iDataPtr data = new V2iData( v2iPlug->getValue() );
-			data->setInterpretation( v2iPlug->interpretation() );
-			return data;
-		}
-		case V3iPlugTypeId :
-		{
-			const V3iPlug *v3iPlug = static_cast<const V3iPlug *>( plug );
-			V3iDataPtr data = new V3iData( v3iPlug->getValue() );
-			data->setInterpretation( v3iPlug->interpretation() );
-			return data;
-		}
-		case V2fPlugTypeId :
-		{
-			const V2fPlug *v2fPlug = static_cast<const V2fPlug *>( plug );
-			V2fDataPtr data = new V2fData( v2fPlug->getValue() );
-			data->setInterpretation( v2fPlug->interpretation() );
-			return data;
-		}
-		case V3fPlugTypeId :
-		{
-			const V3fPlug *v3fPlug = static_cast<const V3fPlug *>( plug );
-			V3fDataPtr data = new V3fData( v3fPlug->getValue() );
-			data->setInterpretation( v3fPlug->interpretation() );
-			return data;
-		}
-		case Color3fPlugTypeId :
-			return new Color3fData( static_cast<const Color3fPlug *>( plug )->getValue() );
-		case Color4fPlugTypeId :
-			return new Color4fData( static_cast<const Color4fPlug *>( plug )->getValue() );
-		case Box2fPlugTypeId :
-			return new Box2fData( static_cast<const Box2fPlug *>( plug )->getValue() );
-		case Box2iPlugTypeId :
-			return new Box2iData( static_cast<const Box2iPlug *>( plug )->getValue() );
-		case Box3fPlugTypeId :
-			return new Box3fData( static_cast<const Box3fPlug *>( plug )->getValue() );
-		case Box3iPlugTypeId :
-			return new Box3iData( static_cast<const Box3iPlug *>( plug )->getValue() );
-		case FloatVectorDataPlugTypeId :
-			return static_cast<const FloatVectorDataPlug *>( plug )->getValue()->copy();
-		case IntVectorDataPlugTypeId :
-			return static_cast<const IntVectorDataPlug *>( plug )->getValue()->copy();
-		case StringVectorDataPlugTypeId :
-			return static_cast<const StringVectorDataPlug *>( plug )->getValue()->copy();
-		case InternedStringVectorDataPlugTypeId :
-			return static_cast<const InternedStringVectorDataPlug *>( plug )->getValue()->copy();
-		case BoolVectorDataPlugTypeId :
-			return static_cast<const BoolVectorDataPlug *>( plug )->getValue()->copy();
-		case V2iVectorDataPlugTypeId :
-			return static_cast<const V2iVectorDataPlug *>( plug )->getValue()->copy();
-		case V3fVectorDataPlugTypeId :
-			return static_cast<const V3fVectorDataPlug *>( plug )->getValue()->copy();
-		case Color3fVectorDataPlugTypeId :
-			return static_cast<const Color3fVectorDataPlug *>( plug )->getValue()->copy();
-		case M44fVectorDataPlugTypeId :
-			return static_cast<const M44fVectorDataPlug *>( plug )->getValue()->copy();
-		case SplineffPlugTypeId :
-			return new SplineffData( static_cast<const SplineffPlug *>( plug )->getValue() );
-		case SplinefColor3fPlugTypeId :
-			return new SplinefColor3fData( static_cast<const SplinefColor3fPlug *>( plug )->getValue() );
-		case TransformPlugTypeId :
-			return new M44fData( static_cast<const TransformPlug *>( plug )->matrix() );
-		case M44fPlugTypeId :
-			return new M44fData( static_cast<const M44fPlug *>( plug )->getValue() );
-		default :
-			throw IECore::Exception(
-				boost::str( boost::format( "Plug \"%s\" has unsupported type \"%s\"" ) % plug->getName().string() % plug->typeName() )
-			);
-	}
-
-}

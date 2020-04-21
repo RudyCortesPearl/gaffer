@@ -34,15 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "OpenEXR/ImathMatrixAlgo.h"
-
 #include "GafferScene/AimConstraint.h"
+
+#include "OpenEXR/ImathMatrixAlgo.h"
 
 using namespace Imath;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( AimConstraint );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( AimConstraint );
 
 size_t AimConstraint::g_firstPlugIndex = 0;
 

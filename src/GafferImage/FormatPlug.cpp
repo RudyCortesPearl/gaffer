@@ -34,19 +34,20 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferImage/FormatPlug.h"
 
-#include "Gaffer/ScriptNode.h"
+#include "GafferImage/FormatData.h"
+
 #include "Gaffer/Context.h"
 #include "Gaffer/Process.h"
+#include "Gaffer/ScriptNode.h"
 
-#include "GafferImage/FormatPlug.h"
-#include "GafferImage/FormatData.h"
+#include "boost/bind.hpp"
 
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( FormatPlug );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( FormatPlug );
 
 const IECore::InternedString g_defaultFormatContextName( "image:defaultFormat" );
 static const IECore::InternedString g_defaultFormatPlugName( "defaultFormat" );
@@ -146,6 +147,11 @@ void FormatPlug::setDefaultFormat( Gaffer::Context *context, const Format &forma
 
 FormatPlug *FormatPlug::acquireDefaultFormatPlug( Gaffer::ScriptNode *scriptNode )
 {
+	if( !scriptNode )
+	{
+		throw IECore::Exception( "Can't provide the default FormatPlug for an invalid ScriptNode" );
+	}
+
 	if( FormatPlug *p = scriptNode->getChild<FormatPlug>( g_defaultFormatPlugName ) )
 	{
 		return p;

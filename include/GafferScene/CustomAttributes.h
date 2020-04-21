@@ -42,15 +42,15 @@
 namespace GafferScene
 {
 
-class CustomAttributes : public GafferScene::Attributes
+class GAFFERSCENE_API CustomAttributes : public GafferScene::Attributes
 {
 
 	public :
 
 		CustomAttributes( const std::string &name=defaultName<CustomAttributes>() );
-		virtual ~CustomAttributes();
+		~CustomAttributes() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::CustomAttributes,CustomAttributesTypeId, Attributes );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CustomAttributes,CustomAttributesTypeId, Attributes );
 
 };
 

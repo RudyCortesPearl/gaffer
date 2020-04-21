@@ -34,17 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferUI/NoduleLayout.h"
+#include "GafferUI/PlugAdder.h"
+#include "GafferUI/StandardNodeGadget.h"
 
 #include "Gaffer/Box.h"
 #include "Gaffer/BoxIn.h"
 #include "Gaffer/BoxOut.h"
-#include "Gaffer/UndoScope.h"
 #include "Gaffer/ScriptNode.h"
+#include "Gaffer/UndoScope.h"
 
-#include "GafferUI/StandardNodeGadget.h"
-#include "GafferUI/PlugAdder.h"
-#include "GafferUI/NoduleLayout.h"
+#include "boost/bind.hpp"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -58,24 +58,32 @@ class BoxPlugAdder : public PlugAdder
 
 	public :
 
-		BoxPlugAdder( BoxPtr box, StandardNodeGadget::Edge edge )
-			:	PlugAdder( edge ), m_box( box )
+		BoxPlugAdder( BoxPtr box )
+			:	m_box( box )
 		{
 		}
 
 	protected :
 
-		virtual bool acceptsPlug( const Plug *connectionEndPoint ) const
+		bool canCreateConnection( const Plug *endpoint ) const override
 		{
+			if( !PlugAdder::canCreateConnection( endpoint ) )
+			{
+				return false;
+			}
+
+			if( endpoint->node() == m_box )
+			{
+				return false;
+			}
+
 			return true;
 		}
 
-		virtual void addPlug( Plug *connectionEndPoint )
+		void createConnection( Plug *endpoint ) override
 		{
-			UndoScope undoScope( m_box->ancestor<ScriptNode>() );
-
 			BoxIOPtr boxIO;
-			if( connectionEndPoint->direction() == Plug::In )
+			if( endpoint->direction() == Plug::In )
 			{
 				boxIO = new BoxOut;
 			}
@@ -85,19 +93,19 @@ class BoxPlugAdder : public PlugAdder
 			}
 
 			m_box->addChild( boxIO );
-			boxIO->setup( connectionEndPoint );
+			boxIO->setup( endpoint );
 
-			if( connectionEndPoint->direction() == Plug::In )
+			if( endpoint->direction() == Plug::In )
 			{
-				connectionEndPoint->setInput( boxIO->promotedPlug<Plug>() );
+				endpoint->setInput( boxIO->promotedPlug() );
 			}
 			else
 			{
-				boxIO->promotedPlug<Plug>()->setInput( connectionEndPoint );
+				boxIO->promotedPlug()->setInput( endpoint );
 			}
 
-			applyEdgeMetadata( boxIO->promotedPlug<Plug>() );
-			applyEdgeMetadata( boxIO->plug<Plug>(), /* opposite = */ true );
+			applyEdgeMetadata( boxIO->promotedPlug() );
+			applyEdgeMetadata( boxIO->plug(), /* opposite = */ true );
 		}
 
 	private :
@@ -111,19 +119,16 @@ struct Registration
 
 	Registration()
 	{
-		NoduleLayout::registerCustomGadget( "GafferUI.BoxUI.PlugAdder.Top", boost::bind( &create, ::_1, StandardNodeGadget::TopEdge ) );
-		NoduleLayout::registerCustomGadget( "GafferUI.BoxUI.PlugAdder.Bottom", boost::bind( &create, ::_1, StandardNodeGadget::BottomEdge ) );
-		NoduleLayout::registerCustomGadget( "GafferUI.BoxUI.PlugAdder.Left", boost::bind( &create, ::_1, StandardNodeGadget::LeftEdge ) );
-		NoduleLayout::registerCustomGadget( "GafferUI.BoxUI.PlugAdder.Right", boost::bind( &create, ::_1, StandardNodeGadget::RightEdge ) );
+		NoduleLayout::registerCustomGadget( "GafferUI.BoxUI.PlugAdder", boost::bind( &create, ::_1 ) );
 	}
 
 	private :
 
-		static GadgetPtr create( GraphComponentPtr parent, StandardNodeGadget::Edge edge )
+		static GadgetPtr create( GraphComponentPtr parent )
 		{
 			if( BoxPtr box = runTimeCast<Box>( parent ) )
 			{
-				return new BoxPlugAdder( box, edge );
+				return new BoxPlugAdder( box );
 			}
 			throw IECore::Exception( "Expected a Box" );
 		}

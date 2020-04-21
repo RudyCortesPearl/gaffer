@@ -35,11 +35,10 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import re
 import pipes
 import fnmatch
+import imath
 
 import IECore
 
@@ -80,12 +79,12 @@ class _ParameterisedHolderNodeUI( GafferUI.NodeUI ) :
 
 			if headerVisible :
 				with GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Horizontal ) :
-					GafferUI.Spacer( IECore.V2i( 10 ), parenting = { "expand"  : True } )
+					GafferUI.Spacer( imath.V2i( 10 ), parenting = { "expand"  : True } )
 					toolButton = GafferCortexUI.ToolParameterValueWidget( self.node().parameterHandler() )
 					toolButton.plugValueWidget().setReadOnly( readOnly )
 					_InfoButton( node )
 
-			with GafferUI.ScrolledContainer( horizontalMode=GafferUI.ScrolledContainer.ScrollMode.Never, borderWidth=4 ) :
+			with GafferUI.ScrolledContainer( horizontalMode=GafferUI.ScrollMode.Never, borderWidth=4 ) :
 				self.__parameterValueWidget = GafferCortexUI.CompoundParameterValueWidget( self.node().parameterHandler(), collapsible = False )
 
 		self.setReadOnly( readOnly )
@@ -116,7 +115,7 @@ class _InfoButton( GafferUI.Button ) :
 
 		self.__node = node
 		self.__window = None
-		self.__clickedConnection = self.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ) )
+		self.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ), scoped = False )
 
 	def getToolTip( self ) :
 
@@ -133,7 +132,7 @@ class _InfoButton( GafferUI.Button ) :
 		## and we should use those to get the proper context here.
 		context = self.__node.scriptNode().context() if self.__node.scriptNode() else Gaffer.Context.current()
 		with context :
-			result = Gaffer.Metadata.nodeDescription( self.__node )
+			result = Gaffer.Metadata.value( self.__node, "description" ) or ""
 			summary = Gaffer.Metadata.value( self.__node, "summary" )
 
 		if summary :
@@ -227,7 +226,7 @@ def __plugPresetValues( plug ) :
 
 	# make sure to get the values in the same
 	# order that the names were given.
-	values = [ parameter.presets()[x] for x in parameter.presetNames() ]
+	values = [ parameter.getPresets()[x] for x in parameter.presetNames() ]
 	if isinstance( plug, Gaffer.StringPlug ) :
 		return IECore.StringVectorData( [ v.value for v in values ] )
 	elif isinstance( plug, Gaffer.BoolPlug ) :
@@ -273,7 +272,7 @@ for nodeType in __nodeTypes :
 
 			],
 
-			"parameters.*" : [
+			"parameters.*..." : [
 
 				"description", __plugDescription,
 				"presetNames", __plugPresetNames,

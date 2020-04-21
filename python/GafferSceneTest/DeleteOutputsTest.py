@@ -37,6 +37,7 @@
 import unittest
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
@@ -58,11 +59,11 @@ class DeleteOutputsTest( GafferSceneTest.SceneTestCase ) :
 		# test that by default the scene is passed through
 
 		self.assertScenesEqual( plane["out"], deleteOutputs["out"] )
-		self.assertSceneHashesEqual( plane["out"], deleteOutputs["out"] )
+		self.assertSceneHashesEqual( plane["out"], deleteOutputs["out"], checks = self.allSceneChecks - { "globals" } )
 
 		# test that we can delete options
 
-		outputs.addOutput( "test", IECore.Display( "fileName", "type", "data", {} ) )
+		outputs.addOutput( "test", IECoreScene.Output( "fileName", "type", "data", {} ) )
 
 		g = deleteOutputs["out"]["globals"].getValue()
 		self.assertTrue( "output:test" in g )

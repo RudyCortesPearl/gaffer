@@ -36,6 +36,7 @@
 
 import unittest
 import inspect
+import imath
 
 import IECore
 
@@ -77,9 +78,9 @@ class PythonCommandTest( GafferTest.TestCase ) :
 	def testVariables( self ) :
 
 		n = GafferDispatch.PythonCommand()
-		n["variables"].addMember( "testInt", 1 )
-		n["variables"].addMember( "testFloat", 2.5 )
-		n["variables"].addMember( "testColor", IECore.Color3f( 1, 2, 3 ) )
+		n["variables"].addChild( Gaffer.NameValuePlug( "testInt", 1 ) )
+		n["variables"].addChild( Gaffer.NameValuePlug( "testFloat", 2.5 ) )
+		n["variables"].addChild( Gaffer.NameValuePlug( "testColor", imath.Color3f( 1, 2, 3 ) ) )
 		n["command"].setValue( inspect.cleandoc(
 			"""
 			self.testInt = variables["testInt"]
@@ -92,7 +93,7 @@ class PythonCommandTest( GafferTest.TestCase ) :
 
 		self.assertEqual( n.testInt, 1 )
 		self.assertEqual( n.testFloat, 2.5 )
-		self.assertEqual( n.testColor, IECore.Color3f( 1, 2, 3 ) )
+		self.assertEqual( n.testColor, imath.Color3f( 1, 2, 3 ) )
 
 	def testContextAccess( self ) :
 
@@ -252,13 +253,82 @@ class PythonCommandTest( GafferTest.TestCase ) :
 		self.assertEqual( s["n"].frames, [ 1, 2, 3, 4, 5 ] )
 		self.assertEqual( s["n"].numCalls, 1 )
 
+	def testSequenceModeVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferDispatch.PythonCommand()
+		s["n"]["sequence"].setValue( True )
+		s["n"]["variables"].addChild( Gaffer.NameValuePlug( "testInt", 42 ) )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['n']['variables']['NameValuePlug']['value'] = context.getFrame() ** 2;", "python" )
+
+		commandLines = inspect.cleandoc(
+			"""
+			self.testInt = variables["testInt"]
+			self.frames = frames
+			try :
+				self.numCalls += 1
+			except AttributeError :
+				self.numCalls = 1
+			"""
+		).split( "\n" )
+		s["n"]["command"].setValue( "\n".join( commandLines ) )
+
+		d = self.__dispatcher( frameRange = "1-5" )
+		self.assertRaisesRegexp( Exception, "Context has no entry named \"frame\"", d.dispatch, [ s[ "n" ] ] )
+
+		commandLines = inspect.cleandoc(
+			"""
+			self.testInt = []
+			for f in frames:
+				context.setFrame( f )
+				self.testInt.append( variables['testInt'])
+			"""
+		).split( "\n" ) + commandLines[1:]
+
+		s["n"]["command"].setValue( "\n".join( commandLines ) )
+
+		d.dispatch( [ s[ "n" ] ] )
+		self.assertEqual( s["n"].testInt, [ 1, 4, 9, 16, 25 ] )
+		self.assertEqual( s["n"].frames, [ 1, 2, 3, 4, 5 ] )
+		self.assertEqual( s["n"].numCalls, 1 )
+
+	def testSequenceModeStaticVariable( self ) :
+
+		# We shouldn't need to set a frame in order to read a variable that doesn't depend on frame
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferDispatch.PythonCommand()
+		s["n"]["sequence"].setValue( True )
+		s["n"]["variables"].addChild( Gaffer.NameValuePlug( "testInt", 42 ) )
+
+		commandLines = inspect.cleandoc(
+			"""
+			self.testInt = variables["testInt"]
+			self.frames = frames
+			try :
+				self.numCalls += 1
+			except AttributeError :
+				self.numCalls = 1
+			"""
+		).split( "\n" )
+		s["n"]["command"].setValue( "\n".join( commandLines ) )
+
+		d = self.__dispatcher( frameRange = "1-5" )
+		d.dispatch( [ s[ "n" ] ] )
+		self.assertEqual( s["n"].testInt, 42 )
+		self.assertEqual( s["n"].frames, [ 1, 2, 3, 4, 5 ] )
+		self.assertEqual( s["n"].numCalls, 1 )
+
 	def testCannotAccessVariablesOutsideFrameRange( self ) :
 
 		# We don't want to allow access to variables outside the frame range,
 		# because that would mean that PythonCommand.hash() was no longer accurate.
 
 		n = GafferDispatch.PythonCommand()
-		n["variables"].addMember( "testInt", 1 )
+		n["variables"].addChild( Gaffer.NameValuePlug( "testInt", 1 ) )
 		n["command"].setValue( inspect.cleandoc(
 			"""
 			context.setFrame( context.getFrame() + 1 )
@@ -266,7 +336,7 @@ class PythonCommandTest( GafferTest.TestCase ) :
 			"""
 		) )
 
-		self.assertRaisesRegexp( Exception, "Invalid frame", n.execute )
+		self.assertRaisesRegexp( Exception, "Cannot access variables at frame outside range specified for PythonCommand", n.execute )
 
 	def testNonSequenceDispatch( self ) :
 
@@ -290,7 +360,7 @@ class PythonCommandTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["n"] = GafferDispatch.PythonCommand()
-		s["n"]["variables"].addMember( "frameString", "###" )
+		s["n"]["variables"].addChild( Gaffer.NameValuePlug( "frameString", "###" ) )
 		s["n"]["command"].setValue( 'self.frameString = variables["frameString"]' )
 
 		with Gaffer.Context() as c :
@@ -306,6 +376,57 @@ class PythonCommandTest( GafferTest.TestCase ) :
 
 		c["task"].execute()
 		self.assertEqual( c.test, 10 )
+
+	def testImath( self ) :
+
+		c = Gaffer.PythonCommand()
+		c["command"].setValue( "self.test = imath.V2i( 1, 2 )" )
+
+		c["task"].execute()
+		self.assertEqual( c.test, imath.V2i( 1, 2 ) )
+
+	def testEmptyCommand( self ) :
+
+		c = Gaffer.PythonCommand()
+		self.assertEqual( c["command"].getValue(), "" )
+		self.assertEqual( c["task"].hash(), IECore.MurmurHash() )
+
+	def testContextGetNone( self ) :
+
+		command = Gaffer.PythonCommand()
+		command["command"].setValue( "print context.get( 'iAmNotHere' )" )
+
+		with Gaffer.Context() as c :
+			h = command["task"].hash()
+			c["iAmNotHere"] = 10
+			self.assertNotEqual( command["task"].hash(), h )
+
+	def testAlternateMissingContextVariables( self ) :
+
+		command = Gaffer.PythonCommand()
+		command["command"].setValue( "print 'a : ', context.get( 'a' ), 'b : ', context.get( 'b' )" )
+
+		neitherHash = command["task"].hash()
+
+		with Gaffer.Context() as c :
+			c["a"] = 10
+			aHash = command["task"].hash()
+
+		with Gaffer.Context() as c :
+			c["b"] = 10
+			bHash = command["task"].hash()
+			c["a"] = 10
+			bothHash = command["task"].hash()
+
+		self.assertEqual( len( { str( x ) for x in ( neitherHash, aHash, bHash, bothHash ) } ), 4 )
+
+	def testContextModificationsDontLeak( self ) :
+
+		command = Gaffer.PythonCommand()
+		command["command"].setValue( "context.setFrame( 2 )" )
+		command["task"].execute()
+
+		self.assertEqual( Gaffer.Context.current(), Gaffer.Context() )
 
 if __name__ == "__main__":
 	unittest.main()

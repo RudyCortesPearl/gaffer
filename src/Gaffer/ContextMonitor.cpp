@@ -35,9 +35,10 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/ContextMonitor.h"
-#include "Gaffer/Process.h"
-#include "Gaffer/Plug.h"
+
 #include "Gaffer/Context.h"
+#include "Gaffer/Plug.h"
+#include "Gaffer/Process.h"
 
 using namespace std;
 using namespace IECore;
@@ -153,9 +154,8 @@ void ContextMonitor::processStarted( const Process *process )
 	{
 		return;
 	}
-	const Context *context = Context::current();
 	ThreadData &threadData = m_threadData.local();
-	threadData.statistics[process->plug()] += context;
+	threadData.statistics[process->plug()] += process->context();
 }
 
 void ContextMonitor::processFinished( const Process *process )

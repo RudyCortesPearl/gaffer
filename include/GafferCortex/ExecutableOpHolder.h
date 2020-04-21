@@ -52,25 +52,25 @@ namespace GafferCortex
 IE_CORE_FORWARDDECLARE( ParameterHandler )
 
 /// Node for Ops that can be executed on their own in the farm or in a separate process.
-class ExecutableOpHolder : public ParameterisedHolderTaskNode
+class GAFFERCORTEX_API ExecutableOpHolder : public ParameterisedHolderTaskNode
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferCortex::ExecutableOpHolder, ExecutableOpHolderTypeId, ParameterisedHolderTaskNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferCortex::ExecutableOpHolder, ExecutableOpHolderTypeId, ParameterisedHolderTaskNode );
 
 		ExecutableOpHolder( const std::string &name=defaultName<ExecutableOpHolder>() );
 
-		virtual void setParameterised( IECore::RunTimeTypedPtr parameterised, bool keepExistingValues=false );
+		void setParameterised( IECore::RunTimeTypedPtr parameterised, bool keepExistingValues=false ) override;
 
 		/// Convenience function which calls setParameterised( className, classVersion, "IECORE_OP_PATHS", keepExistingValues )
 		void setOp( const std::string &className, int classVersion, bool keepExistingValues=false );
 		/// Convenience function which returns runTimeCast<Op>( getParameterised() );
-		IECore::Op *getOp( std::string *className = 0, int *classVersion = 0 );
-		const IECore::Op *getOp( std::string *className = 0, int *classVersion = 0 ) const;
+		IECore::Op *getOp( std::string *className = nullptr, int *classVersion = nullptr );
+		const IECore::Op *getOp( std::string *className = nullptr, int *classVersion = nullptr ) const;
 
-		virtual IECore::MurmurHash hash( const Gaffer::Context *context ) const;
-		virtual void execute() const;
+		IECore::MurmurHash hash( const Gaffer::Context *context ) const override;
+		void execute() const override;
 
 };
 

@@ -35,6 +35,8 @@
 ##########################################################################
 
 import weakref
+import functools
+import imath
 
 import IECore
 
@@ -65,7 +67,6 @@ class MessageWidget( GafferUI.Widget ) :
 					( IECore.Msg.Level.Debug, "Debug information. You may find this very dull. Click to scroll to the next item." ),
 				]
 				self.__levelButtons = {}
-				self.__buttonClickedConnections = []
 				for buttonSpec in buttonSpecs :
 					button = GafferUI.Button(
 						image = IECore.Msg.levelAsString( buttonSpec[0] ).lower() + "Notification.png",
@@ -73,11 +74,11 @@ class MessageWidget( GafferUI.Widget ) :
 					)
 					button.__level = buttonSpec[0]
 					self.__levelButtons[buttonSpec[0]] = button
-					self.__buttonClickedConnections.append( button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) ) )
+					button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
 					button.setVisible( False )
 					button.setToolTip( buttonSpec[1] )
 
-				GafferUI.Spacer( IECore.V2i( 10 ) )
+				GafferUI.Spacer( imath.V2i( 10 ) )
 
 			self.__text = GafferUI.MultiLineTextWidget( editable=False )
 
@@ -191,20 +192,35 @@ class MessageWidget( GafferUI.Widget ) :
 
 		# scroll to the next one
 		toFind = IECore.Msg.levelAsString( button.__level ) + " : "
-		if not self.__text._qtWidget().find( toFind ) :
+
+		def find( widget, text ) :
+
+			# Really we just want to call `widget.find( text )`
+			# but that is utterly broken in PySide - it is marked
+			# as a static method so receives a null self and promptly
+			# crashes. So instead we reproduce the work that
+			# `widget.find()` does internally.
+
+			search = widget.document().find( text, widget.textCursor() )
+			if search :
+				widget.setTextCursor( search )
+
+			return search
+
+		if not find( self.__text._qtWidget(), toFind ) :
 			self.__text._qtWidget().moveCursor( QtGui.QTextCursor.Start )
-			self.__text._qtWidget().find( toFind )
+			find( self.__text._qtWidget(), toFind )
 
 	def __appendMessageToText( self, level, context, message ) :
 
 		if level > self.__messageLevel :
 			return False
 
-		formatted = "<h1 class='%s'>%s : %s </h1><span class='message'>%s</span><br>" % (
+		formatted = "<h1 class='%s'>%s : %s </h1><pre class='message'>%s</pre><br>" % (
 			IECore.Msg.levelAsString( level ),
 			IECore.Msg.levelAsString( level ),
 			context,
-			message.replace( "\n", "<br>" )
+			message
 		)
 
 		self.__text.appendHTML( formatted )
@@ -230,7 +246,7 @@ class _MessageHandler( IECore.MessageHandler ) :
 		w = self.__messageWidget()
 
 		if w :
-			GafferUI.EventLoop.executeOnUIThread( IECore.curry( w.appendMessage, level, context, msg ) )
+			GafferUI.EventLoop.executeOnUIThread( functools.partial( w.appendMessage, level, context, msg ) )
 		else :
 			# the widget has died. bad things are probably afoot so its best
 			# that we output the messages somewhere to aid in debugging.

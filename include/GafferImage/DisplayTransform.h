@@ -49,15 +49,15 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 namespace GafferImage
 {
 
-class DisplayTransform : public OpenColorIOTransform
+class GAFFERIMAGE_API DisplayTransform : public OpenColorIOTransform
 {
 
 	public :
 
 		DisplayTransform( const std::string &name=defaultName<DisplayTransform>() );
-		virtual ~DisplayTransform();
+		~DisplayTransform() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::DisplayTransform, DisplayTransformTypeId, OpenColorIOTransform );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::DisplayTransform, DisplayTransformTypeId, OpenColorIOTransform );
 
 		Gaffer::StringPlug *inputColorSpacePlug();
 		const Gaffer::StringPlug *inputColorSpacePlug() const;
@@ -70,9 +70,9 @@ class DisplayTransform : public OpenColorIOTransform
 
 	protected :
 
-		virtual bool affectsTransform( const Gaffer::Plug *input ) const;
-		virtual void hashTransform( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual OpenColorIO::ConstTransformRcPtr transform() const;
+		bool affectsTransform( const Gaffer::Plug *input ) const override;
+		void hashTransform( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		OpenColorIO::ConstTransformRcPtr transform() const override;
 
 	private :
 

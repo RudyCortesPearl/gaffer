@@ -36,6 +36,7 @@
 
 import unittest
 import gc
+import imath
 
 import IECore
 
@@ -368,14 +369,15 @@ class ArrayPlugTest( GafferTest.TestCase ) :
 		assertInput( n["b"], n["a"] )
 
 	def testArrayPlugCopiesColors( self ) :
+
 		n = Gaffer.Node()
 
 		n2 = Gaffer.Node()
 
 		n2.addChild(Gaffer.IntPlug("test"))
 
-		connectionColor = IECore.Color3f( 0.1 , 0.2 , 0.3 )
-		noodleColor = IECore.Color3f( 0.4, 0.5 , 0.6 )
+		connectionColor = imath.Color3f( 0.1 , 0.2 , 0.3 )
+		noodleColor = imath.Color3f( 0.4, 0.5 , 0.6 )
 
 		element = Gaffer.IntPlug()
 		Gaffer.Metadata.registerValue( element, "connectionGadget:color", connectionColor )
@@ -392,6 +394,126 @@ class ArrayPlugTest( GafferTest.TestCase ) :
 		p = Gaffer.ArrayPlug( element = Gaffer.IntPlug() )
 		self.assertTrue( p.acceptsChild( Gaffer.IntPlug() ) )
 		self.assertFalse( p.acceptsChild( Gaffer.FloatPlug() ) )
+
+	def testDenyInputFromNonArrayPlugs( self ) :
+
+		a = Gaffer.ArrayPlug( element = Gaffer.IntPlug() )
+		p = Gaffer.V2iPlug()
+		self.assertFalse( a.acceptsInput( p ) )
+
+	def testPartialConnections( self ) :
+
+		n = Gaffer.Node()
+		n["p"] = Gaffer.ArrayPlug( element = Gaffer.V3fPlug( "e" ) )
+		self.assertEqual( len( n["p"] ), 1 )
+
+		p = Gaffer.FloatPlug()
+		n["p"][0]["x"].setInput( p )
+		self.assertEqual( len( n["p"] ), 2 )
+
+		n["p"][0]["y"].setInput( p )
+		self.assertEqual( len( n["p"] ), 2 )
+
+		n["p"][1]["y"].setInput( p )
+		self.assertEqual( len( n["p"] ), 3 )
+
+		n["p"][2]["z"].setInput( p )
+		self.assertEqual( len( n["p"] ), 4 )
+
+		n["p"][1]["y"].setInput( None )
+		self.assertEqual( len( n["p"] ), 4 )
+
+		n["p"][2]["z"].setInput( None )
+		self.assertEqual( len( n["p"] ), 2 )
+
+	def testResizeWhenInputsChange( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["a"] = GafferTest.AddNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["user"]["p"] = Gaffer.ArrayPlug( element = Gaffer.IntPlug(), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic, resizeWhenInputsChange = False )
+		self.assertEqual( s["n"]["user"]["p"].resizeWhenInputsChange(), False )
+
+		self.assertEqual( len( s["n"]["user"]["p"] ), 1 )
+		s["n"]["user"]["p"][0].setInput( s["a"]["sum"] )
+		self.assertEqual( len( s["n"]["user"]["p"] ), 1 )
+		s["n"]["user"]["p"][0].setInput( None )
+		self.assertEqual( len( s["n"]["user"]["p"] ), 1 )
+
+		p = s["n"]["user"]["p"].createCounterpart( "p", Gaffer.Plug.Direction.In )
+		self.assertEqual( p.resizeWhenInputsChange(), False )
+
+	def testNext( self ) :
+
+		a = GafferTest.AddNode()
+
+		n = Gaffer.Node()
+		n["a1"] = Gaffer.ArrayPlug( element = Gaffer.IntPlug() )
+		n["a2"] = Gaffer.ArrayPlug( element = Gaffer.IntPlug(), maxSize = 3, resizeWhenInputsChange = False )
+
+		self.assertEqual( len( n["a1"] ), 1 )
+		self.assertEqual( len( n["a2"] ), 1 )
+		self.assertEqual( n["a1"].next(), n["a1"][0] )
+		self.assertEqual( n["a2"].next(), n["a2"][0] )
+
+		n["a1"][0].setInput( a["sum"] )
+		n["a2"][0].setInput( a["sum"] )
+
+		self.assertEqual( len( n["a1"] ), 2 )
+		self.assertEqual( len( n["a2"] ), 1 )
+		self.assertEqual( n["a1"].next(), n["a1"][1] )
+		self.assertEqual( n["a2"].next(), n["a2"][1] )
+		self.assertEqual( len( n["a2"] ), 2 )
+
+		self.assertEqual( n["a1"].next(), n["a1"][1] )
+		self.assertEqual( n["a2"].next(), n["a2"][1] )
+
+		n["a2"].next().setInput( a["sum"] )
+		n["a2"].next().setInput( a["sum"] )
+		self.assertEqual( len( n["a2"] ), 3 )
+
+		self.assertEqual( n["a2"].next(), None )
+
+	def testResize( self ) :
+
+		p = Gaffer.ArrayPlug( element = Gaffer.IntPlug(), minSize = 1, maxSize = 3, resizeWhenInputsChange = False )
+		self.assertEqual( len( p ), p.minSize() )
+
+		p.resize( 2 )
+		self.assertEqual( len( p ), 2 )
+		self.assertIsInstance( p[1], Gaffer.IntPlug )
+
+		p.resize( 3 )
+		self.assertEqual( len( p ), 3 )
+		self.assertIsInstance( p[2], Gaffer.IntPlug )
+
+		with self.assertRaises( RuntimeError ) :
+			p.resize( p.minSize() - 1 )
+
+		with self.assertRaises( RuntimeError ) :
+			p.resize( p.maxSize() + 1 )
+
+	def testSerialisationUsesIndices( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["a"] = GafferTest.AddNode()
+		s["n"] = GafferTest.ArrayPlugNode()
+		s["n"]["in"][0].setInput( s["a"]["sum"] )
+		s["n"]["in"][1].setInput( s["a"]["sum"] )
+
+		ss = s.serialise()
+		self.assertNotIn( "[\"" + s["n"]["in"][0].getName() + "\"]", ss )
+		self.assertNotIn( "[\"" + s["n"]["in"][1].getName() + "\"]", ss )
+		self.assertIn( "[0].setInput", ss )
+		self.assertIn( "[1].setInput", ss )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( ss )
+
+		self.assertEqual( s2["n"]["in"][0].getInput(), s2["a"]["sum"] )
+		self.assertEqual( s2["n"]["in"][1].getInput(), s2["a"]["sum"] )
 
 	def tearDown( self ) :
 

@@ -38,6 +38,8 @@
 import re
 import ast
 import functools
+import inspect
+import imath
 
 import IECore
 
@@ -69,14 +71,19 @@ class PythonExpressionEngine( Gaffer.Expression.Engine ) :
 			plugPathSplit = plugPath.split( "." )
 			for p in plugPathSplit[:-1] :
 				parentDict = parentDict.setdefault( p, {} )
-			parentDict[plugPathSplit[-1]] = plug.getValue()
+			if isinstance( plug, Gaffer.CompoundDataPlug ) :
+				value = IECore.CompoundData()
+				plug.fillCompoundData( value )
+			else :
+				value = plug.getValue()
+			parentDict[plugPathSplit[-1]] = value
 
 		for plugPath in self.__outPlugPaths :
 			parentDict = plugDict
 			for p in plugPath.split( "." )[:-1] :
 				parentDict = parentDict.setdefault( p, {} )
 
-		executionDict = { "IECore" : IECore, "parent" : plugDict, "context" : _ContextProxy( context ) }
+		executionDict = { "imath" : imath, "IECore" : IECore, "parent" : plugDict, "context" : _ContextProxy( context ) }
 
 		exec( self.__expression, executionDict, executionDict )
 
@@ -183,7 +190,7 @@ class PythonExpressionEngine( Gaffer.Expression.Engine ) :
 		result += plug.relativeName( parentNode ).replace( ".", "\"][\"" )
 		result += "\"] = "
 
-		result += repr( value )
+		result += IECore.repr( value )
 
 		return result
 
@@ -268,6 +275,26 @@ class _Parser( ast.NodeVisitor ) :
 
 		ast.NodeVisitor.generic_visit( self, node )
 
+	def visit_Compare( self, node ) :
+
+		ast.NodeVisitor.generic_visit( self, node )
+
+		# Look for `"x" in context` and `"x" not in context`
+
+		if not isinstance( node.ops[0], ( ast.In, ast.NotIn ) ) :
+			return
+
+		if not isinstance( node.comparators[0], ast.Name ) :
+			return
+
+		if node.comparators[0].id != "context" :
+			return
+
+		if not isinstance( node.left, ast.Str ) :
+			raise SyntaxError( "Context name must be a string" )
+
+		self.contextReads.add( node.left.s )
+
 	def __path( self, node ) :
 
 		result = []
@@ -322,7 +349,7 @@ def __boxPlugValueExtractor( plug, topLevelPlug, value ) :
 	vectorPlug = plug.parent()
 	index = vectorPlug.children().index( plug )
 
-	vector = value.value.min if vectorPlug.getName() == "min" else value.value.max
+	vector = value.value.min() if vectorPlug.getName() == "min" else value.value.max()
 
 	return vector[index]
 
@@ -341,6 +368,8 @@ def __defaultValueExtractor( plug, topLevelPlug, value ) :
 	for name in plug.relativeName( topLevelPlug ).split( "." ) :
 		try :
 			value = getattr( value, name )
+			if inspect.ismethod( value ) :
+				value = value()
 		except AttributeError :
 			accessor = getattr( value, "get" + name[0].upper() + name[1:], None )
 			if accessor is not None :
@@ -377,7 +406,7 @@ def _extractPlugValue( plug, topLevelPlug, value ) :
 
 class _ContextProxy( object ) :
 
-	__whitelist = { "get", "getFrame", "getFramesPerSecond", "getTime" }
+	__whitelist = { "get", "getFrame", "getFramesPerSecond", "getTime", "canceller" }
 
 	def __init__( self, context ) :
 
@@ -386,6 +415,10 @@ class _ContextProxy( object ) :
 	def __getitem__( self, key ) :
 
 		return self.__context[key]
+
+	def __contains__( self, key ) :
+
+		return key in self.__context
 
 	def __getattr__( self, name ) :
 

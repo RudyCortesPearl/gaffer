@@ -34,10 +34,9 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import unittest
 import weakref
+import imath
 
 import IECore
 
@@ -84,8 +83,8 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["add1"] = GafferTest.AddNode()
 		s["add2"] = GafferTest.AddNode()
 
-		ng = GafferUI.NodeGraph( s )
-		g = ng.graphGadget()
+		ge = GafferUI.GraphEditor( s )
+		g = ge.graphGadget()
 
 		# check we can connect to a top level plug
 		g.getLayout().connectNode( g, s["add2"], Gaffer.StandardSet( [ s["add1"] ] ) )
@@ -276,11 +275,11 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["bottom"]["top0"].setInput( s["top"]["bottom0"] )
 
 		g = GafferUI.GraphGadget( s )
-		g.setNodePosition( s["bottom"], IECore.V2f( 50, 60 ) )
+		g.setNodePosition( s["bottom"], imath.V2f( 50, 60 ) )
 
 		g.getLayout().layoutNodes( g, Gaffer.StandardSet( [ s["top"] ] ) )
 
-		self.assertEqual( g.getNodePosition( s["bottom"] ), IECore.V2f( 50, 60 ) )
+		self.assertEqual( g.getNodePosition( s["bottom"] ), imath.V2f( 50, 60 ) )
 		self.assertAlmostEqual( g.getNodePosition( s["top"] ).x, g.getNodePosition( s["bottom"] ).x, delta = 0.001 )
 		self.assertTrue( g.getNodePosition( s["top"] ).y > g.getNodePosition( s["bottom"] ).y )
 
@@ -293,11 +292,11 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["bottom"]["top0"].setInput( s["top"]["bottom0"] )
 
 		g = GafferUI.GraphGadget( s )
-		g.setNodePosition( s["bottom"], IECore.V2f( 50, -60 ) )
+		g.setNodePosition( s["bottom"], imath.V2f( 50, -60 ) )
 
 		g.getLayout().layoutNodes( g, Gaffer.StandardSet( [ s["top"] ] ) )
 
-		self.assertEqual( g.getNodePosition( s["bottom"] ), IECore.V2f( 50, -60 ) )
+		self.assertEqual( g.getNodePosition( s["bottom"] ), imath.V2f( 50, -60 ) )
 		self.assertAlmostEqual( g.getNodePosition( s["top"] ).x, g.getNodePosition( s["bottom"] ).x, delta=0.001 )
 		self.assertTrue( g.getNodePosition( s["top"] ).y > g.getNodePosition( s["bottom"] ).y )
 
@@ -312,11 +311,11 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["bottom"]["top0"].setInput( s["top"]["bottom0"] )
 
 		g = GafferUI.GraphGadget( s )
-		g.setNodePosition( s["top"], IECore.V2f( 50, 60 ) )
+		g.setNodePosition( s["top"], imath.V2f( 50, 60 ) )
 
 		g.getLayout().layoutNodes( g, Gaffer.StandardSet( [ s["bottom"] ] ) )
 
-		self.assertEqual( g.getNodePosition( s["top"] ), IECore.V2f( 50, 60 ) )
+		self.assertEqual( g.getNodePosition( s["top"] ), imath.V2f( 50, 60 ) )
 		self.assertAlmostEqual( g.getNodePosition( s["top"] ).x, g.getNodePosition( s["bottom"] ).x, delta = 0.001 )
 		self.assertTrue( g.getNodePosition( s["top"] ).y > g.getNodePosition( s["bottom"] ).y )
 
@@ -380,8 +379,8 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["topRight"] = LayoutNode()
 
 		g = GafferUI.GraphGadget( s )
-		g.setNodePosition( s["topLeft"], IECore.V2f( 10, 0 ) )
-		g.setNodePosition( s["topRight"], IECore.V2f( 40, 0 ) )
+		g.setNodePosition( s["topLeft"], imath.V2f( 10, 0 ) )
+		g.setNodePosition( s["topRight"], imath.V2f( 40, 0 ) )
 
 		s["new"] = LayoutNode()
 		s["new"]["top0"].setInput( s["topLeft"]["bottom1"] )
@@ -389,8 +388,8 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
 		g.getLayout().positionNode( g, s["new"] )
 
-		self.assertEqual( g.getNodePosition( s["topLeft"] ), IECore.V2f( 10, 0 ) )
-		self.assertEqual( g.getNodePosition( s["topRight"] ), IECore.V2f( 40, 0 ) )
+		self.assertEqual( g.getNodePosition( s["topLeft"] ), imath.V2f( 10, 0 ) )
+		self.assertEqual( g.getNodePosition( s["topRight"] ), imath.V2f( 40, 0 ) )
 
 		self.assertTrue( g.getNodePosition( s["new"] ).x > g.getNodePosition( s["topLeft"] ).x )
 		self.assertTrue( g.getNodePosition( s["new"] ).x < g.getNodePosition( s["topRight"] ).x )
@@ -405,12 +404,12 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["node2"] = LayoutNode()
 
 		g = GafferUI.GraphGadget( s )
-		g.setNodePosition( s["node1"], IECore.V2f( 10, 0 ) )
+		g.setNodePosition( s["node1"], imath.V2f( 10, 0 ) )
 
-		g.getLayout().positionNode( g, s["node2"], IECore.V2f( -10, -20 ) )
+		g.getLayout().positionNode( g, s["node2"], imath.V2f( -10, -20 ) )
 
-		self.assertEqual( g.getNodePosition( s["node1"] ), IECore.V2f( 10, 0 ) )
-		self.assertEqual( g.getNodePosition( s["node2"] ), IECore.V2f( -10, -20 ) )
+		self.assertEqual( g.getNodePosition( s["node1"] ), imath.V2f( 10, 0 ) )
+		self.assertEqual( g.getNodePosition( s["node2"] ), imath.V2f( -10, -20 ) )
 
 	def testPositionNodes( self ) :
 
@@ -430,9 +429,9 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
 		g = GafferUI.GraphGadget( s )
 
-		g.setNodePosition( s["node1"], IECore.V2f( 100, 1000 ) )
-		g.setNodePosition( s["node2"], IECore.V2f( -10, 500 ) )
-		g.setNodePosition( s["node3"], IECore.V2f( -5, 490 ) )
+		g.setNodePosition( s["node1"], imath.V2f( 100, 1000 ) )
+		g.setNodePosition( s["node2"], imath.V2f( -10, 500 ) )
+		g.setNodePosition( s["node3"], imath.V2f( -5, 490 ) )
 
 		o1 = g.getNodePosition( s["node3"] ) - g.getNodePosition( s["node2"] )
 
@@ -441,7 +440,7 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		o2 = g.getNodePosition( s["node3"] ) - g.getNodePosition( s["node2"] )
 		self.assertEqual( o1, o2 )
 
-		self.assertEqual( g.getNodePosition( s["node1"] ), IECore.V2f( 100, 1000 ) )
+		self.assertEqual( g.getNodePosition( s["node1"] ), imath.V2f( 100, 1000 ) )
 		self.assertTrue( g.getNodePosition( s["node2"] ).x > g.getNodePosition( s["node1"] ).x )
 		self.assertAlmostEqual( g.getNodePosition( s["node1"] ).y, g.getNodePosition( s["node2"] ).y, 2 )
 
@@ -456,19 +455,19 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
 		g = GafferUI.GraphGadget( s )
 
-		g.setNodePosition( s["node1"], IECore.V2f( 10, 12 ) )
-		g.setNodePosition( s["node2"], IECore.V2f( 50, 14 ) )
+		g.setNodePosition( s["node1"], imath.V2f( 10, 12 ) )
+		g.setNodePosition( s["node2"], imath.V2f( 50, 14 ) )
 
 		o1 = g.getNodePosition( s["node2"] ) - g.getNodePosition( s["node1"] )
 
-		g.getLayout().positionNodes( g, Gaffer.StandardSet( [ s["node1"], s["node2"] ] ), IECore.V2f( -100, -20 ) )
+		g.getLayout().positionNodes( g, Gaffer.StandardSet( [ s["node1"], s["node2"] ] ), imath.V2f( -100, -20 ) )
 
 		o2 = g.getNodePosition( s["node2"] ) - g.getNodePosition( s["node1"] )
 		self.assertEqual( o1, o2 )
 
 		self.assertEqual(
 			( g.getNodePosition( s["node1"] ) + g.getNodePosition( s["node2"] ) ) / 2.0,
-			IECore.V2f( -100, -20 )
+			imath.V2f( -100, -20 )
 		)
 
 	def testImpossibleSiblingOrdering( self ) :
@@ -566,9 +565,9 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		s["t2"] = LayoutNode()
 		s["t3"] = LayoutNode()
 
-		s["t1"]["left1"].setInput( s["s"]["bottom1"] )
-		s["t2"]["left1"].setInput( s["s"]["bottom1"] )
-		s["t3"]["left1"].setInput( s["s"]["bottom1"] )
+		s["t1"]["left0"].setInput( s["s"]["bottom1"] )
+		s["t2"]["left0"].setInput( s["s"]["bottom1"] )
+		s["t3"]["left0"].setInput( s["s"]["bottom1"] )
 
 		g = GafferUI.GraphGadget( s )
 		g.getLayout().layoutNodes( g )
@@ -669,9 +668,9 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
 			bound = nodeGadget.transformedBound( graphGadget )
 			bounds.append(
-				IECore.Box2f(
-					IECore.V2f( bound.min.x, bound.min.y ),
-					IECore.V2f( bound.max.x, bound.max.y ),
+				imath.Box2f(
+					imath.V2f( bound.min().x, bound.min().y ),
+					imath.V2f( bound.max().x, bound.max().y ),
 				)
 			)
 
@@ -692,7 +691,7 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
 		g = GafferUI.GraphGadget( s )
 		backdropBound = g.nodeGadget( s["b"] ).transformedBound( g )
-		fallbackPosition = IECore.V2f( backdropBound.center().x, backdropBound.center().y )
+		fallbackPosition = imath.V2f( backdropBound.center().x, backdropBound.center().y )
 
 		g.getLayout().positionNode( g, s["n"], fallbackPosition )
 		self.assertEqual( g.getNodePosition( s["n"] ), fallbackPosition )
@@ -727,13 +726,197 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["n"] = GafferTest.AddNode()
-		s["s"] = Gaffer.SwitchComputeNode()
+		s["s"] = Gaffer.Switch()
 
 		g = GafferUI.GraphGadget( s )
 		g.getLayout().connectNode( g, s["s"], Gaffer.StandardSet( [ s["n"] ] ) )
 
 		self.assertTrue( isinstance( s["s"]["in"][0], Gaffer.IntPlug ) )
 		self.assertTrue( s["s"]["in"][0].getInput().isSame( s["n"]["sum"] ) )
+
+	def testSimpleAuxiliaryConnectionToNode( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = LayoutNode()
+		Gaffer.Metadata.registerValue( s["n"]["top0"], "nodule:type", "" )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['n']['top0'] = 0" )
+
+		ge = GafferUI.GraphEditor( s )
+		g = ge.graphGadget()
+
+		g.getLayout().layoutNodes( g )
+
+		# In this simple case the expression node needs to be put to the left
+		# of the affected node.
+
+		self.assertTrue( g.getNodePosition( s["n"] ).x > g.getNodePosition( s["e"] ).x )
+		self.assertAlmostEqual(  g.getNodePosition( s["n"] ).y, g.getNodePosition( s["e"] ).y, delta = 0.001 )
+
+		expressionPosition = g.getNodePosition( s["e"] )
+
+		# If the expression has an input, we don't want that to affect the
+		# expression's position if it has only one output like in this case.
+
+		s["n2"] = LayoutNode()
+		g.setNodePosition( s["n2"], g.getNodePosition( s["n"] ) + imath.V2f( 0, 10 ) )
+
+		s["e"].setExpression( "parent['n']['top0'] = parent['n2']['bottom0']" )
+
+		g.getLayout().layoutNodes( g )
+
+		self.assertAlmostEqual( g.getNodePosition( s["e"] ).x, expressionPosition.x, delta = 0.001 )
+		self.assertAlmostEqual( g.getNodePosition( s["e"] ).y, expressionPosition.y, delta = 0.001 )
+
+	def testSimpleAuxiliaryConnectionToShader( self ) :
+
+		# A shader is defined as a node that has data flowing left to right as
+		# opposed to top to bottom
+
+		s = Gaffer.ScriptNode()
+		s["n"] = LayoutNode()
+
+		Gaffer.Metadata.registerValue( s["n"]["left0"], "nodule:type", "" )
+
+		Gaffer.Metadata.registerValue( s["n"]["top0"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( s["n"]["top1"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( s["n"]["top2"], "nodule:type", "" )
+
+		Gaffer.Metadata.registerValue( s["n"]["bottom0"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( s["n"]["bottom1"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( s["n"]["bottom2"], "nodule:type", "" )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['n']['left0'] = 0" )
+
+		ge = GafferUI.GraphEditor( s )
+		g = ge.graphGadget()
+
+		g.getLayout().layoutNodes( g )
+
+		# Because the left edge is blocked by nodules, but the top edge isn't,
+		# auxiliary connections to this node should cause the expression to be
+		# put above the "shader"
+
+		self.assertTrue( g.getNodePosition( s["e"] ).y > g.getNodePosition( s["n"] ).y )
+		self.assertAlmostEqual(  g.getNodePosition( s["n"] ).x, g.getNodePosition( s["e"] ).x, delta = 0.001 )
+
+	def testSimpleAuxiliaryConnectionToNodule( self ) :
+
+		# The nodule's tangent will determine how the auxiliary node is positioned.
+
+		s = Gaffer.ScriptNode()
+		s["n"] = LayoutNode()
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['n']['top1'] = 0" )
+
+		ge = GafferUI.GraphEditor( s )
+		g = ge.graphGadget()
+
+		g.getLayout().layoutNodes( g )
+
+		affectedNodeBounds = g.nodeGadget( s["n"] ).transformedBound()
+
+		self.assertTrue( g.getNodePosition( s["e"] ).y > g.getNodePosition( s["n"] ).y )
+		self.assertTrue( affectedNodeBounds.min().x < g.getNodePosition( s["e"] ).x < affectedNodeBounds.max().x )
+
+		s["e"].setExpression( "parent['n']['left1'] = 0" )
+
+		g.getLayout().layoutNodes( g )
+
+		self.assertTrue( g.getNodePosition( s["n"] ).x > g.getNodePosition( s["e"] ).x )
+		self.assertTrue( affectedNodeBounds.min().y < g.getNodePosition( s["e"] ).y < affectedNodeBounds.max().y )
+
+	def testMultipleAuxiliaryConnectionsToNode( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = LayoutNode()
+
+		Gaffer.Metadata.registerValue( s["n"]["left0"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( s["n"]["left1"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( s["n"]["left2"], "nodule:type", "" )
+
+		s["e1"] = Gaffer.Expression()
+		s["e1"].setExpression( "parent['n']['left0'] = 0" )
+
+		s["e2"] = Gaffer.Expression()
+		s["e2"].setExpression( "parent['n']['left1'] = 0" )
+
+		s["e3"] = Gaffer.Expression()
+		s["e3"].setExpression( "parent['n']['left2'] = 0" )
+
+		ge = GafferUI.GraphEditor( s )
+		g = ge.graphGadget()
+
+		g.getLayout().layoutNodes( g )
+
+		# All expression nodes needs to be stacked above each other on the left of the affected node
+
+		self.assertTrue( g.getNodePosition( s["n"] ).x > g.getNodePosition( s["e1"] ).x )
+		self.assertAlmostEqual( g.getNodePosition( s["e1"] ).x, g.getNodePosition( s["e2"] ).x, delta = 0.001 )
+		self.assertAlmostEqual( g.getNodePosition( s["e2"] ).x, g.getNodePosition( s["e3"] ).x, delta = 0.001 )
+
+	def testAuxiliaryConnectionsToMultipleNodes( self ) :
+
+		# If an AuxiliaryNode is affecting multiple nodes, it's going to be
+		# positioned between all nodes it has connections to.
+
+		s = Gaffer.ScriptNode()
+
+		s["o"] = LayoutNode()
+		Gaffer.Metadata.registerValue( s["o"]["left0"], "nodule:type", "" )
+
+		s["i1"] = LayoutNode()
+		Gaffer.Metadata.registerValue( s["i1"]["left0"], "nodule:type", "" )
+
+		s["i2"] = LayoutNode()
+		Gaffer.Metadata.registerValue( s["i2"]["left0"], "nodule:type", "" )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['i1']['left0'] = 0\nparent['i2']['left0'] = parent['o']['right0']" )
+
+		ge = GafferUI.GraphEditor( s )
+		g = ge.graphGadget()
+
+		g.setNodePosition( s["i1"], imath.V2f( 20, 20 ) )
+		g.setNodePosition( s["i2"], imath.V2f( 20, -20 ) )
+		g.setNodePosition( s["o"], imath.V2f( -20, 0 ) )
+
+		g.getLayout().layoutNodes( g )
+
+		oBounds = g.nodeGadget( s["o"] ).transformedBound()
+		i1Bounds = g.nodeGadget( s["i1"] ).transformedBound()
+		i2Bounds = g.nodeGadget( s["i2"] ).transformedBound()
+
+		expressionPosition = g.getNodePosition( s["e"] )
+
+		self.assertTrue( expressionPosition.x < i1Bounds.min().x )
+		self.assertTrue( expressionPosition.x < i2Bounds.min().x )
+		self.assertTrue( expressionPosition.x > oBounds.max().x )
+
+		self.assertTrue( expressionPosition.y < i1Bounds.min().y )
+		self.assertTrue( expressionPosition.y > i2Bounds.max().y )
+
+	def testConnectNameSwitch( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.AddNode()
+		s["s"] = Gaffer.NameSwitch()
+
+		g = GafferUI.GraphGadget( s )
+		g.getLayout().connectNode( g, s["s"], Gaffer.StandardSet( [ s["n"] ] ) )
+
+		self.assertIsInstance( s["s"]["in"][0], Gaffer.NameValuePlug )
+		self.assertTrue( isinstance( s["s"]["in"][0]["value"], Gaffer.IntPlug ) )
+		self.assertEqual( s["s"]["in"][0]["value"].getInput(), s["n"]["sum"] )
+
+		s["c"] = Gaffer.ContextVariables()
+		g.getLayout().connectNode( g, s["c"], Gaffer.StandardSet( [ s["s"] ] ) )
+
+		self.assertIsInstance( s["c"]["in"], Gaffer.IntPlug )
+		self.assertEqual( s["c"]["in"].getInput(), s["s"]["out"]["value"] )
 
 if __name__ == "__main__":
 	unittest.main()

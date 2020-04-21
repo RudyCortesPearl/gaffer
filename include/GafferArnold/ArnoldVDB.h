@@ -37,22 +37,23 @@
 #ifndef GAFFERARNOLD_ARNOLDVDB_H
 #define GAFFERARNOLD_ARNOLDVDB_H
 
-#include "GafferScene/ObjectSource.h"
-
+#include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
+
+#include "GafferScene/ObjectSource.h"
 
 namespace GafferArnold
 {
 
-class ArnoldVDB : public GafferScene::ObjectSource
+class GAFFERARNOLD_API ArnoldVDB : public GafferScene::ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferArnold::ArnoldVDB, ArnoldVDBTypeId, GafferScene::ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldVDB, ArnoldVDBTypeId, GafferScene::ObjectSource );
 
 		ArnoldVDB( const std::string &name=defaultName<ArnoldVDB>() );
-		virtual ~ArnoldVDB();
+		~ArnoldVDB() override;
 
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
@@ -72,15 +73,12 @@ class ArnoldVDB : public GafferScene::ObjectSource
 		Gaffer::FloatPlug *stepScalePlug();
 		const Gaffer::FloatPlug *stepScalePlug() const;
 
-		Gaffer::StringPlug *dsoPlug();
-		const Gaffer::StringPlug *dsoPlug() const;
-
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
 	private :
 

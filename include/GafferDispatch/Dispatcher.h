@@ -37,21 +37,24 @@
 #ifndef GAFFERDISPATCH_DISPATCHER_H
 #define GAFFERDISPATCH_DISPATCHER_H
 
-#include <string>
-#include <vector>
-#include <map>
-#include <set>
+#include "GafferDispatch/Export.h"
+#include "GafferDispatch/TaskNode.h"
 
-#include "boost/signals.hpp"
+#include "Gaffer/CatchingSignalCombiner.h"
+#include "Gaffer/NumericPlug.h"
 
 #include "IECore/CompoundData.h"
 #include "IECore/FrameList.h"
 #include "IECore/RunTimeTyped.h"
+#include "IECore/StringAlgo.h"
 
-#include "Gaffer/NumericPlug.h"
+#include "boost/signals.hpp"
 
-#include "GafferDispatch/TaskNode.h"
-#include "GafferDispatchBindings/DispatcherBinding.h" // to enable friend declaration for TaskBatch.
+#include <functional>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
 namespace Gaffer
 {
@@ -95,29 +98,34 @@ IE_CORE_FORWARDDECLARE( Dispatcher )
 /// of Context specific Tasks from TaskNodes which exist within a ScriptNode.
 /// Dispatchers can also modify TaskNodes during construction, adding
 /// plugs which affect Task execution.
-class Dispatcher : public Gaffer::Node
+class GAFFERDISPATCH_API Dispatcher : public Gaffer::Node
 {
 	public :
 
 		Dispatcher( const std::string &name=defaultName<Dispatcher>() );
-		virtual ~Dispatcher();
+		~Dispatcher() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferDispatch::Dispatcher, DispatcherTypeId, Gaffer::Node );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferDispatch::Dispatcher, DispatcherTypeId, Gaffer::Node );
 
 		typedef boost::signal<bool (const Dispatcher *, const std::vector<TaskNodePtr> &), Detail::PreDispatchSignalCombiner> PreDispatchSignal;
-		typedef boost::signal<void (const Dispatcher *, const std::vector<TaskNodePtr> &, bool)> PostDispatchSignal;
-
+		typedef boost::signal<void (const Dispatcher *, const std::vector<TaskNodePtr> &), Gaffer::CatchingSignalCombiner<void> > DispatchSignal;
+		typedef boost::signal<void (const Dispatcher *, const std::vector<TaskNodePtr> &, bool), Gaffer::CatchingSignalCombiner<void> > PostDispatchSignal;
 		//! @name Dispatch Signals
 		/// These signals are emitted on dispatch events for any registered Dispatcher instance.
 		////////////////////////////////////////////////////////////////////////////////////////
 		//@{
-		/// Called when any dispatcher is about to dispatch nodes. Slots should have the
+		/// Called when any dispatcher might begin to dispatch nodes. Slots should have the
 		/// signature `bool slot( dispatcher, nodes )`, and may return True to cancel
 		/// the dispatch, or False to allow it to continue.
 		static PreDispatchSignal &preDispatchSignal();
-		/// Called after any dispatcher has finished dispatching nodes. Slots should have the
-		/// signature `void slot( dispatcher, nodes, bool )`. The third argument will be True
-		/// if the process was successful, and False otherwise.
+		/// Called when any dispatcher is going to dispatch nodes. Slots should have the
+		/// signature `bool slot( dispatcher, nodes )`. This differs from the preDispatchSignal
+		/// in that it is triggered when dispatching is imminent and non-cancellable.
+		static DispatchSignal &dispatchSignal();
+		/// Called after any dispatcher has finished dispatching nodes, or after a pending dispatch
+		/// has been cancelled by the preDispatchSignal slots. Slots should have the signature
+		/// `void slot( dispatcher, nodes, bool )`. The third argument will be True if the process
+		/// was successful, and False otherwise.
 		static PostDispatchSignal &postDispatchSignal();
 		//@}
 
@@ -170,7 +178,7 @@ class Dispatcher : public Gaffer::Node
 		//@}
 
 		/// A function which creates a Dispatcher.
-		typedef boost::function<DispatcherPtr ()> Creator;
+		typedef std::function<DispatcherPtr ()> Creator;
 		/// SetupPlugsFn may be registered along with a Dispatcher Creator. It will be called by setupPlugs,
 		/// along with all other registered SetupPlugsFns. It is recommended that each registered dispatcher
 		/// store its plugs contained within a dedicated parent Plug, named according to the registration
@@ -180,7 +188,7 @@ class Dispatcher : public Gaffer::Node
 		/// the TaskNode constructor, the non-dynamic plugs will always be created according to the current
 		/// definition, and will not be serialized into scripts. The downside of using non-dynamic plugs is that
 		/// loading a script before all Dispatchers have been registered could result in lost settings.
-		typedef boost::function<void ( Gaffer::Plug *parentPlug )> SetupPlugsFn;
+		typedef std::function<void ( Gaffer::Plug *parentPlug )> SetupPlugsFn;
 
 		//! @name Registration
 		/// Utility functions for registering and retrieving Dispatchers.
@@ -188,12 +196,16 @@ class Dispatcher : public Gaffer::Node
 		//@{
 		/// Create a registered Dispatcher of the specified type.
 		static DispatcherPtr create( const std::string &dispatcherType );
+		/// Create any dispatchers if the type matches the pattern.
+		static std::vector<DispatcherPtr> createMatching( const IECore::StringAlgo::MatchPattern &pattern );
 		static const std::string &getDefaultDispatcherType();
 		static void setDefaultDispatcherType( const std::string &dispatcherType );
 		/// Register a Dispatcher creation function.
-		static void registerDispatcher( const std::string &dispatcherType, Creator creator, SetupPlugsFn setupPlugsFn = 0 );
+		static void registerDispatcher( const std::string &dispatcherType, Creator creator, SetupPlugsFn setupPlugsFn = nullptr );
 		/// Fills the vector with the names of all the registered Dispatcher creators.
 		static void registeredDispatchers( std::vector<std::string> &dispatcherTypes );
+		/// Removes a dispatcher from the registry
+		static void deregisterDispatcher( const std::string &dispatcherType );
 		//@}
 
 	protected :
@@ -242,7 +254,7 @@ class Dispatcher : public Gaffer::Node
 			private :
 
 				TaskNode::ConstTaskPlugPtr m_plug;
-				Gaffer::ConstContextPtr m_context;
+				Gaffer::ContextPtr m_context;
 				IECore::CompoundDataPtr m_blindData;
 				std::vector<float> m_frames;
 				TaskBatches m_preTasks;
@@ -266,7 +278,7 @@ class Dispatcher : public Gaffer::Node
 
 	private :
 
-		std::string createJobDirectory( const Gaffer::Context *context ) const;
+		void createJobDirectory( const Gaffer::ScriptNode *script, Gaffer::Context *context ) const;
 		mutable std::string m_jobDirectory;
 
 		void executeAndPruneImmediateBatches( TaskBatch *batch, bool immediate = false ) const;
@@ -278,10 +290,10 @@ class Dispatcher : public Gaffer::Node
 
 		static size_t g_firstPlugIndex;
 		static PreDispatchSignal g_preDispatchSignal;
+		static DispatchSignal g_dispatchSignal;
 		static PostDispatchSignal g_postDispatchSignal;
 		static std::string g_defaultDispatcherType;
 
-		friend void GafferDispatchBindings::bindDispatcher();
 };
 
 } // namespace GafferDispatch

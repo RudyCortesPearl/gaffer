@@ -35,6 +35,7 @@
 ##########################################################################
 
 import math
+import imath
 
 import IECore
 import Gaffer
@@ -43,7 +44,7 @@ Gaffer.Metadata.registerValue( "as:light:latlong_map_environment_edf", "type", "
 Gaffer.Metadata.registerValue( "as:light:latlong_map_environment_edf", "textureNameParameter", "radiance_map" )
 Gaffer.Metadata.registerValue( "as:light:latlong_map_environment_edf", "intensityParameter", "radiance_multiplier" )
 Gaffer.Metadata.registerValue( "as:light:latlong_map_environment_edf", "exposureParameter", "exposure" )
-Gaffer.Metadata.registerValue( "as:light:latlong_map_environment_edf", "visualiserOrientation", IECore.M44f().rotate( IECore.V3f( 0, 0.5 * math.pi, 0 ) ) )
+Gaffer.Metadata.registerValue( "as:light:latlong_map_environment_edf", "visualiserOrientation", imath.M44f().rotate( imath.V3f( 0, 0.5 * math.pi, 0 ) ) )
 
 Gaffer.Metadata.registerValue( "as:light:hosek_environment_edf", "type", "environment" )
 
@@ -64,3 +65,8 @@ Gaffer.Metadata.registerValue( "as:light:directional_light", "type", "distant" )
 Gaffer.Metadata.registerValue( "as:light:directional_light", "intensityParameter", "irradiance_multiplier" )
 Gaffer.Metadata.registerValue( "as:light:directional_light", "exposureParameter", "exposure" )
 Gaffer.Metadata.registerValue( "as:light:directional_light", "colorParameter", "irradiance" )
+
+Gaffer.Metadata.registerValue( "as:light:diffuse_edf", "type", "quad" )
+Gaffer.Metadata.registerValue( "as:light:diffuse_edf", "intensityParameter", "radiance_multiplier" )
+Gaffer.Metadata.registerValue( "as:light:diffuse_edf", "exposureParameter", "exposure" )
+Gaffer.Metadata.registerValue( "as:light:diffuse_edf", "colorParameter", "radiance" )

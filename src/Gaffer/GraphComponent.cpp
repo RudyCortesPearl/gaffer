@@ -35,29 +35,85 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <set>
-
-#include "boost/format.hpp"
-#include "boost/bind.hpp"
-#include "boost/regex.hpp"
-#include "boost/lexical_cast.hpp"
-
-#include "IECore/Exception.h"
-
 #include "Gaffer/GraphComponent.h"
-#include "Gaffer/StringAlgo.h"
+
 #include "Gaffer/Action.h"
 #include "Gaffer/DirtyPropagationScope.h"
+
+#include "IECore/Exception.h"
+#include "IECore/StringAlgo.h"
+
+#include "boost/bind.hpp"
+#include "boost/format.hpp"
+#include "boost/lexical_cast.hpp"
+#include "boost/regex.hpp"
+
+#include <set>
 
 using namespace Gaffer;
 using namespace IECore;
 using namespace std;
 
-IE_CORE_DEFINERUNTIMETYPED( GraphComponent );
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+void validateName( const InternedString &name )
+{
+	static boost::regex g_validator( "^[A-Za-z_]+[A-Za-z_0-9]*" );
+	if( !regex_match( name.c_str(), g_validator ) )
+	{
+		std::string what = boost::str( boost::format( "Invalid name \"%s\"" ) % name.string() );
+		throw IECore::Exception( what );
+	}
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// GraphComponent::Signals
+//
+// We allocate these separately because they have a significant overhead
+// in both memory and construction time, and for many GraphComponent
+// instances they are never actually used.
+//////////////////////////////////////////////////////////////////////////
+
+struct GraphComponent::Signals : boost::noncopyable
+{
+
+	UnarySignal nameChangedSignal;
+	BinarySignal childAddedSignal;
+	BinarySignal childRemovedSignal;
+	BinarySignal parentChangedSignal;
+
+	// Utility to emit a signal if it has been created, but do nothing
+	// if it hasn't.
+	template<typename SignalMemberPointer, typename... Args>
+	static void emitLazily( Signals *signals, SignalMemberPointer signalMemberPointer, Args&&... args )
+	{
+		if( !signals )
+		{
+			return;
+		}
+		auto &signal = signals->*signalMemberPointer;
+		signal( std::forward<Args>( args )... );
+	}
+
+};
+
+//////////////////////////////////////////////////////////////////////////
+// GraphComponent
+//////////////////////////////////////////////////////////////////////////
+
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( GraphComponent );
 
 GraphComponent::GraphComponent( const std::string &name )
-	: m_name( name ), m_parent( NULL )
+	: m_name( name ), m_parent( nullptr )
 {
+	validateName( m_name );
 }
 
 GraphComponent::~GraphComponent()
@@ -69,21 +125,17 @@ GraphComponent::~GraphComponent()
 	// childRemoved signals for this object, which is undesirable as it's dying.
 	for( ChildContainer::iterator it=m_children.begin(); it!=m_children.end(); it++ )
 	{
-		(*it)->m_parent = NULL;
-		(*it)->parentChanging( NULL );
-		(*it)->parentChangedSignal()( (*it).get(), NULL );
+		(*it)->m_parent = nullptr;
+		(*it)->parentChanging( nullptr );
+		(*it)->parentChanged( nullptr );
+		Signals::emitLazily( (*it)->m_signals.get(), &Signals::parentChangedSignal, (*it).get(), nullptr );
 	}
 }
 
 const IECore::InternedString &GraphComponent::setName( const IECore::InternedString &name )
 {
 	// make sure the name is valid
-	static boost::regex validator( "^[A-Za-z_]+[A-Za-z_0-9]*" );
-	if( !regex_match( name.c_str(), validator ) )
-	{
-		std::string what = boost::str( boost::format( "Invalid name \"%s\"" ) % name.string() );
-		throw IECore::Exception( what );
-	}
+	validateName( name );
 
 	// make sure the name is unique
 	IECore::InternedString newName = name;
@@ -116,7 +168,7 @@ const IECore::InternedString &GraphComponent::setName( const IECore::InternedStr
 				}
 				if( (*it)->m_name.value().compare( 0, prefix.size(), prefix ) == 0 )
 				{
-					char *endPtr = NULL;
+					char *endPtr = nullptr;
 					long siblingSuffix = strtol( (*it)->m_name.value().c_str() + prefix.size(), &endPtr, 10 );
 					if( *endPtr == '\0' )
 					{
@@ -124,8 +176,7 @@ const IECore::InternedString &GraphComponent::setName( const IECore::InternedStr
 					}
 				}
 			}
-			static boost::format formatter( "%s%d" );
-			newName = boost::str( formatter % prefix % suffix );
+			newName = prefix + std::to_string( suffix );
 		}
 	}
 
@@ -149,7 +200,7 @@ const IECore::InternedString &GraphComponent::setName( const IECore::InternedStr
 void GraphComponent::setNameInternal( const IECore::InternedString &name )
 {
 	m_name = name;
-	nameChangedSignal()( this );
+	Signals::emitLazily( m_signals.get(), &Signals::nameChangedSignal, this );
 }
 
 const IECore::InternedString &GraphComponent::getName() const
@@ -159,7 +210,7 @@ const IECore::InternedString &GraphComponent::getName() const
 
 std::string GraphComponent::fullName() const
 {
-	return relativeName( NULL );
+	return relativeName( nullptr );
 }
 
 std::string GraphComponent::relativeName( const GraphComponent *ancestor ) const
@@ -181,7 +232,7 @@ std::string GraphComponent::relativeName( const GraphComponent *ancestor ) const
 
 GraphComponent::UnarySignal &GraphComponent::nameChangedSignal()
 {
-	return m_nameChangedSignal;
+	return signals()->nameChangedSignal;
 }
 
 bool GraphComponent::acceptsChild( const GraphComponent *potentialChild ) const
@@ -214,13 +265,13 @@ void GraphComponent::addChild( GraphComponentPtr child )
 			if( child->m_parent->isInstanceOf( (IECore::TypeId)ScriptNodeTypeId ) )
 			{
 				// use raw pointer to avoid circular reference between script and undo queue
-				undoFn = boost::bind( &GraphComponent::addChildInternal, child->m_parent, child );
+				undoFn = boost::bind( &GraphComponent::addChildInternal, child->m_parent, child, child->index() );
 			}
 			else
 			{
 				// use smart pointer to ensure parent remains alive, even if something unscrupulous
 				// messes it with non-undoable actions that aren't stored in the undo queue.
-				undoFn = boost::bind( &GraphComponent::addChildInternal, GraphComponentPtr( child->m_parent ), child );
+				undoFn = boost::bind( &GraphComponent::addChildInternal, GraphComponentPtr( child->m_parent ), child, child->index() );
 			}
 		}
 		else
@@ -232,7 +283,7 @@ void GraphComponent::addChild( GraphComponentPtr child )
 		Action::enact(
 			this,
 			// ok to use raw pointer for this - lifetime of subject guaranteed.
-			boost::bind( &GraphComponent::addChildInternal, this, child ),
+			boost::bind( &GraphComponent::addChildInternal, this, child, m_children.size() ),
 			undoFn
 		);
 	}
@@ -241,13 +292,13 @@ void GraphComponent::addChild( GraphComponentPtr child )
 		// we have no references to us - chances are we're in construction still. adding ourselves to an
 		// undo queue is impossible, and creating temporary smart pointers to ourselves (as above) will
 		// cause our destruction before construction completes. just do the work directly.
-		addChildInternal( child );
+		addChildInternal( child, m_children.size() );
 	}
 }
 
 void GraphComponent::setChild( const IECore::InternedString &name, GraphComponentPtr child )
 {
-	GraphComponentPtr existingChild = getChild<GraphComponent>( name );
+	GraphComponentPtr existingChild = getChild( name );
 	if( existingChild && existingChild == child )
 	{
 		return;
@@ -280,7 +331,7 @@ void GraphComponent::throwIfChildRejected( const GraphComponent *potentialChild 
 
 	if( !acceptsChild( potentialChild ) )
 	{
-		string what = boost::str( boost::format( "Parent \"%s\" rejects child \"%s\"." ) % m_name.value() % potentialChild->m_name.value() );
+		string what = boost::str( boost::format( "Parent \"%s\" ( of type %s ) rejects child \"%s\" ( of type %s )." ) % m_name.value() % typeName() % potentialChild->m_name.value() % potentialChild->typeName() );
 		throw Exception( what );
 	}
 
@@ -291,22 +342,24 @@ void GraphComponent::throwIfChildRejected( const GraphComponent *potentialChild 
 	}
 }
 
-void GraphComponent::addChildInternal( GraphComponentPtr child )
+void GraphComponent::addChildInternal( GraphComponentPtr child, size_t index )
 {
 	child->parentChanging( this );
 	GraphComponent *previousParent = child->m_parent;
 	if( previousParent )
 	{
 		// remove the child from the previous parent, but don't emit parentChangedSignal.
-		// this prevents a parent changed signal with new parent NULL followed by a parent
+		// this prevents a parent changed signal with new parent null followed by a parent
 		// changed signal with the new parent.
 		previousParent->removeChildInternal( child, false );
 	}
-	m_children.push_back( child );
+
+	m_children.insert( m_children.begin() + min( index, m_children.size() ), child );
 	child->m_parent = this;
 	child->setName( child->m_name.value() ); // to force uniqueness
-	childAddedSignal()( this, child.get() );
-	child->parentChangedSignal()( child.get(), previousParent );
+	Signals::emitLazily( m_signals.get(), &Signals::childAddedSignal, this, child.get() );
+	child->parentChanged( previousParent );
+	Signals::emitLazily( child->m_signals.get(), &Signals::parentChangedSignal, child.get(), previousParent );
 }
 
 void GraphComponent::removeChild( GraphComponentPtr child )
@@ -325,7 +378,7 @@ void GraphComponent::removeChild( GraphComponentPtr child )
 			// ok to bind raw pointers to this, because enact() guarantees
 			// the lifetime of the subject.
 			boost::bind( &GraphComponent::removeChildInternal, this, child, true ),
-			boost::bind( &GraphComponent::addChildInternal, this, child )
+			boost::bind( &GraphComponent::addChildInternal, this, child, child->index() )
 		);
 	}
 	else
@@ -351,7 +404,7 @@ void GraphComponent::removeChildInternal( GraphComponentPtr child, bool emitPare
 {
 	if( emitParentChanged )
 	{
-		child->parentChanging( NULL );
+		child->parentChanging( nullptr );
 	}
 	ChildContainer::iterator it = std::find( m_children.begin(), m_children.end(), child );
 	if( it == m_children.end() || child->m_parent != this )
@@ -366,12 +419,20 @@ void GraphComponent::removeChildInternal( GraphComponentPtr child, bool emitPare
 		throw Exception( boost::str( boost::format( "GraphComponent::removeChildInternal : \"%s\" is not a child of \"%s\"." ) % child->fullName() % fullName() ) );
 	}
 	m_children.erase( it );
-	child->m_parent = NULL;
-	childRemovedSignal()( this, child.get() );
+	child->m_parent = nullptr;
+	Signals::emitLazily( m_signals.get(), &Signals::childRemovedSignal, this, child.get() );
 	if( emitParentChanged )
 	{
-		child->parentChangedSignal()( child.get(), this );
+		child->parentChanged( this );
+		Signals::emitLazily( child->m_signals.get(), &Signals::parentChangedSignal, child.get(), this );
 	}
+}
+
+size_t GraphComponent::index() const
+{
+	assert( m_parent );
+	const ChildContainer &c = m_parent->m_children;
+	return std::find( c.begin(), c.end(), this ) - c.begin();
 }
 
 const GraphComponent::ChildContainer &GraphComponent::children() const
@@ -390,7 +451,7 @@ GraphComponent *GraphComponent::ancestor( IECore::TypeId type )
 		}
 		a = a->m_parent;
 	}
-	return NULL;
+	return nullptr;
 }
 
 const GraphComponent *GraphComponent::ancestor( IECore::TypeId type ) const
@@ -423,7 +484,7 @@ GraphComponent *GraphComponent::commonAncestor( const GraphComponent *other, IEC
 		}
 		ancestor = ancestor->m_parent;
 	}
-	return NULL;
+	return nullptr;
 
 }
 
@@ -448,20 +509,24 @@ bool GraphComponent::isAncestorOf( const GraphComponent *other ) const
 
 GraphComponent::BinarySignal &GraphComponent::childAddedSignal()
 {
-	return m_childAddedSignal;
+	return signals()->childAddedSignal;
 }
 
 GraphComponent::BinarySignal &GraphComponent::childRemovedSignal()
 {
-	return m_childRemovedSignal;
+	return signals()->childRemovedSignal;
 }
 
 GraphComponent::BinarySignal &GraphComponent::parentChangedSignal()
 {
-	return m_parentChangedSignal;
+	return signals()->parentChangedSignal;
 }
 
 void GraphComponent::parentChanging( Gaffer::GraphComponent *newParent )
+{
+}
+
+void GraphComponent::parentChanged( Gaffer::GraphComponent *oldParent )
 {
 }
 
@@ -489,4 +554,13 @@ std::string GraphComponent::unprefixedTypeName( const char *typeName )
 		result.erase( 0, colonPos + 1 );
 	}
 	return result;
+}
+
+GraphComponent::Signals *GraphComponent::signals()
+{
+	if( !m_signals )
+	{
+		m_signals.reset( new Signals );
+	}
+	return m_signals.get();
 }

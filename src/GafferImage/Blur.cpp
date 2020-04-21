@@ -34,24 +34,25 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/Blur.h"
-#include "GafferImage/Resample.h"
+
 #include "GafferImage/FilterAlgo.h"
+#include "GafferImage/Resample.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace Imath;
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( Blur );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Blur );
 
 const char *g_blurFilterName = "smoothGaussian";
 
 size_t Blur::g_firstPlugIndex = 0;
 
 Blur::Blur( const std::string &name )
-	:   ImageProcessor( name )
+	:   FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -158,7 +159,7 @@ const Resample *Blur::resample() const
 
 void Blur::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	if(
 		input == expandDataWindowPlug() ||
@@ -183,7 +184,7 @@ void Blur::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs )
 
 void Blur::hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hash( output, context, h );
+	FlatImageProcessor::hash( output, context, h );
 
 	if( output->parent<ValuePlug>() == filterScalePlug() )
 	{
@@ -213,7 +214,7 @@ void Blur::compute( ValuePlug *output, const Context *context ) const
 		return;
 	}
 
-	ImageProcessor::compute( output, context );
+	FlatImageProcessor::compute( output, context );
 }
 
 void Blur::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const

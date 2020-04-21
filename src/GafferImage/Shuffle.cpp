@@ -36,6 +36,8 @@
 
 #include "GafferImage/Shuffle.h"
 
+#include "GafferImage/ImageAlgo.h"
+
 using namespace std;
 using namespace IECore;
 using namespace Gaffer;
@@ -45,7 +47,7 @@ using namespace GafferImage;
 // Shuffle::ChannelPlug
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Shuffle::ChannelPlug );
+GAFFER_PLUG_DEFINE_TYPE( Shuffle::ChannelPlug );
 
 Shuffle::ChannelPlug::ChannelPlug( const std::string &name, Direction direction, unsigned flags)
 	:	ValuePlug( name, direction, flags )
@@ -100,7 +102,7 @@ PlugPtr Shuffle::ChannelPlug::createCounterpart( const std::string &name, Direct
 
 size_t Shuffle::g_firstPlugIndex = 0;
 
-IE_CORE_DEFINERUNTIMETYPED( Shuffle );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Shuffle );
 
 Shuffle::Shuffle( const std::string &name )
 	:	ImageProcessor( name )
@@ -112,6 +114,8 @@ Shuffle::Shuffle( const std::string &name )
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
+	outPlug()->deepPlug()->setInput( inPlug()->deepPlug() );
+	outPlug()->sampleOffsetsPlug()->setInput( inPlug()->sampleOffsetsPlug() );
 }
 
 Shuffle::~Shuffle()
@@ -136,7 +140,7 @@ void Shuffle::affects( const Gaffer::Plug *input, AffectedPlugsContainer &output
 	{
 		outputs.push_back( outPlug()->channelNamesPlug() );
 	}
-	else if( input == inPlug()->channelDataPlug() )
+	else if( input == inPlug()->channelDataPlug() || input == inPlug()->channelNamesPlug() )
 	{
 		outputs.push_back( outPlug()->channelDataPlug() );
 	}
@@ -178,13 +182,25 @@ void Shuffle::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffe
 {
 	std::string c = inChannelName( context->get<string>( ImagePlug::channelNameContextName ) );
 
-	if( c == "__black" || c == "" )
+	if( c == "__black" || c == "" || c == "__white")
 	{
-		h = ImagePlug::blackTile()->Object::hash();
-	}
-	else if( c == "__white" )
-	{
-		h = ImagePlug::whiteTile()->Object::hash();
+		const Imath::V2i tileOrigin = context->get<Imath::V2i>( ImagePlug::tileOriginContextName );
+
+		ImagePlug::ChannelDataScope channelDataScope( context );
+		channelDataScope.remove( ImagePlug::channelNameContextName );
+		channelDataScope.remove( ImagePlug::tileOriginContextName );
+		bool deep = inPlug()->deepPlug()->getValue();
+
+		if( !deep )
+		{
+			h = ( c == "__white" ) ? ImagePlug::whiteTile()->Object::hash() : ImagePlug::blackTile()->Object::hash();
+		}
+		else
+		{
+			channelDataScope.setTileOrigin( tileOrigin );
+			inPlug()->sampleOffsetsPlug()->hash( h );
+			h.append( c == "__white" );
+		}
 	}
 	else
 	{
@@ -198,13 +214,30 @@ IECore::ConstFloatVectorDataPtr Shuffle::computeChannelData( const std::string &
 {
 	std::string c = inChannelName( context->get<string>( ImagePlug::channelNameContextName ) );
 
-	if( c == "__black" || c == "" )
+	if( c == "__black" || c == "" || c == "__white")
 	{
-		return ImagePlug::blackTile();
-	}
-	else if( c == "__white" )
-	{
-		return ImagePlug::whiteTile();
+		ImagePlug::ChannelDataScope channelDataScope( context );
+		channelDataScope.remove( ImagePlug::channelNameContextName );
+		channelDataScope.remove( ImagePlug::tileOriginContextName );
+		bool deep = inPlug()->deepPlug()->getValue();
+
+		if( !deep )
+		{
+			return ( c == "__white" ) ? ImagePlug::whiteTile() : ImagePlug::blackTile();
+		}
+		else
+		{
+			channelDataScope.setTileOrigin( tileOrigin );
+			ConstIntVectorDataPtr sampleOffsets = inPlug()->sampleOffsetsPlug()->getValue();
+
+			FloatVectorDataPtr result = new FloatVectorData();
+			result->writable().resize(
+				sampleOffsets->readable()[ ImagePlug::tileSize() * ImagePlug::tileSize() - 1 ],
+				( c == "__white" ) ? 1.0f : 0.0f
+			);
+
+			return result;
+		}
 	}
 	else
 	{
@@ -221,7 +254,15 @@ std::string Shuffle::inChannelName( const std::string &outChannelName ) const
 	{
 		if( (*it)->outPlug()->getValue() == outChannelName )
 		{
-			return (*it)->inPlug()->getValue();
+			const string inChannelName = (*it)->inPlug()->getValue();
+			if( inChannelName == "__white" || ImageAlgo::channelExists( inPlug(), inChannelName ) )
+			{
+				return inChannelName;
+			}
+			else
+			{
+				return "__black";
+			}
 		}
 	}
 	return outChannelName;

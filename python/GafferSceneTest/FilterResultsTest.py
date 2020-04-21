@@ -63,7 +63,7 @@ class FilterResultsTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertEqual(
 			n["out"].getValue().value,
-			GafferScene.PathMatcher( [
+			IECore.PathMatcher( [
 				"/group/sphere",
 				"/group/plane"
 			] )
@@ -73,7 +73,7 @@ class FilterResultsTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertEqual(
 			n["out"].getValue().value,
-			GafferScene.PathMatcher( [
+			IECore.PathMatcher( [
 				"/group/plane"
 			] )
 		)
@@ -91,13 +91,13 @@ class FilterResultsTest( GafferSceneTest.SceneTestCase ) :
 		n["scene"].setInput( g["out"] )
 		n["filter"].setInput( f["out"] )
 
-		self.assertEqual( n["out"].getValue().value, GafferScene.PathMatcher() )
+		self.assertEqual( n["out"].getValue().value, IECore.PathMatcher() )
 
 		p["name"].setValue( "plain" )
 
 		self.assertEqual(
 			n["out"].getValue().value,
-			GafferScene.PathMatcher( [
+			IECore.PathMatcher( [
 				"/group/plain"
 			] )
 		)
@@ -133,11 +133,11 @@ class FilterResultsTest( GafferSceneTest.SceneTestCase ) :
 
 		script["instancer"] = GafferScene.Instancer()
 		script["instancer"]["in"].setInput( script["plane"]["out"] )
-		script["instancer"]["instance"].setInput( script["sphere"]["out"] )
+		script["instancer"]["prototypes"].setInput( script["sphere"]["out"] )
 		script["instancer"]["parent"].setValue( "/plane" )
 
 		script["filter"] = GafferScene.PathFilter()
-		script["filter"]["paths"].setValue( IECore.StringVectorData( [ "/plane/instances/*/sphere" ] ) )
+		script["filter"]["paths"].setValue( IECore.StringVectorData( [ "/plane/instances/sphere/*" ] ) )
 
 		script["filterResults"] = GafferScene.FilterResults()
 		script["filterResults"]["scene"].setInput( script["instancer"]["out"] )
@@ -151,12 +151,37 @@ class FilterResultsTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual(
 			script["filterResults"]["user"]["strings"].getValue(),
 			IECore.StringVectorData( [
-				"/plane/instances/0/sphere",
-				"/plane/instances/1/sphere",
-				"/plane/instances/2/sphere",
-				"/plane/instances/3/sphere",
+				"/plane/instances/sphere/0",
+				"/plane/instances/sphere/1",
+				"/plane/instances/sphere/2",
+				"/plane/instances/sphere/3",
 			] )
 		)
+
+	def testComputeCacheRecursion( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["plane"] = GafferScene.Plane()
+
+		script["filter1"] = GafferScene.PathFilter()
+		script["filter1"]["paths"].setValue( IECore.StringVectorData( [ "/*" ] ) )
+
+		script["filterResults1"] = GafferScene.FilterResults()
+		script["filterResults1"]["scene"].setInput( script["plane"]["out"] )
+		script["filterResults1"]["filter"].setInput( script["filter1"]["out"] )
+
+		script["filter2"] = GafferScene.PathFilter()
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( 'parent["filter2"]["paths"] = IECore.StringVectorData( parent["filterResults1"]["out"].value.paths() )')
+
+		script["filterResults2"] = GafferScene.FilterResults()
+		script["filterResults2"]["scene"].setInput( script["plane"]["out"] )
+		script["filterResults2"]["filter"].setInput( script["filter2"]["out"] )
+
+		h = script["filterResults2"]["out"].hash()
+		Gaffer.ValuePlug.clearCache()
+		script["filterResults2"]["out"].getValue( h )
 
 if __name__ == "__main__":
 	unittest.main()

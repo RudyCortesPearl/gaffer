@@ -34,20 +34,20 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/SimpleTypedData.h"
+#include "GafferScene/OpenGLRender.h"
 
 #include "IECoreGL/IECoreGL.h"
 #include "IECoreGL/Renderer.h"
 
-#include "GafferScene/OpenGLRender.h"
+#include "IECore/SimpleTypedData.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( OpenGLRender );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OpenGLRender );
 
 OpenGLRender::OpenGLRender( const std::string &name )
-	:	ExecutableRender( name )
+	:	Render( "OpenGL", name )
 {
 }
 
@@ -55,10 +55,3 @@ OpenGLRender::~OpenGLRender()
 {
 }
 
-IECore::RendererPtr OpenGLRender::createRenderer() const
-{
-	IECoreGL::init( false );
-	IECore::RendererPtr result = new IECoreGL::Renderer();
-	result->setOption( "gl:mode", new IECore::StringData( "immediate" ) );
-	return result;
-}

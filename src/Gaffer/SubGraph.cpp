@@ -36,10 +36,14 @@
 
 #include "Gaffer/SubGraph.h"
 
+#include "Gaffer/BoxOut.h"
+
 using namespace IECore;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( SubGraph );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SubGraph );
+
+static IECore::InternedString g_enabledName( "enabled" );
 
 SubGraph::SubGraph( const std::string &name )
 	:	DependencyNode( name )
@@ -57,12 +61,12 @@ void SubGraph::affects( const Plug *input, AffectedPlugsContainer &outputs ) con
 
 BoolPlug *SubGraph::enabledPlug()
 {
-	return getChild<BoolPlug>( "enabled" );
+	return getChild<BoolPlug>( g_enabledName );
 }
 
 const BoolPlug *SubGraph::enabledPlug() const
 {
-	return getChild<BoolPlug>( "enabled" );
+	return getChild<BoolPlug>( g_enabledName );
 }
 
 Plug *SubGraph::correspondingInput( const Plug *output )
@@ -72,46 +76,75 @@ Plug *SubGraph::correspondingInput( const Plug *output )
 
 const Plug *SubGraph::correspondingInput( const Plug *output ) const
 {
-	const Plug *internalOutput = output->getInput<Plug>();
+	const Plug *internalOutput = output->getInput();
 	if( !internalOutput )
 	{
-		return NULL;
+		return nullptr;
 	}
 
-	const DependencyNode *node = IECore::runTimeCast<const DependencyNode>( internalOutput->node() );
-	if( !node )
+	const Plug *internalInput = nullptr;
+	if( const BoxOut *boxOut = internalOutput->parent<BoxOut>() )
 	{
-		return NULL;
+		if( boxOut->passThroughPlug()->getInput() )
+		{
+			internalInput = boxOut->passThroughPlug();
+		}
+		else
+		{
+			// Prepare for legacy branch below
+			internalOutput = boxOut->plug()->getInput();
+			if( !internalOutput )
+			{
+				return nullptr;
+			}
+		}
 	}
 
-	const BoolPlug *externalEnabledPlug = enabledPlug();
-	if( !externalEnabledPlug )
-	{
-		return NULL;
-	}
-
-	const BoolPlug *internalEnabledPlug = node->enabledPlug();
-	if( !internalEnabledPlug )
-	{
-		return NULL;
-	}
-
-	if( internalEnabledPlug->getInput<Plug>() != externalEnabledPlug )
-	{
-		return NULL;
-	}
-
-	const Plug *internalInput = node->correspondingInput( internalOutput );
 	if( !internalInput )
 	{
-		return NULL;
+		// Legacy code path for networks made before BoxOut had pass-through support.
+		// These used Switch nodes wired up manually - this is the `node` referred to
+		// below.
+
+		const DependencyNode *node = IECore::runTimeCast<const DependencyNode>( internalOutput->node() );
+		if( !node )
+		{
+			return nullptr;
+		}
+
+		const BoolPlug *externalEnabledPlug = enabledPlug();
+		if( !externalEnabledPlug )
+		{
+			return nullptr;
+		}
+
+		const BoolPlug *internalEnabledPlug = node->enabledPlug();
+		if( !internalEnabledPlug )
+		{
+			return nullptr;
+		}
+
+		if( internalEnabledPlug->getInput() != externalEnabledPlug )
+		{
+			return nullptr;
+		}
+
+		internalInput = node->correspondingInput( internalOutput );
+		if( !internalInput )
+		{
+			return nullptr;
+		}
 	}
 
-	const Plug *input = internalInput->getInput<Plug>();
-	if( !input || input->node() != this )
+	const Plug *input = internalInput->getInput();
+	while( input )
 	{
-		return NULL;
+		if( input->node() == this )
+		{
+			return input;
+		}
+		input = input->getInput();
 	}
 
-	return input;
+	return nullptr;
 }

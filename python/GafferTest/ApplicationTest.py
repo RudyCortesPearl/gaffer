@@ -35,8 +35,10 @@
 ##########################################################################
 
 import os
+import time
 import subprocess32 as subprocess
 
+import IECore
 import Gaffer
 import GafferTest
 
@@ -46,8 +48,7 @@ class ApplicationTest( GafferTest.TestCase ) :
 
 		def f() :
 
-			import Gaffer._Gaffer as _Gaffer
-			with _Gaffer._tbb_task_scheduler_init( _Gaffer._tbb_task_scheduler_init.automatic ) :
+			with IECore.tbb_task_scheduler_init( IECore.tbb_task_scheduler_init.automatic ) :
 				raise Exception( "Woops!")
 
 		self.assertRaises( Exception, f )
@@ -62,6 +63,17 @@ class ApplicationTest( GafferTest.TestCase ) :
 
 		self.assertEqual( externalEnv["GAFFER_STARTUP_PATHS"], os.environ["GAFFER_STARTUP_PATHS"] )
 		self.assertEqual( externalEnv["GAFFER_APP_PATHS"], os.environ["GAFFER_APP_PATHS"] )
+
+	def testProcessName( self ) :
+
+		process = subprocess.Popen( [ "gaffer", "env", "sleep", "100" ] )
+		time.sleep( 1 )
+		command = subprocess.check_output( [ "ps", "-p", str( process.pid ), "-o", "command=" ] ).strip()
+		name = subprocess.check_output( [ "ps", "-p", str( process.pid ), "-o", "comm=" ] ).strip()
+		process.kill()
+
+		self.assertEqual( command, "gaffer env sleep 100" )
+		self.assertEqual( name, "gaffer" )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -34,27 +34,28 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/algorithm/string/predicate.hpp"
-#include "boost/container/flat_map.hpp"
-#include "boost/asio.hpp"
-#include "boost/lexical_cast.hpp"
+#include "GafferSceneUI/ShaderView.h"
 
-#include "Gaffer/Context.h"
-#include "Gaffer/Reference.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/PlugAlgo.h"
+#include "GafferScene/DeleteOutputs.h"
+#include "GafferScene/InteractiveRender.h"
+#include "GafferScene/Outputs.h"
+#include "GafferScene/Shader.h"
+#include "GafferScene/ShaderPlug.h"
 
 #include "GafferImage/Display.h"
 
-#include "GafferScene/Shader.h"
-#include "GafferScene/DeleteOutputs.h"
-#include "GafferScene/Outputs.h"
-#include "GafferScene/ShaderPlug.h"
-#include "GafferScene/InteractiveRender.h"
-#include "GafferScene/Preview/InteractiveRender.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/PlugAlgo.h"
+#include "Gaffer/Reference.h"
+#include "Gaffer/StringPlug.h"
 
-#include "GafferSceneUI/ShaderView.h"
+#include "IECoreImage/DisplayDriverServer.h"
+
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/asio.hpp"
+#include "boost/bind.hpp"
+#include "boost/container/flat_map.hpp"
+#include "boost/lexical_cast.hpp"
 
 using namespace Gaffer;
 using namespace GafferImage;
@@ -71,8 +72,9 @@ namespace
 typedef boost::container::flat_map<IECore::InternedString, ShaderView::RendererCreator> Renderers;
 Renderers &renderers()
 {
-	static Renderers r;
-	return r;
+	// See comment in `sceneCreators()`.
+	static Renderers *r = new Renderers;
+	return *r;
 }
 
 typedef std::pair<std::string, std::string> PrefixAndName;
@@ -80,8 +82,13 @@ typedef boost::container::flat_map<PrefixAndName, ShaderView::SceneCreator> Scen
 
 SceneCreators &sceneCreators()
 {
-	static SceneCreators sc;
-	return sc;
+	// Deliberately leaking here, as the alternative is for `sc` to
+	// be destroyed during shutdown when static destructors are run.
+	// Static destructors are run _after_ Python has shut down, and
+	// attempting to destroy SceneCreators containing PyObjects can
+	// lead to crashes in `subtype_dealloc()`.
+	static SceneCreators *sc = new SceneCreators;
+	return *sc;
 }
 
 typedef boost::signal<void ( const PrefixAndName & )> SceneRegistrationChangedSignal;
@@ -91,25 +98,10 @@ SceneRegistrationChangedSignal &sceneRegistrationChangedSignal()
 	return s;
 }
 
-int freePort()
+IECoreImage::DisplayDriverServer *displayDriverServer()
 {
-	typedef boost::asio::ip::tcp::resolver Resolver;
-	typedef boost::asio::io_service Service;
-	typedef boost::asio::ip::tcp::socket Socket;
-
-	// It is totally unclear why this would be so, but if we use the
-	// default constructor we get crashes when using `--std=c++11`.
-	// So we use the form that takes a concurrency hint instead. It
-	// doesn't seem to matter what value we pass (we can even pass the
-	// same value used internally by the default constructor), but we
-	// pass 1 because we don't really care about concurrency at all.
-	// An alternative workaround appears to be to make `service` static.
-	Service service( /* concurrency_hint = */ 1 );
-	Resolver resolver( service );
-	Resolver::iterator it = resolver.resolve( Resolver::query( "localhost", "" ) );
-	Socket socket( service, it->endpoint() );
-
-	return socket.local_endpoint().port();
+	static IECoreImage::DisplayDriverServerPtr g_server = new IECoreImage::DisplayDriverServer();
+	return g_server.get();
 }
 
 } // namespace
@@ -119,7 +111,7 @@ int freePort()
 //////////////////////////////////////////////////////////////////////////
 
 
-IE_CORE_DEFINERUNTIMETYPED( ShaderView );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ShaderView );
 
 ShaderView::ViewDescription<ShaderView> ShaderView::g_viewDescription( GafferScene::Shader::staticTypeId(), "out" );
 
@@ -138,21 +130,20 @@ ShaderView::ShaderView( const std::string &name )
 	m_imageConverter->addChild( deleteOutputs );
 	deleteOutputs->namesPlug()->setValue( "*" );
 
-	const int port = freePort();
-
 	OutputsPtr outputs = new Outputs();
 	m_imageConverter->addChild( outputs );
 	outputs->inPlug()->setInput( deleteOutputs->outPlug() );
-	IECore::DisplayPtr output = new IECore::Display( "beauty", "ieDisplay", "rgba" );
+	IECoreScene::OutputPtr output = new IECoreScene::Output( "beauty", "ieDisplay", "rgba" );
 	output->parameters()["quantize"] = new IECore::IntVectorData( std::vector<int>( 4, 0 ) );
 	output->parameters()["driverType"] = new IECore::StringData( "ClientDisplayDriver" );
 	output->parameters()["displayHost"] = new IECore::StringData( "localhost" );
-	output->parameters()["displayPort"] = new IECore::StringData( boost::lexical_cast<std::string>( port ) );
+	output->parameters()["displayPort"] = new IECore::StringData( boost::lexical_cast<std::string>( displayDriverServer()->portNumber() ) );
 	output->parameters()["remoteDisplayType"] = new IECore::StringData( "GafferImage::GafferDisplayDriver" );
+	output->parameters()["shaderView:id"] = new IECore::StringData( boost::lexical_cast<std::string>( this ) );
+
 	outputs->addOutput( "Beauty", output.get() );
 
 	DisplayPtr display = new Display;
-	display->portPlug()->setValue( port );
 	m_imageConverter->addChild( display );
 	PlugAlgo::promote( display->outPlug() );
 
@@ -169,6 +160,7 @@ ShaderView::ShaderView( const std::string &name )
 	plugSetSignal().connect( boost::bind( &ShaderView::plugSet, this, ::_1 ) );
 	plugDirtiedSignal().connect( boost::bind( &ShaderView::plugDirtied, this, ::_1 ) );
 	sceneRegistrationChangedSignal().connect( boost::bind( &ShaderView::sceneRegistrationChanged, this, ::_1 ) );
+	Display::driverCreatedSignal().connect( boost::bind( &ShaderView::driverCreated, this, ::_1, ::_2 ) );
 
 }
 
@@ -186,10 +178,20 @@ const Gaffer::StringPlug *ShaderView::scenePlug() const
 	return getChild<StringPlug>( "scene" );
 }
 
+GafferImage::Display *ShaderView::display()
+{
+	return m_imageConverter->getChild<Display>( "Display" );
+}
+
+const GafferImage::Display *ShaderView::display() const
+{
+	return m_imageConverter->getChild<Display>( "Display" );
+}
+
 std::string ShaderView::shaderPrefix() const
 {
 	IECore::ConstCompoundObjectPtr attributes = inPlug<ShaderPlug>()->attributes();
-	const char *shaders[] = { "surface", "displacement", "shader", NULL };
+	const char *shaders[] = { "surface", "displacement", "shader", nullptr };
 	for( IECore::CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; ++it )
 	{
 		for( const char **shader = shaders; *shader; ++shader )
@@ -246,7 +248,7 @@ void ShaderView::plugSet( Gaffer::Plug *plug )
 
 void ShaderView::plugDirtied( Gaffer::Plug *plug )
 {
-	if( plug == inPlug<Plug>() )
+	if( plug == inPlug() )
 	{
 		// The shader has changed, so we may need to update
 		// our scene and renderer. But we're not allowed to
@@ -296,9 +298,9 @@ void ShaderView::updateRenderer()
 		return;
 	}
 
-	m_renderer = NULL;
+	m_renderer = nullptr;
 	m_rendererShaderPrefix = shaderPrefix;
-	if( !inPlug<Plug>()->getInput<Plug>() )
+	if( !inPlug()->getInput() )
 	{
 		return;
 	}
@@ -311,7 +313,7 @@ void ShaderView::updateRenderer()
 	}
 
 	m_renderer = it->second();
-	m_renderer->getChild<ScenePlug>( "in" )->setInput(
+	m_renderer->inPlug()->setInput(
 		m_imageConverter->getChild<SceneNode>( "Outputs" )->outPlug()
 	);
 
@@ -320,13 +322,9 @@ void ShaderView::updateRenderer()
 
 void ShaderView::updateRendererContext()
 {
-	if( InteractiveRender *renderer = IECore::runTimeCast<InteractiveRender>( m_renderer.get() ) )
+	if( m_renderer )
 	{
-		renderer->setContext( getContext() );
-	}
-	else if( Preview::InteractiveRender *renderer = IECore::runTimeCast<Preview::InteractiveRender>( m_renderer.get() ) )
-	{
-		renderer->setContext( getContext() );
+		m_renderer->setContext( getContext() );
 	}
 }
 
@@ -337,7 +335,7 @@ void ShaderView::updateRendererState()
 		return;
 	}
 
-	m_renderer->getChild<IntPlug>( "state" )->setValue(
+	m_renderer->statePlug()->setValue(
 		viewportGadget()->visible() ? InteractiveRender::Running : InteractiveRender::Stopped
 	);
 }
@@ -350,7 +348,7 @@ void ShaderView::updateScene()
 		return;
 	}
 
-	m_scene = NULL;
+	m_scene = nullptr;
 	m_scenePrefixAndName = prefixAndName;
 
 	Scenes::const_iterator it = m_scenes.find( prefixAndName );
@@ -456,3 +454,15 @@ void ShaderView::registeredScenes( const std::string &shaderPrefix, std::vector<
 		}
 	}
 }
+
+void ShaderView::driverCreated( IECoreImage::DisplayDriver *driver, const IECore::CompoundData *parameters )
+{
+	if( const IECore::StringData *idData = parameters->member<IECore::StringData>( "shaderView:id" ) )
+	{
+		if( idData->readable() == boost::lexical_cast<std::string>( this ) )
+		{
+			display()->setDriver( driver );
+		}
+	}
+}
+

@@ -37,22 +37,23 @@
 #ifndef GAFFERSCENETEST_TESTSHADER_H
 #define GAFFERSCENETEST_TESTSHADER_H
 
-#include "GafferScene/Shader.h"
-
+#include "GafferSceneTest/Export.h"
 #include "GafferSceneTest/TypeIds.h"
+
+#include "GafferScene/Shader.h"
 
 namespace GafferSceneTest
 {
 
-class TestShader : public GafferScene::Shader
+class GAFFERSCENETEST_API TestShader : public GafferScene::Shader
 {
 
 	public :
 
 		TestShader( const std::string &name=defaultName<TestShader>() );
-		virtual ~TestShader();
+		~TestShader() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneTest::TestShader, TestShaderTypeId, GafferScene::Shader );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferSceneTest::TestShader, TestShaderTypeId, GafferScene::Shader );
 
 };
 

@@ -1,8 +1,18 @@
+<!-- !NO_SCROLLSPY -->
+
 Scripting Reference
 ===================
 
-- [Common Operations](CommonOperations/index.md)
-- [String Substitution Syntax](StringSubstitutionSyntax/index.md)
-- [Expressions](Expressions/index.md)
-- [Set Expressions](SetExpressions/index.md)
-- [Metadata](Metadata/index.md)
+<!-- TOC -->
+
+```eval_rst
+.. toctree::
+    :titlesonly:
+    :maxdepth: 1
+
+    CommonOperations/index.md
+    StringSubstitutionSyntax/index.md
+    Expressions/index.md
+    SetExpressions/index.md
+    Metadata/index.md
+```

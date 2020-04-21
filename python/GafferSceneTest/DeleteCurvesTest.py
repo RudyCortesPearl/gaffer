@@ -34,48 +34,50 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
+import IECoreScene
 import GafferScene
 import GafferSceneTest
-
 
 class DeleteCurvesTest( GafferSceneTest.SceneTestCase ) :
 
 	def makeCurves( self ) :
 
-		testObject = IECore.CurvesPrimitive(
+		testObject = IECoreScene.CurvesPrimitive(
 
 			IECore.IntVectorData( [ 7, 7 ] ),
 			IECore.CubicBasisf.bezier(),
 			False,
 			IECore.V3fVectorData(
 				[
-					IECore.V3f( 0, 0, 0 ),
-					IECore.V3f( 0, 1, 0 ),
-					IECore.V3f( 1, 1, 0 ),
-					IECore.V3f( 1, 0, 0 ),
-					IECore.V3f( 1, -1, 0 ),
-					IECore.V3f( 2, -1, 0 ),
-					IECore.V3f( 2, 0, 0 ),
+					imath.V3f( 0, 0, 0 ),
+					imath.V3f( 0, 1, 0 ),
+					imath.V3f( 1, 1, 0 ),
+					imath.V3f( 1, 0, 0 ),
+					imath.V3f( 1, -1, 0 ),
+					imath.V3f( 2, -1, 0 ),
+					imath.V3f( 2, 0, 0 ),
 
-					IECore.V3f( 0, 0, 0 ),
-					IECore.V3f( 0, 0, 1 ),
-					IECore.V3f( 1, 0, 1 ),
-					IECore.V3f( 1, 0, 0 ),
-					IECore.V3f( 1, 0, -1 ),
-					IECore.V3f( 2, 0, -1 ),
-					IECore.V3f( 2, 0, 0 )
+					imath.V3f( 0, 0, 0 ),
+					imath.V3f( 0, 0, 1 ),
+					imath.V3f( 1, 0, 1 ),
+					imath.V3f( 1, 0, 0 ),
+					imath.V3f( 1, 0, -1 ),
+					imath.V3f( 2, 0, -1 ),
+					imath.V3f( 2, 0, 0 )
 				]
 			)
 		)
 
-		testObject["a"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Constant, IECore.FloatData( 0.5 ) )
-		testObject["b"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Vertex, IECore.FloatVectorData( range( 0, 14 ) ) )
-		testObject["c"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.FloatVectorData( range( 0, 2 ) ) )
-		testObject["d"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Varying, IECore.FloatVectorData( range( 0, 6 ) ) )
-		testObject["e"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.FaceVarying, IECore.FloatVectorData( range( 0, 6 ) ) )
+		testObject["a"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Constant, IECore.FloatData( 0.5 ) )
+		testObject["b"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Vertex, IECore.FloatVectorData( range( 0, 14 ) ) )
+		testObject["c"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.FloatVectorData( range( 0, 2 ) ) )
+		testObject["d"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Varying, IECore.FloatVectorData( range( 0, 6 ) ) )
+		testObject["e"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.FaceVarying, IECore.FloatVectorData( range( 0, 6 ) ) )
 
-		testObject["deleteCurves"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Uniform, IECore.IntVectorData( [0, 1] ) )
+		testObject["deleteCurves"] = IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Uniform, IECore.IntVectorData( [0, 1] ) )
 
 		self.assertTrue( testObject.arePrimitiveVariablesValid() )
 
@@ -102,30 +104,64 @@ class DeleteCurvesTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( curveDeletedObject.numCurves(), 1 )
 		self.assertEqual( curveDeletedObject["P"].data, IECore.V3fVectorData(
 			[
-				IECore.V3f( 0, 0, 0 ),
-				IECore.V3f( 0, 1, 0 ),
-				IECore.V3f( 1, 1, 0 ),
-				IECore.V3f( 1, 0, 0 ),
-				IECore.V3f( 1, -1, 0 ),
-				IECore.V3f( 2, -1, 0 ),
-				IECore.V3f( 2, 0, 0 )
-			] ) )
+				imath.V3f( 0, 0, 0 ),
+				imath.V3f( 0, 1, 0 ),
+				imath.V3f( 1, 1, 0 ),
+				imath.V3f( 1, 0, 0 ),
+				imath.V3f( 1, -1, 0 ),
+				imath.V3f( 2, -1, 0 ),
+				imath.V3f( 2, 0, 0 )
+			], IECore.GeometricData.Interpretation.Point ) )
 
 		# verify the primvars are correct
 		self.assertEqual( curveDeletedObject["a"].data,  IECore.FloatData(0.5) )
-		self.assertEqual( curveDeletedObject["a"].interpolation, IECore.PrimitiveVariable.Interpolation.Constant)
+		self.assertEqual( curveDeletedObject["a"].interpolation, IECoreScene.PrimitiveVariable.Interpolation.Constant)
 
 		self.assertEqual( curveDeletedObject["b"].data,  IECore.FloatVectorData( range( 0, 7 ) ) )
-		self.assertEqual( curveDeletedObject["b"].interpolation,  IECore.PrimitiveVariable.Interpolation.Vertex )
+		self.assertEqual( curveDeletedObject["b"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.Vertex )
 
 		self.assertEqual( curveDeletedObject["c"].data,  IECore.FloatVectorData([0]) )
-		self.assertEqual( curveDeletedObject["c"].interpolation,  IECore.PrimitiveVariable.Interpolation.Uniform )
+		self.assertEqual( curveDeletedObject["c"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.Uniform )
 
 		self.assertEqual( curveDeletedObject["d"].data,  IECore.FloatVectorData(range( 0, 3 )) )
-		self.assertEqual( curveDeletedObject["d"].interpolation,  IECore.PrimitiveVariable.Interpolation.Varying )
+		self.assertEqual( curveDeletedObject["d"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.Varying )
 
 		self.assertEqual( curveDeletedObject["e"].data,  IECore.FloatVectorData(range( 0, 3 )) )
-		self.assertEqual( curveDeletedObject["e"].interpolation,  IECore.PrimitiveVariable.Interpolation.FaceVarying )
+		self.assertEqual( curveDeletedObject["e"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.FaceVarying )
+
+		# invert
+		# ======
+		deleteCurves["invert"].setValue( True )
+		curveDeletedObject = deleteCurves["out"].object( "/object" )
+
+		self.assertEqual( curveDeletedObject.verticesPerCurve(), IECore.IntVectorData([7]) )
+		self.assertEqual( curveDeletedObject.numCurves(), 1 )
+		self.assertEqual( curveDeletedObject["P"].data, IECore.V3fVectorData(
+			[
+				imath.V3f( 0, 0, 0 ),
+				imath.V3f( 0, 0, 1 ),
+				imath.V3f( 1, 0, 1 ),
+				imath.V3f( 1, 0, 0 ),
+				imath.V3f( 1, 0, -1 ),
+				imath.V3f( 2, 0, -1 ),
+				imath.V3f( 2, 0, 0 )
+			], IECore.GeometricData.Interpretation.Point ) )
+
+		# verify the primvars are correct
+		self.assertEqual( curveDeletedObject["a"].data,  IECore.FloatData(0.5) )
+		self.assertEqual( curveDeletedObject["a"].interpolation, IECoreScene.PrimitiveVariable.Interpolation.Constant)
+
+		self.assertEqual( curveDeletedObject["b"].data,  IECore.FloatVectorData( range( 7, 14 ) ) )
+		self.assertEqual( curveDeletedObject["b"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.Vertex )
+
+		self.assertEqual( curveDeletedObject["c"].data,  IECore.FloatVectorData([1.0]) )
+		self.assertEqual( curveDeletedObject["c"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.Uniform )
+
+		self.assertEqual( curveDeletedObject["d"].data,  IECore.FloatVectorData(range( 3, 6 )) )
+		self.assertEqual( curveDeletedObject["d"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.Varying )
+
+		self.assertEqual( curveDeletedObject["e"].data,  IECore.FloatVectorData(range( 3, 6 )) )
+		self.assertEqual( curveDeletedObject["e"].interpolation,  IECoreScene.PrimitiveVariable.Interpolation.FaceVarying )
 
 	def testBoundsUpdate( self ) :
 
@@ -133,7 +169,7 @@ class DeleteCurvesTest( GafferSceneTest.SceneTestCase ) :
 
 		actualOriginalBound = curvesScene["out"].bound( "/object" )
 
-		self.assertEqual(actualOriginalBound, IECore.Box3f( IECore.V3f( 0, -1, -1 ), IECore.V3f( 2, 1, 1 ) ) )
+		self.assertEqual(actualOriginalBound, imath.Box3f( imath.V3f( 0, -1, -1 ), imath.V3f( 2, 1, 1 ) ) )
 
 		deleteCurves = GafferScene.DeleteCurves()
 		deleteCurves["in"].setInput( curvesScene["out"] )
@@ -143,6 +179,6 @@ class DeleteCurvesTest( GafferSceneTest.SceneTestCase ) :
 		deleteCurves["filter"].setInput( pathFilter["out"] )
 
 		actualCurveDeletedBounds = deleteCurves["out"].bound( "/object" )
-		expectedBoundingBox = IECore.Box3f( IECore.V3f( 0, -1, 0 ), IECore.V3f( 2, 1, 0 ) )
+		expectedBoundingBox = imath.Box3f( imath.V3f( 0, -1, 0 ), imath.V3f( 2, 1, 0 ) )
 
 		self.assertEqual( actualCurveDeletedBounds, expectedBoundingBox )

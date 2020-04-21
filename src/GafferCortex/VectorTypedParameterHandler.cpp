@@ -35,9 +35,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/VectorTypedParameter.h"
-
 #include "GafferCortex/VectorTypedParameterHandler.h"
+
+#include "IECore/VectorTypedParameter.h"
 
 using namespace GafferCortex;
 
@@ -121,8 +121,9 @@ void VectorTypedParameterHandler<ParameterType>::setPlugValue()
 
 // explicit instantiations
 
-template class VectorTypedParameterHandler<IECore::BoolVectorParameter>;
-template class VectorTypedParameterHandler<IECore::IntVectorParameter>;
-template class VectorTypedParameterHandler<IECore::FloatVectorParameter>;
-template class VectorTypedParameterHandler<IECore::StringVectorParameter>;
-template class VectorTypedParameterHandler<IECore::V3fVectorParameter>;
+template class GafferCortex::VectorTypedParameterHandler<IECore::BoolVectorParameter>;
+template class GafferCortex::VectorTypedParameterHandler<IECore::IntVectorParameter>;
+template class GafferCortex::VectorTypedParameterHandler<IECore::FloatVectorParameter>;
+template class GafferCortex::VectorTypedParameterHandler<IECore::StringVectorParameter>;
+template class GafferCortex::VectorTypedParameterHandler<IECore::V3fVectorParameter>;
+template class GafferCortex::VectorTypedParameterHandler<IECore::Color3fVectorParameter>;

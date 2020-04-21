@@ -42,23 +42,28 @@
 namespace GafferScene
 {
 
-class OpenGLShader : public GafferScene::Shader
+class GAFFERSCENE_API OpenGLShader : public GafferScene::Shader
 {
 
 	public :
 
 		OpenGLShader( const std::string &name=defaultName<OpenGLShader>() );
-		virtual ~OpenGLShader();
+		~OpenGLShader() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::OpenGLShader, OpenGLShaderTypeId, GafferScene::Shader );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::OpenGLShader, OpenGLShaderTypeId, GafferScene::Shader );
 
-		virtual void loadShader( const std::string &shaderName, bool keepExistingValues=false );
+		void loadShader( const std::string &shaderName, bool keepExistingValues=false ) override;
 
 	protected :
 
 		/// Reimplemented to allow ImageNodes to be plugged in to texture parameters.
-		virtual void parameterHash( const Gaffer::Plug *parameterPlug, IECore::MurmurHash &h ) const;
-		virtual IECore::DataPtr parameterValue( const Gaffer::Plug *parameterPlug ) const;
+		void parameterHash( const Gaffer::Plug *parameterPlug, IECore::MurmurHash &h ) const override;
+		IECore::DataPtr parameterValue( const Gaffer::Plug *parameterPlug ) const override;
+
+		/// Reimplemented to allow glsl source specified by specifically named parameters.
+		/// Use a StringPlug named "glVertexSource", "glGeometrySource", or "glFragmentSource"
+		/// to specify the various types of glsl source code.
+		IECore::ConstCompoundObjectPtr attributes( const Gaffer::Plug *output ) const override;
 
 };
 

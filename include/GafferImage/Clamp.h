@@ -37,9 +37,9 @@
 #ifndef GAFFERIMAGE_CLAMP_H
 #define GAFFERIMAGE_CLAMP_H
 
-#include "Gaffer/CompoundNumericPlug.h"
-
 #include "GafferImage/ChannelDataProcessor.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
 
 namespace GafferImage
 {
@@ -51,15 +51,15 @@ namespace GafferImage
 /// If the min/max clamp is enabled, if the channel value is outside the range,
 /// either clamp to range or, if enabled, clamp to the provided value
 //
-class Clamp : public ChannelDataProcessor
+class GAFFERIMAGE_API Clamp : public ChannelDataProcessor
 {
 
 	public :
 
 		Clamp( const std::string &name=defaultName<Clamp>() );
-		virtual ~Clamp();
+		~Clamp() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Clamp, ClampTypeId, ChannelDataProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::Clamp, ClampTypeId, ChannelDataProcessor );
 
 		//! @name Plug Accessors
 		/// Returns a pointer to the node's plugs.
@@ -84,14 +84,14 @@ class Clamp : public ChannelDataProcessor
 		const Gaffer::BoolPlug *maxClampToEnabledPlug() const;
 		//@}
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual bool enabled() const;
+		bool enabled() const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channelName, IECore::FloatVectorDataPtr outData ) const;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void processChannelData( const Gaffer::Context *context, const ImagePlug *parent, const std::string &channelName, IECore::FloatVectorDataPtr outData ) const override;
 
 	private :
 

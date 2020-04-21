@@ -35,14 +35,18 @@
 ##########################################################################
 
 import functools
+import weakref
+
+import IECore
 
 import Gaffer
+import GafferUI
 
 ##########################################################################
 # Public methods
 ##########################################################################
 
-def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
+def appendNodeContextMenuDefinitions( graphEditor, node, menuDefinition ) :
 
 	if len( menuDefinition.items() ) :
 		menuDefinition.append( "/GraphBookmarksDivider", { "divider" : True } )
@@ -56,13 +60,32 @@ def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
 		}
 	)
 
-def appendPlugContextMenuDefinitions( nodeGraph, plug, menuDefinition ) :
+	for i in range( 1, 10 ) :
+	  menuDefinition.append(
+		  "/Numeric Bookmark/%s" % i,
+		  {
+			  "command" : functools.partial( __assignNumericBookmark, node, i ),
+			  "shortCut" : "Ctrl+%i" % i,
+			  "active" : not Gaffer.MetadataAlgo.readOnly( node ),
+		  }
+	  )
 
-	parent = nodeGraph.graphGadget().getRoot()
+	menuDefinition.append(
+		"/Numeric Bookmark/Remove",
+		{
+			"command" : functools.partial( __assignNumericBookmark, node, 0 ),
+			"shortCut" : "Ctrl+0",
+			"active" : Gaffer.MetadataAlgo.numericBookmark( node )
+		}
+	)
+
+def appendPlugContextMenuDefinitions( graphEditor, plug, menuDefinition ) :
+
+	parent = graphEditor.graphGadget().getRoot()
 	dividerAdded = False
 	for bookmark in Gaffer.MetadataAlgo.bookmarks( parent ) :
 
-		nodeGadget = nodeGraph.graphGadget().nodeGadget( bookmark )
+		nodeGadget = graphEditor.graphGadget().nodeGadget( bookmark )
 		if nodeGadget is None :
 			continue
 
@@ -92,6 +115,53 @@ def appendPlugContextMenuDefinitions( nodeGraph, plug, menuDefinition ) :
 					"active" : not outPlug.isSame( inPlug.getInput() ) and not Gaffer.MetadataAlgo.readOnly( inPlug )
 				}
 			)
+
+def appendNodeSetMenuDefinitions( editor, menuDefinition ) :
+
+	weakEditor = weakref.ref( editor )
+
+	# Follow bookmarks
+
+	def followBookmark( number, weakEditor, _ ) :
+		editor = weakEditor()
+		if editor is not None :
+			b = Gaffer.NumericBookmarkSet( editor.scriptNode(), number )
+			editor.setNodeSet( b )
+
+	n = editor.getNodeSet()
+
+	for i in range( 1, 10 ) :
+		isCurrent = isinstance( n, Gaffer.NumericBookmarkSet ) and n.getBookmark() == i
+		menuDefinition.insertBefore( "/Numeric Bookmark/%d" % i, {
+			"command" : functools.partial( followBookmark, i, weakEditor ),
+			"checkBox" : isCurrent
+		}, "/Pin Divider" )
+
+
+	# Pin bookmarks
+
+	for i in range( 1, 10 ) :
+		menuDefinition.append( "/Bookmark/%s" % i, {
+				"command" : functools.partial( __findNumericBookmark, editor, i ),
+				"active" : Gaffer.MetadataAlgo.getNumericBookmark( editor.scriptNode(), i ) is not None,
+		} )
+
+	menuDefinition.append( "/Bookmark/Divider", { "divider" : True } )
+
+	bookmarks = __findableBookmarks( editor )
+	menuDefinition.append(
+		"/Bookmark/Other...",
+		{
+			"command" : functools.partial( __findBookmark, editor, bookmarks ),
+			"active" : len( bookmarks ),
+			"shortCut" : "B",
+		}
+	)
+
+
+def connectToEditor( editor ) :
+
+	editor.keyPressSignal().connect( __editorKeyPress, scoped = False )
 
 ##########################################################################
 # Internal implementation
@@ -147,3 +217,142 @@ def __connect( inPlug, outPlug ) :
 
 	with Gaffer.UndoScope( inPlug.ancestor( Gaffer.ScriptNode ) ) :
 		inPlug.setInput( outPlug )
+
+def __editBookmark( editorWeakRef, bookmark ) :
+
+	editor = editorWeakRef()
+
+	if isinstance( editor, GafferUI.GraphEditor ) :
+		editor.graphGadget().setRoot( bookmark.parent() )
+		editor.frame( [ bookmark ] )
+	else :
+		editor.setNodeSet( Gaffer.StandardSet( [ bookmark ] ) )
+
+def __findableBookmarks( editor ) :
+
+	# Prefer this over manual recursion through the graph because it is _much_
+	# faster.
+	bookmarks = Gaffer.Metadata.nodesWithMetadata( editor.scriptNode(), "bookmarked", instanceOnly = True )
+	return [ b for b in bookmarks if b.ancestor( Gaffer.Reference ) is None ]
+
+def __findBookmark( editor, bookmarks = None ) :
+
+	if not isinstance( editor, ( GafferUI.NodeSetEditor, GafferUI.GraphEditor ) ) :
+		return
+
+	# Don't modify the contents of floating windows, because these are
+	# expected to be locked to one node.
+	if editor.ancestor( GafferUI.CompoundEditor ) is None :
+		return
+
+	if bookmarks is None :
+		bookmarks = __findableBookmarks( editor )
+
+	scriptNode = editor.scriptNode()
+	pathsAndNodes = [
+		( "/" + b.relativeName( scriptNode ).replace( ".", "/" ), b )
+		for b in bookmarks
+	]
+
+	pathsAndNodes.sort( key = lambda x : x[0] )
+
+	menuDefinition = IECore.MenuDefinition()
+	for i, ( path, node ) in enumerate( pathsAndNodes ) :
+
+		haveDescendantBookmarks = False
+		if i < len( pathsAndNodes ) - 1 :
+			nextPath = pathsAndNodes[i+1][0]
+			if nextPath[len(path):len(path)+1] == "/" :
+				haveDescendantBookmarks = True
+
+		command = functools.partial( __editBookmark, weakref.ref( editor ), node )
+		if haveDescendantBookmarks :
+			menuDefinition.append( path + "/This Node", { "command" : command, "searchText" : node.getName() } )
+			menuDefinition.append( path + "/__BookmarksParentDivider__", { "divider" : True } )
+		else :
+			menuDefinition.append( path, { "command" : command } )
+
+	if not len( bookmarks ) :
+		menuDefinition.append( "/No bookmarks available", { "active" : False, "searchText" : "" } )
+
+	editor.__findBookmarksMenu = GafferUI.Menu( menuDefinition, title = "Find Bookmark", searchable = True )
+	editor.__findBookmarksMenu.popup()
+
+def __assignNumericBookmark( node, numericBookmark ) :
+
+	with Gaffer.UndoScope( node.scriptNode() ) :
+		if numericBookmark == 0 : # Remove the current numeric bookmark from selection
+			current = Gaffer.MetadataAlgo.numericBookmark( node )
+			if current :
+				Gaffer.MetadataAlgo.setNumericBookmark( node.scriptNode(), current, None )
+		else :
+			Gaffer.MetadataAlgo.setNumericBookmark( node.scriptNode(), numericBookmark, node )
+
+def __findNumericBookmark( editor, numericBookmark ) :
+
+	if not isinstance( editor, ( GafferUI.NodeSetEditor, GafferUI.GraphEditor ) ) :
+		return False
+
+	# Don't modify the contents of floating windows, because these are
+	# expected to be locked to one node.
+	if editor.ancestor( GafferUI.CompoundEditor ) is None :
+		return False
+
+	node = Gaffer.MetadataAlgo.getNumericBookmark( editor.scriptNode(), numericBookmark )
+	if not node :
+		return False
+
+	if isinstance( editor, GafferUI.GraphEditor ) :
+		editor.graphGadget().setRoot( node.parent() )
+		editor.frame( [ node ] )
+	else :
+		s = Gaffer.StandardSet( [ node ] )
+		editor.setNodeSet( s )
+
+	return True
+
+def __editorKeyPress( editor, event ) :
+
+	if event.key == "B" :
+		__findBookmark( editor )
+		return True
+
+	if event.key in [ str( x ) for x in range( 0, 10 ) ] :
+
+		numericBookmark = int( event.key )
+
+		if event.modifiers == event.modifiers.Control :
+
+			# Assign
+
+			node = None
+			if isinstance( editor, GafferUI.GraphEditor ) :
+				selection = editor.scriptNode().selection()
+				if len( selection ) == 1 :
+					node = selection[0]
+				else :
+					backdrops = [ n for n in selection if isinstance( n, Gaffer.Backdrop ) ]
+					if len( backdrops ) == 1 :
+						node = backdrops[0]
+			elif isinstance( editor, GafferUI.NodeSetEditor ) :
+				nodeSet = editor.getNodeSet()
+				node = nodeSet[-1] if len( nodeSet ) else None
+
+			if node is not None :
+				__assignNumericBookmark( node, numericBookmark )
+
+		elif not event.modifiers :
+
+			# Find
+
+			# For linked editors, its more intuitive for the user if we update
+			# the driving editor, rather than breaking the link.
+
+			if numericBookmark != 0 :
+				__findNumericBookmark( editor, numericBookmark )
+			elif isinstance( editor, GafferUI.NodeSetEditor ) :
+				editor.setNodeSet( editor.scriptNode().selection() )
+
+		return True
+
+

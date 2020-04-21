@@ -46,15 +46,15 @@ namespace GafferOSL
 /// on disk on demand, during shader network generation. Rejig the
 /// generation process to allow for this. Also bear in mind the related
 /// todo items in ArnoldDisplacement and ArnoldLight.
-class OSLCode : public OSLShader
+class GAFFEROSL_API OSLCode : public OSLShader
 {
 
 	public :
 
 		OSLCode( const std::string &name=defaultName<OSLCode>() );
-		virtual ~OSLCode();
+		~OSLCode() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferOSL::OSLCode, OSLCodeTypeId, OSLShader );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferOSL::OSLCode, OSLCodeTypeId, OSLShader );
 
 		Gaffer::StringPlug *codePlug();
 		const Gaffer::StringPlug *codePlug() const;
@@ -75,7 +75,7 @@ class OSLCode : public OSLShader
 		// This is implemented to do nothing, because OSLCode node generates the shader from
 		// the plugs, and not the other way around.  We don't want to inherit the loading behaviour
 		// from OSLShader which tries to match the plugs to a shader on disk
-		virtual void loadShader( const std::string &shaderName, bool keepExistingValues=false );
+		void loadShader( const std::string &shaderName, bool keepExistingValues=false ) override;
 
 	private :
 

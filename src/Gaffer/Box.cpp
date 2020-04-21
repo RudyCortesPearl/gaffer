@@ -34,20 +34,62 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "Gaffer/Box.h"
+
+#include "Gaffer/BoxOut.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/PlugAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StandardSet.h"
+
 #include "boost/regex.hpp"
 
-#include "Gaffer/Box.h"
-#include "Gaffer/BoxIO.h"
-#include "Gaffer/StandardSet.h"
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Context.h"
-#include "Gaffer/PlugAlgo.h"
+#include <unordered_set>
 
 using namespace std;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( Box );
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+std::unordered_set<const Node *> boxOutPassThroughSources( const Node *parent )
+{
+	std::unordered_set<const Node *> result;
+	for( BoxOutIterator it( parent ); !it.done(); ++it )
+	{
+		Plug *plug = (*it)->passThroughPlug();
+		while( plug )
+		{
+			if( const Node *node = plug->node() )
+			{
+				if( node->parent() != parent )
+				{
+					break;
+				}
+				else
+				{
+					result.insert( node );
+				}
+			}
+			plug = plug->getInput();
+		}
+	}
+	return result;
+}
+
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// Box
+//////////////////////////////////////////////////////////////////////////
+
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Box );
 
 Box::Box( const std::string &name )
 	:	SubGraph( name )
@@ -142,8 +184,9 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	// unfortunately nodes will be removed from the selection as we reparent
 	// them, so we have to make a copy of childNodes so our iteration isn't befuddled by
 	// the changing contents. We can use this opportunity to weed out anything in childNodes
-	// which isn't a direct child of parent though, and also to skip over BoxIO nodes
+	// which isn't a direct child of parent though, and also to skip over BoxIO nodes and pass-throughs
 	// which should remain where they are.
+	std::unordered_set<const Node *> boxOutPassThroughSources = ::boxOutPassThroughSources( parent );
 	StandardSetPtr verifiedChildNodes = new StandardSet();
 	for( NodeIterator nodeIt( parent ); !nodeIt.done(); ++nodeIt )
 	{
@@ -152,6 +195,10 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 			continue;
 		}
 		if( IECore::runTimeCast<BoxIO>( *nodeIt ) )
+		{
+			continue;
+		}
+		if( boxOutPassThroughSources.find( nodeIt->get() ) != boxOutPassThroughSources.end() )
 		{
 			continue;
 		}
@@ -177,13 +224,13 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 			Plug *plug = plugIt->get();
 			if( plug->direction() == Plug::In )
 			{
-				Plug *input = plug->getInput<Plug>();
+				Plug *input = plug->getInput();
 				if( input && input->node()->parent<Node>() == parent && !verifiedChildNodes->contains( input->node() ) )
 				{
 					PlugMap::const_iterator mapIt = plugMap.find( input );
 					if( mapIt == plugMap.end() )
 					{
-						plug->setInput( NULL ); // To allow promotion
+						plug->setInput( nullptr ); // To allow promotion
 						PlugPtr promoted = PlugAlgo::promote( plug );
 						promoted->setInput( input );
 						plugMap.insert( PlugPair( input, promoted.get() ) );

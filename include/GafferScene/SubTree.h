@@ -40,6 +40,8 @@
 
 #include "GafferScene/SceneProcessor.h"
 
+#include "Gaffer/StringPlug.h"
+
 namespace GafferScene
 {
 
@@ -47,15 +49,15 @@ namespace GafferScene
 /// There would be a single virtual method for servicing queries about the mapping between
 /// output and input paths. This would be necessary for backtracking in the SceneInspector
 /// to provide information about who modified what.
-class SubTree : public SceneProcessor
+class GAFFERSCENE_API SubTree : public SceneProcessor
 {
 
 	public :
 
 		SubTree( const std::string &name=defaultName<SubTree>() );
-		virtual ~SubTree();
+		~SubTree() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SubTree, SubTreeTypeId, SceneProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::SubTree, SubTreeTypeId, SceneProcessor );
 
 		Gaffer::StringPlug *rootPlug();
 		const Gaffer::StringPlug *rootPlug() const;
@@ -63,35 +65,47 @@ class SubTree : public SceneProcessor
 		Gaffer::BoolPlug *includeRootPlug();
 		const Gaffer::BoolPlug *includeRootPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual void hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual void hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual void hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual void hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		void hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		void hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		void hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		void hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		void hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const override;
 
-		virtual Imath::Box3f computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
-		virtual Imath::M44f computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
-		virtual IECore::ConstCompoundObjectPtr computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
-		virtual IECore::ConstObjectPtr computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
-		virtual IECore::ConstInternedStringVectorDataPtr computeChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
-		virtual GafferScene::ConstPathMatcherDataPtr computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const;
+		Imath::Box3f computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
+		Imath::M44f computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
+		IECore::ConstCompoundObjectPtr computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
+		IECore::ConstObjectPtr computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
+		IECore::ConstInternedStringVectorDataPtr computeChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const override;
+		IECore::ConstPathMatcherDataPtr computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const override;
 
 	private :
 
+		enum SourceMode
+		{
+			Default, // Pass through source path
+			CreateRoot, // Create a root
+			EmptyRoot, // Create an empty root
+		};
+
 		// Generally the work of the SubTree node is easy - we just remap the
 		// output path to a source path and pass through the results unchanged from
-		// that source path. There is one situation in which this won't work - when
-		// outputPath == "/" and includeRoot == true. In this case we must actually perform
-		// some computation to create the right bounding box and the right child name.
-		// This method returns the appropriate source path for the simple case, and in
-		// the slightly more complex case sets createRoot to true and returns the
+		// that source path. There are two situations in which this won't work :
+		//
+		// - When outputPath == "/" and includeRoot == true. In this case we must
+		//   actually perform some computation to create the right bounding box and
+		//   the right child name.
+		// - When outputPath == "/" and !exists( root ). In this case we must return
+		//   an empty scene.
+		//
+		// This method returns the appropriate source path for the default case, and for
+		// the more complex cases sets `sourceMode` appropriately and returns the
 		// root path itself.
-		ScenePath sourcePath( const ScenePath &outputPath, bool &createRoot ) const;
+		ScenePath sourcePath( const ScenePath &outputPath, SourceMode &sourceMode ) const;
 
 		static size_t g_firstPlugIndex;
 

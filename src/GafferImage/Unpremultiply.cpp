@@ -35,9 +35,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-
 #include "GafferImage/Unpremultiply.h"
+
+#include "Gaffer/Context.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -45,7 +45,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( Unpremultiply );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Unpremultiply );
 
 size_t Unpremultiply::g_firstPlugIndex = 0;
 

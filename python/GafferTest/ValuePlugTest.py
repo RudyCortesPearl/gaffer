@@ -36,6 +36,7 @@
 ##########################################################################
 
 import gc
+import inspect
 
 import IECore
 
@@ -93,12 +94,6 @@ class ValuePlugTest( GafferTest.TestCase ) :
 		p1 = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.In )
 		self.failUnless( p1.settable() )
 
-		p1.setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		self.failIf( p1.settable() )
-
-		p1.setFlags( Gaffer.Plug.Flags.ReadOnly, False )
-		self.failUnless( p1.settable() )
-
 		p2 = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
 		self.failIf( p2.settable() )
 
@@ -133,23 +128,6 @@ class ValuePlugTest( GafferTest.TestCase ) :
 		self.assertEqual( o2, IECore.StringData( "pig" ) )
 		self.assertEqual( o3, IECore.StringData( "pig" ) )
 		self.failIf( o2.isSame( o3 ) ) # they shouldn't share cache entries
-
-	def testReadOnlySerialisation( self ) :
-
-		s = Gaffer.ScriptNode()
-		s["n"] = Gaffer.Node()
-		s["n"]["p"] = Gaffer.IntPlug( defaultValue = 10, maxValue = 1000, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		s["n"]["p"].setValue( 100 )
-		s["n"]["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-		ss = s.serialise()
-
-		s2 = Gaffer.ScriptNode()
-		s2.execute( ss )
-
-		self.assertEqual( s2["n"]["p"].defaultValue(), 10 )
-		self.assertEqual( s2["n"]["p"].maxValue(), 1000 )
-		self.assertEqual( s2["n"]["p"].getValue(), 100 )
-		self.assertEqual( s2["n"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ), True )
 
 	def testSetValueSignalsDirtiness( self ) :
 
@@ -501,10 +479,10 @@ class ValuePlugTest( GafferTest.TestCase ) :
 	def testSetInputShortcut( self ) :
 
 		n1 = Gaffer.Node()
-		n1["c"] = Gaffer.CompoundPlug()
+		n1["c"] = Gaffer.Plug()
 
 		n2 = Gaffer.Node()
-		n2["c"] = Gaffer.CompoundPlug( direction = Gaffer.Plug.Direction.Out )
+		n2["c"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
 
 		cs = GafferTest.CapturingSlot( n1.plugInputChangedSignal() )
 		self.assertEqual( len( cs ), 0 )
@@ -520,10 +498,10 @@ class ValuePlugTest( GafferTest.TestCase ) :
 
 	def testSetInputWithoutParent( self ) :
 
-		c1 = Gaffer.CompoundPlug( direction=Gaffer.Plug.Direction.Out )
+		c1 = Gaffer.Plug( direction=Gaffer.Plug.Direction.Out )
 		c1["n"] = Gaffer.IntPlug( direction=Gaffer.Plug.Direction.Out )
 
-		c2 = Gaffer.CompoundPlug()
+		c2 = Gaffer.Plug()
 		c2["n"] = Gaffer.IntPlug()
 
 		c2.setInput( c1 )
@@ -625,6 +603,87 @@ class ValuePlugTest( GafferTest.TestCase ) :
 		n["p"] = p
 
 		self.failUnless( n["p"] is p )
+
+	def testNullInputPropagatesToChildren( self ) :
+
+		n = Gaffer.Node()
+		n["user"]["c"] = Gaffer.ValuePlug()
+		n["user"]["c"]["o"] = Gaffer.IntPlug()
+		n["user"]["c"]["i"] = Gaffer.IntPlug()
+
+		n["user"]["c"]["i"].setInput( n["user"]["c"]["o"] )
+		self.assertTrue( n["user"]["c"]["i"].getInput().isSame( n["user"]["c"]["o"] ) )
+
+		n["user"]["c"].setInput( None )
+		self.assertTrue( n["user"]["c"]["i"].getInput() is None )
+
+	@GafferTest.TestRunner.PerformanceTestMethod()
+	def testContentionForOneItem( self ) :
+
+		GafferTest.testValuePlugContentionForOneItem()
+
+	def testIsSetToDefault( self ) :
+
+		n1 = GafferTest.AddNode()
+		self.assertTrue( n1["op1"].isSetToDefault() )
+		self.assertTrue( n1["op2"].isSetToDefault() )
+		self.assertFalse( n1["sum"].isSetToDefault() )
+
+		n1["op1"].setValue( 10 )
+		self.assertFalse( n1["op1"].isSetToDefault() )
+		self.assertTrue( n1["op2"].isSetToDefault() )
+
+		n1["op1"].setToDefault()
+		self.assertTrue( n1["op1"].isSetToDefault() )
+		self.assertTrue( n1["op2"].isSetToDefault() )
+
+		n2 = GafferTest.AddNode()
+		self.assertTrue( n2["op1"].isSetToDefault() )
+		self.assertTrue( n2["op2"].isSetToDefault() )
+		self.assertFalse( n2["sum"].isSetToDefault() )
+
+		n2["op1"].setInput( n1["op1"] )
+		# Receiving a static value via an input. We know
+		# it can have only one value for all contexts,
+		# and can be confident that it is set to the default.
+		self.assertTrue( n2["op1"].isSetToDefault() )
+		self.assertEqual( n2["op1"].getValue(), n2["op1"].defaultValue() )
+		n1["op1"].setValue( 1 )
+		# Until it provides a non-default value, that is.
+		self.assertFalse( n2["op1"].isSetToDefault() )
+
+		n1["op1"].setValue( 0 )
+		n2["op2"].setInput( n1["sum"] )
+		# Driven by a compute, so not considered to be
+		# at the default, even if it the result happens
+		# to be equal in this context.
+		self.assertFalse( n2["op2"].isSetToDefault() )
+		self.assertEqual( n2["op2"].getValue(), n2["op2"].defaultValue() )
+
+	def testCancellationDuringCompute( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferTest.AddNode()
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( inspect.cleandoc(
+			"""
+			IECore.Canceller.check( context.canceller() )
+			parent['n']['op1'] = 40
+			"""
+		) )
+
+		canceller = IECore.Canceller()
+		canceller.cancel()
+
+		with Gaffer.Context( s.context(), canceller ) :
+			with self.assertRaises( IECore.Cancelled ) :
+				s["n"]["sum"].getValue()
+
+		canceller = IECore.Canceller()
+
+		with Gaffer.Context( s.context(), canceller ) :
+			self.assertEqual( s["n"]["sum"].getValue(), 40 )
 
 	def setUp( self ) :
 

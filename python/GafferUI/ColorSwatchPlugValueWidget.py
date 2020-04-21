@@ -53,12 +53,10 @@ class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		self._addPopupMenu( self.__swatch )
 
-		self.__buttonPressConnection = self.__swatch.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
-		self.__dragBeginConnection = self.__swatch.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
-		self.__dragEndConnection = self.__swatch.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
-		self.__buttonReleaseConnection = self.__swatch.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
-
-		self.__colorChooserDialogue = None
+		self.__swatch.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
+		self.__swatch.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
+		self.__swatch.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
+		self.__swatch.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ), scoped = False )
 
 		self._updateFromPlug()
 
@@ -66,32 +64,11 @@ class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		GafferUI.PlugValueWidget.setPlug( self, plug )
 
-		if self.__colorChooserDialogue is not None and self.__colorChooserDialogue() is not None :
-			self.__colorChooserDialogue().setPlug( plug )
-
 	def setHighlighted( self, highlighted ) :
 
 		GafferUI.PlugValueWidget.setHighlighted( self, highlighted )
 
 		self.__swatch.setHighlighted( highlighted )
-
-	def colorChooserDialogue( self ) :
-
-		# we only store a weak reference to the dialogue, because we want to allow it
-		# to manage its own lifetime. this allows it to exist after we've died, which
-		# can be useful for the user - they can bring up a node editor to get access to
-		# the color chooser, and then close the node editor but keep the floating color
-		# chooser. the only reason we keep a reference to the dialogue at all is so that
-		# we can avoid opening two at the same time, and update the plug in self.setPlug().
-		if self.__colorChooserDialogue is None or self.__colorChooserDialogue() is None :
-			self.__colorChooserDialogue = weakref.ref(
-				_ColorPlugValueDialogue(
-					self.getPlug(),
-					self.ancestor( GafferUI.Window )
-				)
-			)
-
-		return self.__colorChooserDialogue()
 
 	def _updateFromPlug( self ) :
 
@@ -125,12 +102,14 @@ class ColorSwatchPlugValueWidget( GafferUI.PlugValueWidget ) :
 		if not self._editable() :
 			return False
 
-		self.colorChooserDialogue().setVisible( True )
+		_ColorPlugValueDialogue.acquire( self.getPlug() )
+
 		return True
 
-## \todo Perhaps we could make this a part of the public API and give it an acquire()
-# method which the ColorPlugValueWidget uses? Perhaps we could also make a PlugValueDialogue
-# base class to share some of the work with the dialogue made by the SplinePlugValueWidget.
+## \todo Perhaps we could make this a part of the public API? Perhaps we could also make a
+# PlugValueDialogue base class to share some of the work with the dialogue made by the
+# SplinePlugValueWidget. Or perhaps the `acquire()` here and `NodeSetEditor.acquire()` should
+# actually be functionality of CompoundEditor?
 class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 
 	def __init__( self, plug, parentWindow ) :
@@ -144,29 +123,36 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 		self.__lastChangedReason = None
 		self.__mergeGroupId = 0
 
-		self.__colorChangedConnection = self.colorChooser().colorChangedSignal().connect( Gaffer.WeakMethod( self.__colorChanged ) )
-		self.__confirmClickedConnection = self.confirmButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
-		self.__cancelClickedConnection = self.cancelButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
-
-		self.setPlug( plug )
-
-		parentWindow.addChildWindow( self, removeOnClose = True )
-
-	def setPlug( self, plug ) :
+		self.__colorChangedConnection = self.colorChooser().colorChangedSignal().connect( Gaffer.WeakMethod( self.__colorChanged ), scoped = False )
+		self.confirmButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
+		self.cancelButton.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
 
 		self.__plug = plug
 
 		node = plug.node()
-		self.__nodeParentChangedConnection = node.parentChangedSignal().connect( Gaffer.WeakMethod( self.__destroy ) )
+		node.parentChangedSignal().connect( Gaffer.WeakMethod( self.__destroy ), scoped = False )
 		self.__plugSetConnection = plug.node().plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ) )
 
 		self.setTitle( plug.relativeName( plug.ancestor( Gaffer.ScriptNode ) ) )
 
 		self.__plugSet( plug )
 
-	def getPlug( self ) :
+		parentWindow.addChildWindow( self, removeOnClose = True )
 
-		return self.__plug
+	@classmethod
+	def acquire( cls, plug ) :
+
+		script = plug.node().scriptNode()
+		scriptWindow = GafferUI.ScriptWindow.acquire( script )
+
+		for window in scriptWindow.childWindows() :
+			if isinstance( window, cls ) and window.__plug == plug :
+				window.setVisible( True )
+				return window
+
+		window = _ColorPlugValueDialogue( plug, scriptWindow )
+		window.setVisible( True )
+		return False
 
 	def __plugSet( self, plug ) :
 

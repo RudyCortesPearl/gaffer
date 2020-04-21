@@ -35,20 +35,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Exception.h"
-
-#include "Gaffer/Node.h"
-
 #include "GafferUI/ConnectionGadget.h"
+
 #include "GafferUI/GraphGadget.h"
 #include "GafferUI/Nodule.h"
 
+#include "Gaffer/Node.h"
+
+#include "IECore/Exception.h"
+
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( ConnectionGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ConnectionGadget );
 
 ConnectionGadget::ConnectionGadget( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule )
-	:	Gadget( defaultName<ConnectionGadget>() ), m_minimised( false )
+	:	ConnectionCreator( defaultName<ConnectionGadget>() ), m_minimised( false )
 {
 	setNodules( srcNodule, dstNodule );
 }
@@ -168,7 +169,7 @@ ConnectionGadgetPtr ConnectionGadget::create( NodulePtr srcNodule, NodulePtr dst
 		t = IECore::RunTimeTyped::baseTypeId( t );
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 void ConnectionGadget::registerConnectionGadget( IECore::TypeId dstPlugType, ConnectionGadgetCreator creator )

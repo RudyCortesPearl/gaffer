@@ -42,15 +42,15 @@
 namespace GafferImage
 {
 
-class CopyImageMetadata : public MetadataProcessor
+class GAFFERIMAGE_API CopyImageMetadata : public MetadataProcessor
 {
 
 	public :
 
 		CopyImageMetadata( const std::string &name=defaultName<CopyImageMetadata>() );
-		virtual ~CopyImageMetadata();
+		~CopyImageMetadata() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::CopyImageMetadata, CopyImageMetadataTypeId, MetadataProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferImage::CopyImageMetadata, CopyImageMetadataTypeId, MetadataProcessor );
 
 		/// \todo: If ImageProcessor provides an ArrayPlug for "in" instead,
 		/// we can remove this secondary image plug.
@@ -63,12 +63,12 @@ class CopyImageMetadata : public MetadataProcessor
 		Gaffer::BoolPlug *invertNamesPlug();
 		const Gaffer::BoolPlug *invertNamesPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashProcessedMetadata( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundDataPtr computeProcessedMetadata( const Gaffer::Context *context, const IECore::CompoundData *inputMetadata ) const;
+		void hashProcessedMetadata( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundDataPtr computeProcessedMetadata( const Gaffer::Context *context, const IECore::CompoundData *inputMetadata ) const override;
 
 	private :
 

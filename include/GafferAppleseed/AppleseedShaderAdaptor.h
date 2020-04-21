@@ -37,28 +37,29 @@
 #ifndef GAFFERAPPLESEED_APPLESEEDSHADERADAPTOR_H
 #define GAFFERAPPLESEED_APPLESEEDSHADERADAPTOR_H
 
-#include "GafferScene/SceneProcessor.h"
-
+#include "GafferAppleseed/Export.h"
 #include "GafferAppleseed/TypeIds.h"
+
+#include "GafferScene/SceneProcessor.h"
 
 namespace GafferAppleseed
 {
 
-class AppleseedShaderAdaptor : public GafferScene::SceneProcessor
+class GAFFERAPPLESEED_API AppleseedShaderAdaptor : public GafferScene::SceneProcessor
 {
 
 	public :
 
 		AppleseedShaderAdaptor( const std::string &name=defaultName<AppleseedShaderAdaptor>() );
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferAppleseed::AppleseedShaderAdaptor, AppleseedShaderAdaptorTypeId, GafferScene::SceneProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferAppleseed::AppleseedShaderAdaptor, AppleseedShaderAdaptorTypeId, GafferScene::SceneProcessor );
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeAttributes( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
+		void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const override;
+		IECore::ConstCompoundObjectPtr computeAttributes( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const override;
 
 };
 

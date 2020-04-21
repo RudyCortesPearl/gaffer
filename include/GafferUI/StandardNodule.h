@@ -38,9 +38,11 @@
 #ifndef GAFFERUI_STANDARDNODULE_H
 #define GAFFERUI_STANDARDNODULE_H
 
-#include "Gaffer/StringAlgo.h"
-
 #include "GafferUI/Nodule.h"
+
+#include "Gaffer/Plug.h"
+
+#include "IECore/StringAlgo.h"
 
 namespace Gaffer
 {
@@ -50,26 +52,30 @@ namespace Gaffer
 namespace GafferUI
 {
 
-class StandardNodule : public Nodule
+class GAFFERUI_API StandardNodule : public Nodule
 {
 
 	public :
 
 		StandardNodule( Gaffer::PlugPtr plug );
-		virtual ~StandardNodule();
+		~StandardNodule() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::StandardNodule, StandardNoduleTypeId, Nodule );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::StandardNodule, StandardNoduleTypeId, Nodule );
 
 		void setLabelVisible( bool labelVisible );
 		bool getLabelVisible() const;
 
-		virtual void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent );
+		bool canCreateConnection( const Gaffer::Plug *destinationPlug ) const override;
+		void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent ) override;
+		void createConnection( Gaffer::Plug *destinationPlug ) override;
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		void doRender( const Style *style ) const;
+		bool hasLayer( Layer layer ) const override;
+		void doRenderLayer( Layer layer, const Style *style ) const override;
+
 		void renderLabel( const Style *style ) const;
 
 		void enter( GadgetPtr gadget, const ButtonEvent &event );
@@ -83,13 +89,11 @@ class StandardNodule : public Nodule
 		bool dragEnd( GadgetPtr gadget, const DragDropEvent &event );
 		bool drop( GadgetPtr gadget, const DragDropEvent &event );
 
-		void connection( const DragDropEvent &event, Gaffer::PlugPtr &input, Gaffer::PlugPtr &output );
-
 		void setCompatibleLabelsVisible( const DragDropEvent &event, bool visible );
 
 	private :
 
-		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
+		void plugMetadataChanged( IECore::TypeId nodeTypeId, const IECore::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
 
 		bool updateUserColor();
 

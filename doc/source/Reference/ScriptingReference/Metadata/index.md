@@ -11,7 +11,7 @@ General
 
 ```eval_rst
 =================== =============================== ============================
-Name                Purpose                         Example Values
+Name                Purpose                         Example values
 =================== =============================== ============================
 label               Label used instead of plug name "My Label"
 description         Describes the purpose of a      "Turns on the thingammajig"
@@ -22,47 +22,51 @@ documentation:url   Link to node documentation      http://www.gafferhq.org
 userDefault         Overrides the default value of  10.5
                     a plug
 preset:<name>       Specifies a named preset value  "preset:Max", 1
+renameable          Enables renaming by user        True, False
+deletable           Enables deletion by user        True, False
 =================== =============================== ============================
 ```
 
-NodeEditor Layout
+`NodeEditor` layout
 -----------------
 
 ```eval_rst
-=================== =============================== ============================
-Name                Purpose                         Example Values
-=================== =============================== ============================
-layout:divider      Places a divider after the plug True
-layout:index        Integer index in the layout     0 (first), -1 (last)
-                    order
-layout:section      Specifies the section the plug  TabName.SectionName
-                    belongs in
-layout:accessory    Places widget on same line as   True
-                    previous widget
-=================== =============================== ============================
+=============================== =============================== ==================================
+Name                            Purpose                         Example values
+=============================== =============================== ==================================
+layout:divider                  Places a divider after the plug True
+layout:index                    Integer index in the layout     0 (first), -1 (last)
+                                order
+layout:section                  Specifies the section the plug  TabName.SectionName
+                                belongs in
+layout:section:<name>:collapsed Specifies whether the section   True (collapsed), False (expanded)
+                                is collapsed
+layout:accessory                Places widget on same line as   True
+                                previous widget
+=============================== =============================== ==================================
 ```
 
-NodeGraph Layout
+`GraphEditor` layout
 ----------------
 
 ```eval_rst
 ====================== ================================ ================================
-Name                   Purpose                          Example Values
+Name                   Purpose                          Example values
 ====================== ================================ ================================
-nodule:color           The colour of the plug           IECore.Color3f( 0, 1, 0 )
-connectionGadget:color The colour of input connections  IECore.Color3f( 1, 0, 0 )
-nodeGadget:color       The colour of a node             IECore.Color3f( 0, 0, 1 )
+nodule:color           The colour of the plug           imath.Color3f( 0, 1, 0 )
+connectionGadget:color The colour of input connections  imath.Color3f( 1, 0, 0 )
+nodeGadget:color       The colour of a node             imath.Color3f( 0, 0, 1 )
 noduleLayout:section   The edge the plug appears on     "left", "right", "top", "bottom"
 noduleLayout:visible   Shows/hides the plug             True (visible), False (hidden)
 ====================== ================================ ================================
 ```
 
-Viewer Layout
+`Viewer` layout
 -------------
 
 ```eval_rst
 ====================== ================================ ================================
-Name                   Purpose                          Example Values
+Name                   Purpose                          Example values
 ====================== ================================ ================================
 layout:divider         Places a divider after the plug  True
 layout:index           Integer index in the layout      0 (first), -1 (last)
@@ -72,10 +76,10 @@ toolbarLayout:section  The edge of the viewer the plug  "Left", "Right", "Top", 
 ====================== ================================ ================================
 ```
 
-PlugValueWidgets
-----------------
+`PlugValueWidgets`
+-----------------
 
-Custom widget types may be registered for use in the NodeEditor by adding `"plugValueWidget:type"` metadata to a plug. Note that not all widget types are compatible with all plug types - the table below lists the relevant widget types by plug type.
+Custom widget types may be registered for use in the Node Editor by adding `plugValueWidget:type` metadata to a plug. Note that not all widget types are compatible with all plug types - the table below lists the relevant widget types by plug type.
 
 ```eval_rst
 ========================== ================================ ==================================================
@@ -93,7 +97,7 @@ StringVectorDataPlug       Show a file chooser              "GafferUI.FileSystem
 
 These widget types may be further customised using additional metadata as follows
 
-### BoolPlugValueWidget
+### `BoolPlugValueWidget`
 
 ```eval_rst
 ================================= ========================== ====================
@@ -103,7 +107,7 @@ boolPlugValueWidget:displayMode   Change display style       "checkBox", "switch
 ================================= ========================== ====================
 ```
 
-### FileSystemPathPlugValueWidget
+### `FileSystemPathPlugValueWidget`
 
 These options also apply to the FileSystemPathVectorDataPlugValueWidget.
 
@@ -118,4 +122,14 @@ fileSystemPath:extensions         Specify valid file types       "jpg jpeg png"
 fileSystemPath:extensionsLabel    Describe valid file types      "Web images"
 fileSystemPath:includeSequences   Display file sequences         True
 ================================= ============================== ====================
+```
+
+### `PresetsPlugValueWidget`
+
+```eval_rst
+================================== =============================== ====================
+Name                               Purpose                         Example values
+================================== =============================== ====================
+presetsPlugValueWidget:allowCustom Allow values not in preset list True, False
+================================== =============================== ====================
 ```

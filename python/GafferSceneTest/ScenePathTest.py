@@ -46,7 +46,7 @@ class ScenePathTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
 
-		a = GafferScene.AlembicSource()
+		a = GafferScene.SceneReader()
 		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
 
 		p = GafferScene.ScenePath( a["out"], Gaffer.Context(), "/" )
@@ -57,7 +57,7 @@ class ScenePathTest( GafferSceneTest.SceneTestCase ) :
 
 	def testRelative( self ) :
 
-		a = GafferScene.AlembicSource()
+		a = GafferScene.SceneReader()
 		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
 
 		p = GafferScene.ScenePath( a["out"], Gaffer.Context(), "group1" )
@@ -200,7 +200,7 @@ class ScenePathTest( GafferSceneTest.SceneTestCase ) :
 		plane = GafferScene.Plane()
 		parent = GafferScene.Parent()
 		parent["in"].setInput( camera["out"] )
-		parent["child"].setInput( plane["out"] )
+		parent["children"][0].setInput( plane["out"] )
 		parent["parent"].setValue( "/" )
 
 		path = GafferScene.ScenePath( parent["out"], Gaffer.Context(), "/" )
@@ -208,6 +208,16 @@ class ScenePathTest( GafferSceneTest.SceneTestCase ) :
 
 		path.setFilter( GafferScene.ScenePath.createStandardFilter( [ "__cameras" ] ) )
 		self.assertEqual( { str( c ) for c in path.children() }, { "/camera" } )
+
+	def testNone( self ) :
+
+		plane = GafferScene.Plane()
+
+		with self.assertRaisesRegexp( Exception, "Python argument types" ) :
+			GafferScene.ScenePath( None, Gaffer.Context() )
+
+		with self.assertRaisesRegexp( Exception, "Python argument types" ) :
+			GafferScene.ScenePath( plane["out"], None )
 
 if __name__ == "__main__":
 	unittest.main()

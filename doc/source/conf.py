@@ -121,7 +121,10 @@ html_theme = "sphinx_rtd_theme"
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-#html_theme_options = {}
+html_theme_options = {
+    'logo_only': True,
+    'collapse_navigation': False
+}
 
 # Add any paths that contain custom themes here, relative to this directory.
 #html_theme_path = []
@@ -135,7 +138,7 @@ html_theme = "sphinx_rtd_theme"
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-#html_logo = None
+html_logo = "_static/GafferLogoMini.svg"
 
 # The name of an image file (relative to this directory) to use as a favicon of
 # the docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
@@ -159,7 +162,7 @@ html_static_path = [ "_static" ]
 
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
-#html_use_smartypants = True
+html_use_smartypants = True
 
 # Custom sidebar templates, maps document names to template names.
 #html_sidebars = {}
@@ -178,7 +181,7 @@ html_static_path = [ "_static" ]
 #html_split_index = False
 
 # If true, links to the reST sources are added to the pages.
-#html_show_sourcelink = True
+html_show_sourcelink = False
 
 # If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
 #html_show_sphinx = True
@@ -302,6 +305,20 @@ source_parsers = {
 
 source_suffix = ['.rst', '.md']
 
+# Variables for string replacement functions
+
+arnold_version = '5.1.1.1'
+arnold_path_linux = '/opt/solidangle/arnold-{0}'.format( arnold_version )
+arnold_path_osx = '/opt/solidangle/arnold-{0}'.format( arnold_version )
+
+delight_version = '13.0.18'
+delight_path_linux = '/opt/3delight-{0}'.format( delight_version )
+delight_path_osx = '/opt/3delight-{0}'.format( delight_version )
+
+tractor_version = '2.2'
+tractor_path_linux = '/opt/pixar/Tractor-{0}'.format( tractor_version )
+tractor_path_osx = '/Applications/pixar/Tractor-{0}'.format( tractor_version )
+
 ## \Todo See if the recommonmark folks would accept a patch with this
 #  functionality.
 class GafferTransform( recommonmark.transform.AutoStructify ) :
@@ -369,11 +386,26 @@ def gafferSourceSubstitutions( app, docName, source ) :
     source[0] = source[0].replace( "!GAFFER_MINOR_VERSION!", str( Gaffer.About.minorVersion() ) )
     source[0] = source[0].replace( "!GAFFER_PATCH_VERSION!", str( Gaffer.About.patchVersion() ) )
 
+def thirdPartySourceSubtitutions( app, docName, source) :
+
+    source[0] = source[0].replace( "!ARNOLD_VERSION!", arnold_version )
+    source[0] = source[0].replace( "!ARNOLD_PATH_LINUX!", arnold_path_linux )
+    source[0] = source[0].replace( "!ARNOLD_PATH_OSX!", arnold_path_osx )
+    source[0] = source[0].replace( "!DELIGHT_VERSION!", delight_version )
+    source[0] = source[0].replace( "!DELIGHT_PATH_LINUX!", delight_path_linux )
+    source[0] = source[0].replace( "!DELIGHT_PATH_OSX!", delight_path_osx )
+    source[0] = source[0].replace( "!TRACTOR_VERSION!", tractor_version )
+    source[0] = source[0].replace( "!TRACTOR_PATH_LINUX!", tractor_path_linux )
+    source[0] = source[0].replace( "!TRACTOR_PATH_OSX!", tractor_path_osx )
+
 def setup( app ) :
 
     app.add_config_value(
     	'recommonmark_config',
     	{
+            # Disable general automatic TOC parsing. Prevents Autostructify
+            # from turning all Markdown list items with links into TOC items
+            'enable_auto_toc_tree': False
         },
         True
     )
@@ -381,3 +413,8 @@ def setup( app ) :
     app.add_transform( GafferTransform )
 
     app.connect( "source-read", gafferSourceSubstitutions )
+    app.connect( "source-read", thirdPartySourceSubtitutions )
+    
+    # Add the custom stylesheet; used in all .md and .rst files in source
+    app.add_stylesheet( 'gaffer.css' )
+    app.add_javascript( 'scrollspy.js' )

@@ -34,16 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/MeshPrimitive.h"
-
 #include "GafferScene/Cube.h"
+
+#include "IECoreScene/MeshPrimitive.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 
-IE_CORE_DEFINERUNTIMETYPED( Cube );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Cube );
 
 size_t Cube::g_firstPlugIndex = 0;
 

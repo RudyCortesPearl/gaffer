@@ -34,15 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-
 #include "GafferUI/Tool.h"
+
 #include "GafferUI/View.h"
+
+#include "boost/bind.hpp"
 
 using namespace Gaffer;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( Tool );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Tool );
 
 size_t Tool::g_firstPlugIndex = 0;
 
@@ -109,7 +110,7 @@ ToolPtr Tool::create( const std::string &toolName, View *view )
 		typeId = IECore::RunTimeTyped::baseTypeId( typeId );
 	} while( typeId != (IECore::TypeId)NodeTypeId && typeId != IECore::InvalidTypeId );
 
-	return NULL;
+	return nullptr;
 }
 
 void Tool::registerTool( const std::string &toolName, IECore::TypeId viewType, ToolCreator creator )

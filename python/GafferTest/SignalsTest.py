@@ -40,6 +40,8 @@ import unittest
 import weakref
 import sys
 import gc
+import functools
+import imath
 
 import IECore
 
@@ -96,11 +98,11 @@ class SignalsTest( GafferTest.TestCase ) :
 
 			return -1
 
-		class A( IECore.V3f ) :
+		class A( imath.V3f ) :
 
 			def __init__( self ) :
 
-				IECore.V3f.__init__( self )
+				imath.V3f.__init__( self )
 				self.signal = Gaffer.Signal1()
 
 			def f( self, n ) :
@@ -156,13 +158,13 @@ class SignalsTest( GafferTest.TestCase ) :
 
 	def testMany( self ) :
 
-		class S( IECore.V3f ) :
+		class S( imath.V3f ) :
 
 			instances = 0
 
 			def __init__( self, parent ) :
 
-				IECore.V3f.__init__( self )
+				imath.V3f.__init__( self )
 
 				S.instances += 1
 
@@ -319,24 +321,24 @@ class SignalsTest( GafferTest.TestCase ) :
 			values.append( value )
 
 		s = Gaffer.Signal0()
-		c1 = s.connect( IECore.curry( f, "one" ) )
-		c2 = s.connect( IECore.curry( f, "two" ) )
+		c1 = s.connect( functools.partial( f, "one" ) )
+		c2 = s.connect( functools.partial( f, "two" ) )
 		s()
 
 		self.assertEqual( values, [ "one", "two" ] )
 
 		del values[:]
 
-		c1 = s.connect( 1, IECore.curry( f, "one" ) )
-		c2 = s.connect( 0, IECore.curry( f, "two" ) )
+		c1 = s.connect( 1, functools.partial( f, "one" ) )
+		c2 = s.connect( 0, functools.partial( f, "two" ) )
 		s()
 
 		self.assertEqual( values, [ "two", "one" ] )
 
 		del values[:]
 
-		c1 = s.connect( IECore.curry( f, "one" ) )
-		c2 = s.connect( 0, IECore.curry( f, "two" ) )
+		c1 = s.connect( functools.partial( f, "one" ) )
+		c2 = s.connect( 0, functools.partial( f, "two" ) )
 		s()
 
 		self.assertEqual( values, [ "two", "one" ] )
@@ -395,6 +397,27 @@ class SignalsTest( GafferTest.TestCase ) :
 		# signal dies.
 		del s
 		self.assertTrue( w() is None )
+
+	def testTrackable( self ) :
+
+		class TrackableTest( Gaffer.Trackable ) :
+
+			def f( self ) :
+
+				pass
+
+		s = Gaffer.Signal0()
+		t = TrackableTest()
+		w = weakref.ref( t )
+
+		c = s.connect( Gaffer.WeakMethod( t.f ), scoped = False )
+
+		self.assertTrue( c.connected() )
+		del t
+		self.assertIsNone( w() )
+		self.assertFalse( c.connected() )
+
+		s() # Would throw if an expired WeakMethod remained connected
 
 if __name__ == "__main__":
 	unittest.main()

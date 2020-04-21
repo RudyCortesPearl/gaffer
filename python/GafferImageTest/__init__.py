@@ -42,12 +42,13 @@ from ImagePlugTest import ImagePlugTest
 from OpenImageIOReaderTest import OpenImageIOReaderTest
 from ImageReaderTest import ImageReaderTest
 from ColorSpaceTest import ColorSpaceTest
-from ObjectToImageTest import ObjectToImageTest
 from FormatTest import FormatTest
 from AtomicFormatPlugTest import AtomicFormatPlugTest
 from MergeTest import MergeTest
 from GradeTest import GradeTest
 from ConstantTest import ConstantTest
+from CheckerboardTest import CheckerboardTest
+from RampTest import RampTest
 from ImageWriterTest import ImageWriterTest
 from SamplerTest import SamplerTest
 from DisplayTest import DisplayTest
@@ -91,6 +92,16 @@ from DilateTest import DilateTest
 from MixTest import MixTest
 from CatalogueTest import CatalogueTest
 from CollectImagesTest import CollectImagesTest
+from CatalogueSelectTest import CatalogueSelectTest
+from BleedFillTest import BleedFillTest
+from RectangleTest import RectangleTest
+from ModuleTest import ModuleTest
+from FlatToDeepTest import FlatToDeepTest
+from DeepMergeTest import DeepMergeTest
+from DeepStateTest import DeepStateTest
+from EmptyTest import EmptyTest
+from DeepHoldoutTest import DeepHoldoutTest
+from DeepRecolorTest import DeepRecolorTest
 
 if __name__ == "__main__":
 	import unittest

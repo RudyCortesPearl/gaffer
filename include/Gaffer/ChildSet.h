@@ -44,23 +44,23 @@ namespace Gaffer
 
 /// The ChildSet is a Set implementation where the membership automatically
 /// tracks the children of a GraphComponent.
-class ChildSet : public Gaffer::Set
+class GAFFER_API ChildSet : public Gaffer::Set
 {
 
 	public :
 
 		ChildSet( GraphComponentPtr parent );
-		virtual ~ChildSet();
+		~ChildSet() override;
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ChildSet, ChildSetTypeId, Gaffer::Set );
 
 		/// @name Implementation of the Set interface
 		////////////////////////////////////////////////////////////////////
 		//@{
-		virtual bool contains( const Member *object ) const;
-		virtual Member *member( size_t index );
-		virtual const Member *member( size_t index ) const;
-		virtual size_t size() const;
+		bool contains( const Member *object ) const override;
+		Member *member( size_t index ) override;
+		const Member *member( size_t index ) const override;
+		size_t size() const override;
 		//@}
 
 	private :

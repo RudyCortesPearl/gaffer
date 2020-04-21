@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -93,10 +95,14 @@ class MenuButton( GafferUI.Button ) :
 		b = self.bound()
 		self.__menu.popup(
 			parent = self,
-			position = IECore.V2i( b.min.x, b.max.y ),
+			position = imath.V2i( b.min().x, b.max().y ),
 		)
 
 	def __menuVisibilityChanged( self, menu ) :
 
 		if not menu.visible() :
 			self._qtWidget().setDown( False )
+			# There is a bug whereby Button never receives the event for __leave,
+			# if the menu is shown. This results in the image highlight state sticking.
+			if self.widgetAt( self.mousePosition() ) is not self :
+				self.setHighlighted( False )

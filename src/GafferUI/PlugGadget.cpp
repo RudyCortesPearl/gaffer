@@ -34,21 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/bind/placeholders.hpp"
+#include "GafferUI/PlugGadget.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
 
-#include "GafferUI/PlugGadget.h"
+#include "boost/bind.hpp"
+#include "boost/bind/placeholders.hpp"
 
 using namespace GafferUI;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( PlugGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( PlugGadget );
 
 PlugGadget::PlugGadget( Gaffer::PlugPtr plug )
-	:	ContainerGadget( defaultName<PlugGadget>() ), m_plug( 0 )
+	:	ContainerGadget( defaultName<PlugGadget>() ), m_plug( nullptr )
 {
 	setPlug( plug );
 }
@@ -122,12 +122,12 @@ void PlugGadget::contextChanged( const Gaffer::Context *context, const IECore::I
 void PlugGadget::updateContextConnection()
 {
 	Context *context = m_context.get();
-	if( !m_plug->getInput<Plug>() )
+	if( !m_plug->getInput() )
 	{
 		// we only want to be notified of context changes if the plug has an incoming
 		// connection. otherwise context changes are irrelevant and we'd just be slowing
 		// things down by asking for notifications.
-		context = 0;
+		context = nullptr;
 	}
 
 	if( context )

@@ -43,18 +43,23 @@
 namespace GafferUI
 {
 
-class TranslateHandle : public Handle
+class GAFFERUI_API TranslateHandle : public Handle
 {
 
 	public :
 
 		TranslateHandle( Style::Axes axes );
-		virtual ~TranslateHandle();
+		~TranslateHandle() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::TranslateHandle, TranslateHandleTypeId, Handle );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::TranslateHandle, TranslateHandleTypeId, Handle );
 
 		void setAxes( Style::Axes axes );
 		Style::Axes getAxes() const;
+
+		// Returns a vector where each component is 0 or 1,
+		// indicating whether or not the handle will produce
+		// translation in that axis.
+		Imath::V3i axisMask() const;
 
 		// Translation is measured in the local space of the handle.
 		//
@@ -62,17 +67,18 @@ class TranslateHandle : public Handle
 		// > The use of a non-zero raster scale may make it appear
 		// > that a handle has no scaling applied, but that scaling
 		// > will still affect the results of `translation()`.
-		float translation( const DragDropEvent &event ) const;
+		Imath::V3f translation( const DragDropEvent &event );
 
 	protected :
 
-		virtual void renderHandle( const Style *style, Style::State state ) const;
-		virtual void dragBegin( const DragDropEvent &event );
+		void renderHandle( const Style *style, Style::State state ) const override;
+		void dragBegin( const DragDropEvent &event ) override;
 
 	private :
 
 		Style::Axes m_axes;
-		LinearDrag m_drag;
+		LinearDrag m_linearDrag;
+		PlanarDrag m_planarDrag;
 
 };
 

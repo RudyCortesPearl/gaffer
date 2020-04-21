@@ -37,6 +37,7 @@
 
 import unittest
 import inspect
+import imath
 
 import IECore
 
@@ -50,30 +51,16 @@ class SceneTimeWarpTest( GafferSceneTest.SceneTestCase ) :
 	def testConstruct( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["n"] = GafferScene.SceneTimeWarp()
+		s["n"] = Gaffer.TimeWarp()
+		s["n"].setup( GafferScene.ScenePlug() )
 
 		self.assertEqual( s["n"]["speed"].getValue(), 1 )
 		self.assertEqual( s["n"]["offset"].getValue(), 0 )
 
-	def testRunTimeTyped( self ) :
-
-		n = GafferScene.SceneTimeWarp()
-		self.failUnless( n.isInstanceOf( GafferScene.SceneTimeWarp.staticTypeId() ) )
-		self.failUnless( n.isInstanceOf( GafferScene.SceneContextProcessor.staticTypeId() ) )
-		self.failUnless( n.isInstanceOf( GafferScene.SceneProcessor.staticTypeId() ) )
-		self.failUnless( n.isInstanceOf( GafferScene.SceneNode.staticTypeId() ) )
-		self.failUnless( n.isInstanceOf( Gaffer.Node.staticTypeId() ) )
-
-		baseTypeIds = IECore.RunTimeTyped.baseTypeIds( n.typeId() )
-
-		self.failUnless( GafferScene.SceneContextProcessor.staticTypeId() in baseTypeIds )
-		self.failUnless( GafferScene.SceneProcessor.staticTypeId() in baseTypeIds )
-		self.failUnless( GafferScene.SceneNode.staticTypeId() in baseTypeIds )
-		self.failUnless( Gaffer.Node.staticTypeId() in baseTypeIds )
-
 	def testAffects( self ) :
 
-		n = GafferScene.SceneTimeWarp()
+		n = Gaffer.TimeWarp()
+		n.setup( GafferScene.ScenePlug() )
 
 		c = GafferTest.CapturingSlot( n.plugDirtiedSignal() )
 		n["speed"].setValue( 2 )
@@ -95,25 +82,27 @@ class SceneTimeWarpTest( GafferSceneTest.SceneTestCase ) :
 	def testNoExtraInputs( self ) :
 
 		p = GafferScene.Plane()
-		n = GafferScene.SceneTimeWarp()
+		n = Gaffer.TimeWarp()
+		n.setup( GafferScene.ScenePlug() )
 		n["in"].setInput( p["out"] )
 
 		self.assertTrue( "in1" not in n )
 
 	def testTimeContext( self ) :
+
 		s = Gaffer.ScriptNode()
 
 		s["cube"] = GafferScene.Cube()
 
 		s["e"] = Gaffer.Expression()
-		s["e"].setExpression( 'parent["cube"]["dimensions"] = IECore.V3f( context["frame"] )' )
-		
-		
-		s["n"] = GafferScene.SceneTimeWarp()
+		s["e"].setExpression( 'parent["cube"]["dimensions"] = imath.V3f( context["frame"] )' )
+
+		s["n"] = Gaffer.TimeWarp()
+		s["n"].setup( GafferScene.ScenePlug() )
 		s["n"]["in"].setInput( s["cube"]["out"] )
 		s["n"]["speed"].setValue( 0 )
 		s["n"]["offset"].setValue( 3 )
-		self.assertEqual( s["n"]["out"].bound( "/cube" ), IECore.Box3f( IECore.V3f( -1.5 ), IECore.V3f( 1.5 ) ) )
+		self.assertEqual( s["n"]["out"].bound( "/cube" ), imath.Box3f( imath.V3f( -1.5 ), imath.V3f( 1.5 ) ) )
 
 		s["e2"] = Gaffer.Expression()
 		s["e2"].setExpression( inspect.cleandoc(
@@ -122,8 +111,8 @@ class SceneTimeWarpTest( GafferSceneTest.SceneTestCase ) :
 			parent["n"]["offset"] = 5
 			"""
 		) )
-		
-		self.assertEqual( s["n"]["out"].bound( "/cube" ), IECore.Box3f( IECore.V3f( -2.5 ), IECore.V3f( 2.5 ) ) )
+
+		self.assertEqual( s["n"]["out"].bound( "/cube" ), imath.Box3f( imath.V3f( -2.5 ), imath.V3f( 2.5 ) ) )
 
 if __name__ == "__main__":
 	unittest.main()

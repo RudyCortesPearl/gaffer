@@ -35,14 +35,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/ArrayPlug.h"
-
 #include "GafferScene/SceneProcessor.h"
+
+#include "Gaffer/ArrayPlug.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( SceneProcessor );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( SceneProcessor );
 
 size_t SceneProcessor::g_firstPlugIndex = 0;
 
@@ -68,7 +68,7 @@ SceneProcessor::~SceneProcessor()
 
 ScenePlug *SceneProcessor::inPlug()
 {
-	GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	GraphComponent *p = getChild( g_firstPlugIndex );
 	if( ScenePlug *s = IECore::runTimeCast<ScenePlug>( p ) )
 	{
 		return s;
@@ -81,7 +81,7 @@ ScenePlug *SceneProcessor::inPlug()
 
 const ScenePlug *SceneProcessor::inPlug() const
 {
-	const GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	const GraphComponent *p = getChild( g_firstPlugIndex );
 	if( const ScenePlug *s = IECore::runTimeCast<const ScenePlug>( p ) )
 	{
 		return s;

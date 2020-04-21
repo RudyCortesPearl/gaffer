@@ -37,32 +37,32 @@
 #ifndef GAFFERSCENE_CUSTOMOPTIONS_H
 #define GAFFERSCENE_CUSTOMOPTIONS_H
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferScene/Options.h"
+
+#include "Gaffer/StringPlug.h"
 
 namespace GafferScene
 {
 
-class CustomOptions : public GafferScene::Options
+class GAFFERSCENE_API CustomOptions : public GafferScene::Options
 {
 
 	public :
 
 		CustomOptions( const std::string &name=defaultName<CustomOptions>() );
-		virtual ~CustomOptions();
+		~CustomOptions() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::CustomOptions, CustomOptionsTypeId, Options );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CustomOptions, CustomOptionsTypeId, Options );
 
 		Gaffer::StringPlug *prefixPlug();
 		const Gaffer::StringPlug *prefixPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashPrefix( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual std::string computePrefix( const Gaffer::Context *context ) const;
+		void hashPrefix( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		std::string computePrefix( const Gaffer::Context *context ) const override;
 
 	private :
 

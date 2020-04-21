@@ -34,30 +34,31 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferUI/DotNodeGadget.h"
+
+#include "GafferUI/ConnectionGadget.h"
+#include "GafferUI/GraphGadget.h"
+#include "GafferUI/Nodule.h"
+#include "GafferUI/SpacerGadget.h"
+#include "GafferUI/Style.h"
+
+#include "Gaffer/Dot.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/UndoScope.h"
 
 #include "IECoreGL/GL.h"
 #include "IECoreGL/Selector.h"
 
-#include "Gaffer/Dot.h"
-#include "Gaffer/UndoScope.h"
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/MetadataAlgo.h"
-
-#include "GafferUI/DotNodeGadget.h"
-#include "GafferUI/Style.h"
-#include "GafferUI/ConnectionGadget.h"
-#include "GafferUI/Nodule.h"
-#include "GafferUI/GraphGadget.h"
-#include "GafferUI/SpacerGadget.h"
+#include "boost/bind.hpp"
 
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( DotNodeGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DotNodeGadget );
 
 DotNodeGadget::NodeGadgetTypeDescription<DotNodeGadget> DotNodeGadget::g_nodeGadgetTypeDescription( Gaffer::Dot::staticTypeId() );
 
@@ -87,8 +88,13 @@ DotNodeGadget::~DotNodeGadget()
 {
 }
 
-void DotNodeGadget::doRender( const Style *style ) const
+void DotNodeGadget::doRenderLayer( Layer layer, const Style *style ) const
 {
+	if( layer != GraphLayer::Nodes )
+	{
+		return NodeGadget::doRenderLayer( layer, style );
+	}
+
 	Style::State state = getHighlighted() ? Style::HighlightedState : Style::NormalState;
 
 	const Box3f b = bound();
@@ -103,7 +109,7 @@ void DotNodeGadget::doRender( const Style *style ) const
 		glPopMatrix();
 	}
 
-	NodeGadget::doRender( style );
+	NodeGadget::doRenderLayer( layer, style );
 }
 
 Gaffer::Dot *DotNodeGadget::dotNode()
@@ -118,12 +124,12 @@ const Gaffer::Dot *DotNodeGadget::dotNode() const
 
 Gaffer::Node *DotNodeGadget::upstreamNode()
 {
-	Plug *plug = dotNode()->inPlug<Plug>();
+	Plug *plug = dotNode()->inPlug();
 	while( plug && runTimeCast<Dot>( plug->node() ) )
 	{
-		plug = plug->getInput<Plug>();
+		plug = plug->getInput();
 	}
-	return plug ? plug->node() : NULL;
+	return plug ? plug->node() : nullptr;
 }
 
 void DotNodeGadget::plugDirtied( const Gaffer::Plug *plug )
@@ -133,7 +139,7 @@ void DotNodeGadget::plugDirtied( const Gaffer::Plug *plug )
 	{
 		updateLabel();
 	}
-	else if( plug == dot->inPlug<Plug>() )
+	else if( plug == dot->inPlug() )
 	{
 		updateUpstreamNameChangedConnection();
 		updateLabel();
@@ -178,9 +184,9 @@ void DotNodeGadget::updateLabel()
 	}
 
 	Edge labelEdge = RightEdge;
-	if( const Plug *p = dot->inPlug<Plug>() )
+	if( const Plug *p = dot->inPlug() )
 	{
-		if( noduleTangent( nodule( p ) ).x != 0 )
+		if( connectionTangent( nodule( p ) ).x != 0 )
 		{
 			labelEdge = TopEdge;
 		}
@@ -214,7 +220,7 @@ bool DotNodeGadget::dragEnter( const DragDropEvent &event )
 		return false;
 	}
 
-	if( dotNode()->inPlug<Plug>() )
+	if( dotNode()->inPlug() )
 	{
 		// We've already got our plugs set up - StandardNodeGadget
 		// behaviour will take care of everything.
@@ -245,17 +251,12 @@ bool DotNodeGadget::dragEnter( const DragDropEvent &event )
 		return false;
 	}
 
-	V3f tangent = -nodeGadget->noduleTangent( nodule );
-	V3f position = ( tangent * bound().size().x / 2.0f ) * fullTransform();
-	position = position * event.sourceGadget->fullTransform().inverse();
-
-	if( Nodule *sourceNodule = runTimeCast<Nodule>( event.sourceGadget.get() ) )
+	if( auto connectionCreator = runTimeCast<ConnectionCreator>( event.sourceGadget.get() ) )
 	{
-		sourceNodule->updateDragEndPoint( position, tangent );
-	}
-	else if( ConnectionGadget *sourceConnection = runTimeCast<ConnectionGadget>( event.sourceGadget.get() ) )
-	{
-		sourceConnection->updateDragEndPoint( position, tangent );
+		V3f tangent = -nodeGadget->connectionTangent( nodule );
+		V3f position = ( tangent * bound().size().x / 2.0f ) * fullTransform();
+		position = position * connectionCreator->fullTransform().inverse();
+		connectionCreator->updateDragEndPoint( position, tangent );
 	}
 
 	return true;
@@ -263,7 +264,7 @@ bool DotNodeGadget::dragEnter( const DragDropEvent &event )
 
 bool DotNodeGadget::drop( const DragDropEvent &event )
 {
-	if( dotNode()->inPlug<Plug>() )
+	if( dotNode()->inPlug() )
 	{
 		// We've already got our plugs set up - StandardNodeGadget
 		// behaviour will take care of everything.
@@ -281,11 +282,11 @@ bool DotNodeGadget::drop( const DragDropEvent &event )
 	dotNode()->setup( plug );
 	if( plug->direction() == Plug::In )
 	{
-		plug->setInput( dotNode()->outPlug<Plug>() );
+		plug->setInput( dotNode()->outPlug() );
 	}
 	else
 	{
-		dotNode()->inPlug<Plug>()->setInput( plug );
+		dotNode()->inPlug()->setInput( plug );
 	}
 
 	return true;

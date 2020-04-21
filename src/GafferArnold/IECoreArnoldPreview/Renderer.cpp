@@ -34,46 +34,52 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/tbb_config.h"
-
-#if TBB_IMPLEMENT_CPP0X
-#include "tbb/compat/thread"
-#else
-#include <thread>
-#endif
-
-#include "tbb/concurrent_vector.h"
-#include "tbb/concurrent_unordered_map.h"
-
-#include "boost/make_shared.hpp"
-#include "boost/format.hpp"
-#include "boost/algorithm/string/predicate.hpp"
-#include "boost/algorithm/string/join.hpp"
-#include "boost/container/flat_map.hpp"
-#include "boost/filesystem/operations.hpp"
-#include "boost/bind.hpp"
-
-#include "IECore/MessageHandler.h"
-#include "IECore/Camera.h"
-#include "IECore/Transform.h"
-#include "IECore/VectorTypedData.h"
-#include "IECore/SimpleTypedData.h"
-#include "IECore/ObjectVector.h"
-#include "IECore/Shader.h"
-#include "IECore/MeshPrimitive.h"
-#include "IECore/CurvesPrimitive.h"
-#include "IECore/ExternalProcedural.h"
-
-#include "IECoreArnold/ParameterAlgo.h"
-#include "IECoreArnold/CameraAlgo.h"
-#include "IECoreArnold/NodeAlgo.h"
-#include "IECoreArnold/UniverseBlock.h"
-
-#include "Gaffer/StringAlgo.h"
-
 #include "GafferScene/Private/IECoreScenePreview/Renderer.h"
 
-#include "GafferArnold/Private/IECoreArnoldPreview/ShaderAlgo.h"
+#include "GafferArnold/Private/IECoreArnoldPreview/ShaderNetworkAlgo.h"
+
+#include "GafferScene/Private/IECoreScenePreview/Procedural.h"
+
+#include "IECoreArnold/CameraAlgo.h"
+#include "IECoreArnold/NodeAlgo.h"
+#include "IECoreArnold/ParameterAlgo.h"
+#include "IECoreArnold/UniverseBlock.h"
+
+#include "IECoreScene/Camera.h"
+#include "IECoreScene/CurvesPrimitive.h"
+#include "IECoreScene/ExternalProcedural.h"
+#include "IECoreScene/MeshPrimitive.h"
+#include "IECoreScene/Shader.h"
+#include "IECoreScene/SpherePrimitive.h"
+#include "IECoreScene/Transform.h"
+
+#include "IECoreVDB/VDBObject.h"
+#include "IECoreVDB/TypeIds.h"
+
+#include "IECore/MessageHandler.h"
+#include "IECore/SimpleTypedData.h"
+#include "IECore/StringAlgo.h"
+#include "IECore/VectorTypedData.h"
+
+#include "boost/algorithm/string.hpp"
+#include "boost/algorithm/string/join.hpp"
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/bind.hpp"
+#include "boost/container/flat_map.hpp"
+#include "boost/filesystem/operations.hpp"
+#include "boost/format.hpp"
+#include "boost/lexical_cast.hpp"
+#include "boost/optional.hpp"
+
+#include "tbb/concurrent_unordered_map.h"
+#include "tbb/concurrent_vector.h"
+#include "tbb/partitioner.h"
+#include "tbb/spin_mutex.h"
+
+#include <memory>
+#include <thread>
+#include <functional>
+#include <unordered_set>
 
 using namespace std;
 using namespace boost::filesystem;
@@ -87,6 +93,33 @@ using namespace IECoreArnoldPreview;
 namespace
 {
 
+typedef std::shared_ptr<AtNode> SharedAtNodePtr;
+typedef bool (*NodeDeleter)( AtNode *);
+
+bool nullNodeDeleter( AtNode *node )
+{
+	return false;
+}
+
+NodeDeleter nodeDeleter( IECoreScenePreview::Renderer::RenderType renderType )
+{
+	if( renderType == IECoreScenePreview::Renderer::Interactive )
+	{
+		// As interactive edits add/remove objects and shaders, we want to
+		// destroy any AtNodes that are no longer needed.
+		return AiNodeDestroy;
+	}
+	else
+	{
+		// Edits are not possible, so we have no need to delete nodes except
+		// when shutting the renderer down. `AiEnd()` (as called by ~UniverseBlock)
+		// automatically destroys all nodes and is _much_ faster than destroying
+		// them one by one with AiNodeDestroy. So we use a null deleter so that we
+		// don't try to destroy the nodes ourselves, and rely entirely on `AiEnd()`.
+		return nullNodeDeleter;
+	}
+}
+
 template<typename T>
 T *reportedCast( const IECore::RunTimeTyped *v, const char *type, const IECore::InternedString &name )
 {
@@ -97,7 +130,7 @@ T *reportedCast( const IECore::RunTimeTyped *v, const char *type, const IECore::
 	}
 
 	IECore::msg( IECore::Msg::Warning, "IECoreArnold::Renderer", boost::format( "Expected %s but got %s for %s \"%s\"." ) % T::staticTypeName() % v->typeName() % type % name.c_str() );
-	return NULL;
+	return nullptr;
 }
 
 template<typename T>
@@ -118,26 +151,6 @@ T parameter( const IECore::CompoundDataMap &parameters, const IECore::InternedSt
 	{
 		return defaultValue;
 	}
-}
-
-AtNode *convertToBox( const IECore::Object *object )
-{
-	AtNode *node = AiNode( "box" );
-	if( const IECore::VisibleRenderable *visibleRenderable = IECore::runTimeCast<const IECore::VisibleRenderable>( object ) )
-	{
-		const Imath::Box3f b = visibleRenderable->bound();
-		AiNodeSetPnt( node, "min", b.min.x, b.min.y, b.min.z );
-		AiNodeSetPnt( node, "max", b.max.x, b.max.y, b.max.z );
-	}
-
-	return node;
-}
-
-AtNode *convertToBox( const std::vector<const IECore::Object *> &samples, const std::vector<float> &times )
-{
-	// Boxes don't support motion blurred extent, so just convert
-	// the first sample.
-	return convertToBox( samples.front() );
 }
 
 std::string formatHeaderParameter( const std::string name, const IECore::Data *data )
@@ -189,6 +202,184 @@ std::string formatHeaderParameter( const std::string name, const IECore::Data *d
 	}
 }
 
+bool aiVersionLessThan( int arch, int major, int minor, int patch )
+{
+	// The Arnold API has an `AiCheckAPIVersion()` function that sounds
+	// like exactly what we need, but it doesn't support comparing for
+	// patch versions. Instead we're forced to parse the version string
+	// ourselves.
+
+	const char *arnoldVersionString = AiGetVersion( nullptr, nullptr, nullptr, nullptr );
+	int arnoldVersion[4];
+	for( int i = 0; i < 4; ++i )
+	{
+		arnoldVersion[i] = strtol( arnoldVersionString, const_cast<char **>( &arnoldVersionString ), 10 );
+		++arnoldVersionString;
+	}
+
+	auto version = { arch, major, minor, patch };
+
+	return std::lexicographical_compare(
+		begin( arnoldVersion ), end( arnoldVersion ),
+		version.begin(), version.end()
+	);
+}
+
+void substituteShaderIfNecessary( IECoreScene::ConstShaderNetworkPtr &shaderNetwork, const IECore::CompoundObject *attributes )
+{
+	if( !shaderNetwork )
+	{
+		return;
+	}
+
+	IECore::MurmurHash h;
+	shaderNetwork->hashSubstitutions( attributes, h );
+	if( h != IECore::MurmurHash() )
+	{
+		IECoreScene::ShaderNetworkPtr substituted = shaderNetwork->copy();
+		substituted->applySubstitutions( attributes );
+		shaderNetwork = substituted;
+	}
+}
+
+
+const AtString g_aaSamplesArnoldString( "AA_samples" );
+const AtString g_aaSeedArnoldString( "AA_seed" );
+const AtString g_aovShadersArnoldString( "aov_shaders" );
+const AtString g_autoArnoldString( "auto" );
+const AtString g_atmosphereArnoldString( "atmosphere" );
+const AtString g_backgroundArnoldString( "background" );
+const AtString g_boxArnoldString("box");
+const AtString g_cameraArnoldString( "camera" );
+const AtString g_catclarkArnoldString("catclark");
+const AtString g_customAttributesArnoldString( "custom_attributes" );
+const AtString g_curvesArnoldString("curves");
+const AtString g_dispMapArnoldString( "disp_map" );
+const AtString g_dispHeightArnoldString( "disp_height" );
+const AtString g_dispPaddingArnoldString( "disp_padding" );
+const AtString g_dispZeroValueArnoldString( "disp_zero_value" );
+const AtString g_dispAutoBumpArnoldString( "disp_autobump" );
+const AtString g_enableProgressiveRenderString( "enable_progressive_render" );
+const AtString g_fileNameArnoldString( "filename" );
+const AtString g_filtersArnoldString( "filters" );
+const AtString g_funcPtrArnoldString( "funcptr" );
+const AtString g_ginstanceArnoldString( "ginstance" );
+const AtString g_lightGroupArnoldString( "light_group" );
+const AtString g_shadowGroupArnoldString( "shadow_group" );
+const AtString g_linearArnoldString( "linear" );
+const AtString g_matrixArnoldString( "matrix" );
+const AtString g_geometryMatrixArnoldString( "geometry_matrix" );
+const AtString g_matteArnoldString( "matte" );
+const AtString g_meshArnoldString( "mesh" );
+const AtString g_modeArnoldString( "mode" );
+const AtString g_minPixelWidthArnoldString( "min_pixel_width" );
+const AtString g_meshLightArnoldString("mesh_light");
+const AtString g_motionStartArnoldString( "motion_start" );
+const AtString g_motionEndArnoldString( "motion_end" );
+const AtString g_nameArnoldString( "name" );
+const AtString g_nodeArnoldString("node");
+const AtString g_objectArnoldString( "object" );
+const AtString g_opaqueArnoldString( "opaque" );
+const AtString g_proceduralArnoldString( "procedural" );
+const AtString g_pinCornersArnoldString( "pin_corners" );
+const AtString g_pixelAspectRatioArnoldString( "pixel_aspect_ratio" );
+const AtString g_pluginSearchPathArnoldString( "plugin_searchpath" );
+const AtString g_polymeshArnoldString("polymesh");
+const AtString g_rasterArnoldString( "raster" );
+const AtString g_receiveShadowsArnoldString( "receive_shadows" );
+const AtString g_regionMinXArnoldString( "region_min_x" );
+const AtString g_regionMaxXArnoldString( "region_max_x" );
+const AtString g_regionMinYArnoldString( "region_min_y" );
+const AtString g_regionMaxYArnoldString( "region_max_y" );
+const AtString g_selfShadowsArnoldString( "self_shadows" );
+const AtString g_shaderArnoldString( "shader" );
+const AtString g_shutterStartArnoldString( "shutter_start" );
+const AtString g_shutterEndArnoldString( "shutter_end" );
+const AtString g_sidednessArnoldString( "sidedness" );
+const AtString g_sphereArnoldString("sphere");
+const AtString g_sssSetNameArnoldString( "sss_setname" );
+const AtString g_stepSizeArnoldString( "step_size" );
+const AtString g_stepScaleArnoldString( "step_scale" );
+const AtString g_subdivDicingCameraString( "subdiv_dicing_camera" );
+const AtString g_subdivIterationsArnoldString( "subdiv_iterations" );
+const AtString g_subdivAdaptiveErrorArnoldString( "subdiv_adaptive_error" );
+const AtString g_subdivAdaptiveMetricArnoldString( "subdiv_adaptive_metric" );
+const AtString g_subdivAdaptiveSpaceArnoldString( "subdiv_adaptive_space" );
+const AtString g_subdivSmoothDerivsArnoldString( "subdiv_smooth_derivs" );
+const AtString g_subdivTypeArnoldString( "subdiv_type" );
+const AtString g_subdivUVSmoothingArnoldString( "subdiv_uv_smoothing" );
+const AtString g_toonIdArnoldString( "toon_id" );
+const AtString g_traceSetsArnoldString( "trace_sets" );
+const AtString g_transformTypeArnoldString( "transform_type" );
+const AtString g_thickArnoldString( "thick" );
+const AtString g_useLightGroupArnoldString( "use_light_group" );
+const AtString g_useShadowGroupArnoldString( "use_shadow_group" );
+const AtString g_userPtrArnoldString( "userptr" );
+const AtString g_visibilityArnoldString( "visibility" );
+const AtString g_volumeArnoldString("volume");
+const AtString g_volumePaddingArnoldString( "volume_padding" );
+const AtString g_volumeGridsArnoldString( "grids" );
+const AtString g_velocityGridsArnoldString( "velocity_grids" );
+const AtString g_velocityScaleArnoldString( "velocity_scale" );
+const AtString g_velocityFPSArnoldString( "velocity_fps" );
+const AtString g_velocityOutlierThresholdArnoldString( "velocity_outlier_threshold" );
+const AtString g_widthArnoldString( "width" );
+const AtString g_xresArnoldString( "xres" );
+const AtString g_yresArnoldString( "yres" );
+const AtString g_filterMapArnoldString( "filtermap" );
+const AtString g_uvRemapArnoldString( "uv_remap" );
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// ArnoldRendererBase forward declaration
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+class ArnoldGlobals;
+class Instance;
+IE_CORE_FORWARDDECLARE( ShaderCache );
+IE_CORE_FORWARDDECLARE( InstanceCache );
+IE_CORE_FORWARDDECLARE( ArnoldObject );
+
+/// This class implements the basics of outputting attributes
+/// and objects to Arnold, but is not a complete implementation
+/// of the renderer interface. It is subclassed to provide concrete
+/// implementations suitable for use as the master renderer or
+/// for use in procedurals.
+class ArnoldRendererBase : public IECoreScenePreview::Renderer
+{
+
+	public :
+
+		~ArnoldRendererBase() override;
+
+		IECore::InternedString name() const override;
+
+		Renderer::AttributesInterfacePtr attributes( const IECore::CompoundObject *attributes ) override;
+
+		ObjectInterfacePtr camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes ) override;
+		ObjectInterfacePtr light( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override;
+		ObjectInterfacePtr lightFilter( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override;
+		Renderer::ObjectInterfacePtr object( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override;
+		ObjectInterfacePtr object( const std::string &name, const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const AttributesInterface *attributes ) override;
+
+	protected :
+
+		ArnoldRendererBase( NodeDeleter nodeDeleter, AtNode *parentNode = nullptr );
+
+		NodeDeleter m_nodeDeleter;
+		ShaderCachePtr m_shaderCache;
+		InstanceCachePtr m_instanceCache;
+
+	private :
+
+		AtNode *m_parentNode;
+
+};
+
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
@@ -203,39 +394,39 @@ class ArnoldOutput : public IECore::RefCounted
 
 	public :
 
-		ArnoldOutput( const IECore::InternedString &name, const IECoreScenePreview::Renderer::Output *output )
+		ArnoldOutput( const IECore::InternedString &name, const IECoreScene::Output *output, NodeDeleter nodeDeleter )
 		{
 			// Create a driver node and set its parameters.
 
-			std::string driverNodeType = output->getType();
-			if( AiNodeEntryGetType( AiNodeEntryLookUp( driverNodeType.c_str() ) ) != AI_NODE_DRIVER )
+			AtString driverNodeType( output->getType().c_str() );
+			if( AiNodeEntryGetType( AiNodeEntryLookUp( driverNodeType ) ) != AI_NODE_DRIVER )
 			{
 				// Automatically map tiff to driver_tiff and so on, to provide a degree of
 				// compatibility with existing renderman driver names.
-				std::string prefixedType = "driver_" + driverNodeType;
-				if( AiNodeEntryLookUp( prefixedType.c_str() ) )
+				AtString prefixedType( ( std::string("driver_") + driverNodeType.c_str() ).c_str() );
+				if( AiNodeEntryLookUp( prefixedType ) )
 				{
 					driverNodeType = prefixedType;
 				}
 			}
 
-			m_driver.reset( AiNode( driverNodeType.c_str() ), AiNodeDestroy );
+			const std::string driverNodeName = boost::str( boost::format( "ieCoreArnold:display:%s" ) % name.string() );
+			m_driver.reset(
+				AiNode( driverNodeType, AtString( driverNodeName.c_str() ) ),
+				nodeDeleter
+			);
 			if( !m_driver )
 			{
-				throw IECore::Exception( boost::str( boost::format( "Unable to create output driver of type \"%s\"" ) % driverNodeType ) );
+				throw IECore::Exception( boost::str( boost::format( "Unable to create output driver of type \"%s\"" ) % driverNodeType.c_str() ) );
 			}
 
-			const std::string driverNodeName = boost::str( boost::format( "ieCoreArnold:display:%s" ) % name.string() );
-			AiNodeSetStr( m_driver.get(), "name", driverNodeName.c_str() );
-
-			if( const AtParamEntry *fileNameParameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( m_driver.get() ), "filename" ) )
+			if( const AtParamEntry *fileNameParameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( m_driver.get() ), g_fileNameArnoldString ) )
 			{
-				AiNodeSetStr( m_driver.get(), AiParamGetName( fileNameParameter ), output->getName().c_str() );
+				AiNodeSetStr( m_driver.get(), AiParamGetName( fileNameParameter ), AtString( output->getName().c_str() ) );
 			}
 
 			IECore::StringVectorDataPtr customAttributesData;
-			// we need to do the const_cast here because there's not const parametersData() in cortex.
-			if( const IECore::StringVectorData *d = const_cast<IECoreScenePreview::Renderer::Output*>( output )->parametersData()->member<IECore::StringVectorData>( "custom_attributes") )
+			if( const IECore::StringVectorData *d = output->parametersData()->member<IECore::StringVectorData>( "custom_attributes") )
 			{
 				customAttributesData = d->copy();
 			}
@@ -261,10 +452,19 @@ class ArnoldOutput : public IECore::RefCounted
 					}
 				}
 
+				if( it->first.string() == "camera" )
+				{
+					if( const IECore::StringData *d = IECore::runTimeCast<const IECore::StringData>( it->second.get() ) )
+					{
+						m_cameraOverride = d->readable();
+						continue;
+					}
+				}
+
 				ParameterAlgo::setParameter( m_driver.get(), it->first.c_str(), it->second.get() );
 			}
 
-			if( AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( m_driver.get() ), "custom_attributes" ) )
+			if( AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( m_driver.get() ), g_customAttributesArnoldString ) )
 			{
 				ParameterAlgo::setParameter( m_driver.get(), "custom_attributes", customAttributesData.get() );
 			}
@@ -272,19 +472,20 @@ class ArnoldOutput : public IECore::RefCounted
 			// Create a filter.
 
 			std::string filterNodeType = parameter<std::string>( output->parameters(), "filter", "gaussian" );
-			if( AiNodeEntryGetType( AiNodeEntryLookUp( filterNodeType.c_str() ) ) != AI_NODE_FILTER )
+			if( AiNodeEntryGetType( AiNodeEntryLookUp( AtString( filterNodeType.c_str() ) ) ) != AI_NODE_FILTER )
 			{
 				filterNodeType = filterNodeType + "_filter";
 			}
 
-			m_filter.reset( AiNode( filterNodeType.c_str() ), AiNodeDestroy );
+			const std::string filterNodeName = boost::str( boost::format( "ieCoreArnold:filter:%s" ) % name.string() );
+			m_filter.reset(
+				AiNode( AtString( filterNodeType.c_str() ), AtString( filterNodeName.c_str() ) ),
+				nodeDeleter
+			);
 			if( AiNodeEntryGetType( AiNodeGetNodeEntry( m_filter.get() ) ) != AI_NODE_FILTER )
 			{
 				throw IECore::Exception( boost::str( boost::format( "Unable to create filter of type \"%s\"" ) % filterNodeType ) );
 			}
-
-			const std::string filterNodeName = boost::str( boost::format( "ieCoreArnold:filter:%s" ) % name.string() );
-			AiNodeSetStr( m_filter.get(), "name", filterNodeName.c_str() );
 
 			for( IECore::CompoundDataMap::const_iterator it = output->parameters().begin(), eIt = output->parameters().end(); it != eIt; ++it )
 			{
@@ -303,7 +504,7 @@ class ArnoldOutput : public IECore::RefCounted
 						{
 							IECore::msg( IECore::Msg::Warning, "IECoreArnold::Renderer", "Non-square filterwidth not supported" );
 						}
-						AiNodeSetFlt( m_filter.get(), "width", v->readable().x );
+						AiNodeSetFlt( m_filter.get(), g_widthArnoldString, v->readable().x );
 						continue;
 					}
 				}
@@ -315,6 +516,8 @@ class ArnoldOutput : public IECore::RefCounted
 			// supported by Arnold.
 
 			m_data = output->getData();
+			m_lpeName = "ieCoreArnold:lpe:" + name.string();
+			m_lpeValue = "";
 
 			if( m_data=="rgb" )
 			{
@@ -326,25 +529,51 @@ class ArnoldOutput : public IECore::RefCounted
 			}
 			else
 			{
-				vector<std::string> tokens;
-				Gaffer::StringAlgo::tokenize( m_data, ' ', tokens );
-				if( tokens.size() == 2 && tokens[0] == "color" )
+				std::string arnoldType = "RGB";
+				if( parameter<bool>( output->parameters(), "includeAlpha", false ) )
 				{
-					m_data = tokens[1] + " RGBA";
+					arnoldType = "RGBA";
+				}
+
+				vector<std::string> tokens;
+				IECore::StringAlgo::tokenize( m_data, ' ', tokens );
+				if( tokens.size() == 2 )
+				{
+					if( tokens[0] == "color" )
+					{
+						m_data = tokens[1] + " " + arnoldType;
+					}
+					else if( tokens[0] == "lpe" )
+					{
+						m_lpeValue = tokens[1];
+						m_data = m_lpeName + " " + arnoldType;
+					}
 				}
 			}
 		}
 
-		std::string string() const
+		void append( std::vector<std::string> &outputs, std::vector<std::string> &lightPathExpressions ) const
 		{
-			return boost::str( boost::format( "%s %s %s" ) % m_data % AiNodeGetName( m_filter.get() ) % AiNodeGetName( m_driver.get() ) );
+			outputs.push_back( boost::str( boost::format( "%s %s %s" ) % m_data % AiNodeGetName( m_filter.get() ) % AiNodeGetName( m_driver.get() ) ) );
+			if( m_lpeValue.size() )
+			{
+				lightPathExpressions.push_back( m_lpeName + " " + m_lpeValue );
+			}
+		}
+
+		const std::string &cameraOverride()
+		{
+			return m_cameraOverride;
 		}
 
 	private :
 
-		boost::shared_ptr<AtNode> m_driver;
-		boost::shared_ptr<AtNode> m_filter;
+		SharedAtNodePtr m_driver;
+		SharedAtNodePtr m_filter;
 		std::string m_data;
+		std::string m_lpeName;
+		std::string m_lpeValue;
+		std::string m_cameraOverride;
 
 };
 
@@ -364,26 +593,41 @@ class ArnoldShader : public IECore::RefCounted
 
 	public :
 
-		ArnoldShader( const IECore::ObjectVector *shaderNetwork, const std::string &namePrefix = "" )
+		ArnoldShader( const IECoreScene::ShaderNetwork *shaderNetwork, NodeDeleter nodeDeleter, const std::string &name, const AtNode *parentNode )
+			:	m_nodeDeleter( nodeDeleter )
 		{
-			m_nodes = ShaderAlgo::convert( shaderNetwork, namePrefix );
+			m_nodes = ShaderNetworkAlgo::convert( shaderNetwork, name, parentNode );
 		}
 
-		virtual ~ArnoldShader()
+		~ArnoldShader() override
 		{
 			for( std::vector<AtNode *>::const_iterator it = m_nodes.begin(), eIt = m_nodes.end(); it != eIt; ++it )
 			{
-				AiNodeDestroy( *it );
+				m_nodeDeleter( *it );
 			}
 		}
 
-		AtNode *root()
+		bool update( const IECoreScene::ShaderNetwork *shaderNetwork )
 		{
-			return !m_nodes.empty() ? m_nodes.back() : NULL;
+			// `ShaderNetworkAlgo::update()` will destroy unwanted nodes, so we can
+			// only call it if we're responsible for deleting them in the first place.
+			assert( m_nodeDeleter == AiNodeDestroy );
+			return ShaderNetworkAlgo::update( m_nodes, shaderNetwork );
+		}
+
+		AtNode *root() const
+		{
+			return !m_nodes.empty() ? m_nodes.back() : nullptr;
+		}
+
+		void nodesCreated( vector<AtNode *> &nodes ) const
+		{
+			nodes.insert( nodes.end(), m_nodes.begin(), m_nodes.end() );
 		}
 
 	private :
 
+		NodeDeleter m_nodeDeleter;
 		std::vector<AtNode *> m_nodes;
 
 };
@@ -395,14 +639,36 @@ class ShaderCache : public IECore::RefCounted
 
 	public :
 
-		// Can be called concurrently with other get() calls.
-		ArnoldShaderPtr get( const IECore::ObjectVector *shader )
+		ShaderCache( NodeDeleter nodeDeleter, AtNode *parentNode )
+			:	m_nodeDeleter( nodeDeleter ), m_parentNode( parentNode )
 		{
+		}
+
+		// Can be called concurrently with other get() calls.
+		ArnoldShaderPtr get( const IECoreScene::ShaderNetwork *shader, const IECore::CompoundObject *attributes )
+		{
+			IECore::MurmurHash h = shader->Object::hash();
+			IECore::MurmurHash hSubst;
+			if( attributes )
+			{
+				shader->hashSubstitutions( attributes, hSubst );
+				h.append( hSubst );
+			}
 			Cache::accessor a;
-			m_cache.insert( a, shader->Object::hash() );
+			m_cache.insert( a, h );
 			if( !a->second )
 			{
-				a->second = new ArnoldShader( shader, "shader:" + shader->Object::hash().toString() + ":" );
+				const std::string namePrefix = "shader:" + a->first.toString();
+				if( hSubst != IECore::MurmurHash() )
+				{
+					IECoreScene::ShaderNetworkPtr substitutedShader = shader->copy();
+					substitutedShader->applySubstitutions( attributes );
+					a->second = new ArnoldShader( substitutedShader.get(), m_nodeDeleter, namePrefix, m_parentNode );
+				}
+				else
+				{
+					a->second = new ArnoldShader( shader, m_nodeDeleter, namePrefix, m_parentNode );
+				}
 			}
 			return a->second;
 		}
@@ -427,11 +693,21 @@ class ShaderCache : public IECore::RefCounted
 			}
 		}
 
+		void nodesCreated( vector<AtNode *> &nodes ) const
+		{
+			for( Cache::const_iterator it = m_cache.begin(), eIt = m_cache.end(); it != eIt; ++it )
+			{
+				it->second->nodesCreated( nodes );
+			}
+		}
+
 	private :
+
+		NodeDeleter m_nodeDeleter;
+		AtNode *m_parentNode;
 
 		typedef tbb::concurrent_hash_map<IECore::MurmurHash, ArnoldShaderPtr> Cache;
 		Cache m_cache;
-
 };
 
 IE_CORE_DECLAREPTR( ShaderCache )
@@ -455,28 +731,45 @@ IECore::InternedString g_oslShaderAttributeName( "osl:shader" );
 
 IECore::InternedString g_cameraVisibilityAttributeName( "ai:visibility:camera" );
 IECore::InternedString g_shadowVisibilityAttributeName( "ai:visibility:shadow" );
-IECore::InternedString g_reflectedVisibilityAttributeName( "ai:visibility:reflected" );
-IECore::InternedString g_refractedVisibilityAttributeName( "ai:visibility:refracted" );
-IECore::InternedString g_diffuseVisibilityAttributeName( "ai:visibility:diffuse" );
-IECore::InternedString g_glossyVisibilityAttributeName( "ai:visibility:glossy" );
+IECore::InternedString g_shadowGroup( "ai:visibility:shadow_group" );
+IECore::InternedString g_diffuseReflectVisibilityAttributeName( "ai:visibility:diffuse_reflect" );
+IECore::InternedString g_specularReflectVisibilityAttributeName( "ai:visibility:specular_reflect" );
+IECore::InternedString g_diffuseTransmitVisibilityAttributeName( "ai:visibility:diffuse_transmit" );
+IECore::InternedString g_specularTransmitVisibilityAttributeName( "ai:visibility:specular_transmit" );
+IECore::InternedString g_volumeVisibilityAttributeName( "ai:visibility:volume" );
+IECore::InternedString g_subsurfaceVisibilityAttributeName( "ai:visibility:subsurface" );
 
 IECore::InternedString g_arnoldSurfaceShaderAttributeName( "ai:surface" );
 IECore::InternedString g_arnoldLightShaderAttributeName( "ai:light" );
+IECore::InternedString g_arnoldFilterMapAttributeName( "ai:filtermap" );
+IECore::InternedString g_arnoldUVRemapAttributeName( "ai:uv_remap" );
+IECore::InternedString g_arnoldLightFilterShaderAttributeName( "ai:lightFilter:filter" );
 
 IECore::InternedString g_arnoldReceiveShadowsAttributeName( "ai:receive_shadows" );
 IECore::InternedString g_arnoldSelfShadowsAttributeName( "ai:self_shadows" );
 IECore::InternedString g_arnoldOpaqueAttributeName( "ai:opaque" );
 IECore::InternedString g_arnoldMatteAttributeName( "ai:matte" );
 
-IECore::InternedString g_stepSizeAttributeName( "ai:shape:step_size" );
+IECore::InternedString g_volumeStepSizeAttributeName( "ai:volume:step_size" );
+IECore::InternedString g_volumeStepScaleAttributeName( "ai:volume:step_scale" );
+IECore::InternedString g_shapeVolumeStepScaleAttributeName( "ai:shape:step_scale" );
+IECore::InternedString g_shapeVolumeStepSizeAttributeName( "ai:shape:step_size" );
+IECore::InternedString g_shapeVolumePaddingAttributeName( "ai:shape:volume_padding" );
+IECore::InternedString g_volumeGridsAttributeName( "ai:volume:grids" );
+IECore::InternedString g_velocityGridsAttributeName( "ai:volume:velocity_grids" );
+IECore::InternedString g_velocityScaleAttributeName( "ai:volume:velocity_scale" );
+IECore::InternedString g_velocityFPSAttributeName( "ai:volume:velocity_fps" );
+IECore::InternedString g_velocityOutlierThresholdAttributeName( "ai:volume:velocity_outlier_threshold" );
+
+IECore::InternedString g_transformTypeAttributeName( "ai:transform_type" );
 
 IECore::InternedString g_polyMeshSubdivIterationsAttributeName( "ai:polymesh:subdiv_iterations" );
 IECore::InternedString g_polyMeshSubdivAdaptiveErrorAttributeName( "ai:polymesh:subdiv_adaptive_error" );
 IECore::InternedString g_polyMeshSubdivAdaptiveMetricAttributeName( "ai:polymesh:subdiv_adaptive_metric" );
 IECore::InternedString g_polyMeshSubdivAdaptiveSpaceAttributeName( "ai:polymesh:subdiv_adaptive_space" );
 IECore::InternedString g_polyMeshSubdivSmoothDerivsAttributeName( "ai:polymesh:subdiv_smooth_derivs" );
-IECore::InternedString g_polyMeshSubdividePolygonsAttributeName( "ai:polymesh:subdividePolygons" );
-IECore::InternedString g_objectSpace( "object" );
+IECore::InternedString g_polyMeshSubdividePolygonsAttributeName( "ai:polymesh:subdivide_polygons" );
+IECore::InternedString g_polyMeshSubdivUVSmoothingAttributeName( "ai:polymesh:subdiv_uv_smoothing" );
 
 IECore::InternedString g_dispMapAttributeName( "ai:disp_map" );
 IECore::InternedString g_dispHeightAttributeName( "ai:disp_height" );
@@ -486,8 +779,12 @@ IECore::InternedString g_dispAutoBumpAttributeName( "ai:disp_autobump" );
 
 IECore::InternedString g_curvesMinPixelWidthAttributeName( "ai:curves:min_pixel_width" );
 IECore::InternedString g_curvesModeAttributeName( "ai:curves:mode" );
+IECore::InternedString g_sssSetNameName( "ai:sss_setname" );
+IECore::InternedString g_toonIdName( "ai:toon_id" );
 
-IECore::InternedString g_linkedLights( "linkedLights" );
+IECore::InternedString g_lightFilterPrefix( "ai:lightFilter:" );
+
+IECore::InternedString g_filteredLights( "filteredLights" );
 
 class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterface
 {
@@ -495,14 +792,16 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 	public :
 
 		ArnoldAttributes( const IECore::CompoundObject *attributes, ShaderCache *shaderCache )
-			:	m_visibility( AI_RAY_ALL ), m_sidedness( AI_RAY_ALL ), m_shadingFlags( Default ), m_stepSize( 0.0f ), m_polyMesh( attributes ), m_displacement( attributes, shaderCache ), m_curves( attributes )
+			:	m_visibility( AI_RAY_ALL ), m_sidedness( AI_RAY_ALL ), m_shadingFlags( Default ), m_stepSize( 0.0f ), m_stepScale( 1.0f ), m_volumePadding( 0.0f ), m_polyMesh( attributes ), m_displacement( attributes, shaderCache ), m_curves( attributes ), m_volume( attributes )
 		{
 			updateVisibility( g_cameraVisibilityAttributeName, AI_RAY_CAMERA, attributes );
 			updateVisibility( g_shadowVisibilityAttributeName, AI_RAY_SHADOW, attributes );
-			updateVisibility( g_reflectedVisibilityAttributeName, AI_RAY_REFLECTED, attributes );
-			updateVisibility( g_refractedVisibilityAttributeName, AI_RAY_REFRACTED, attributes );
-			updateVisibility( g_diffuseVisibilityAttributeName, AI_RAY_DIFFUSE, attributes );
-			updateVisibility( g_glossyVisibilityAttributeName, AI_RAY_GLOSSY, attributes );
+			updateVisibility( g_diffuseReflectVisibilityAttributeName, AI_RAY_DIFFUSE_REFLECT, attributes );
+			updateVisibility( g_specularReflectVisibilityAttributeName, AI_RAY_SPECULAR_REFLECT, attributes );
+			updateVisibility( g_diffuseTransmitVisibilityAttributeName, AI_RAY_DIFFUSE_TRANSMIT, attributes );
+			updateVisibility( g_specularTransmitVisibilityAttributeName, AI_RAY_SPECULAR_TRANSMIT, attributes );
+			updateVisibility( g_volumeVisibilityAttributeName, AI_RAY_VOLUME, attributes );
+			updateVisibility( g_subsurfaceVisibilityAttributeName, AI_RAY_SUBSURFACE, attributes );
 
 			if( const IECore::BoolData *d = attribute<IECore::BoolData>( g_doubleSidedAttributeName, attributes ) )
 			{
@@ -514,32 +813,59 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			updateShadingFlag( g_arnoldOpaqueAttributeName, Opaque, attributes );
 			updateShadingFlag( g_arnoldMatteAttributeName, Matte, attributes );
 
-			const IECore::ObjectVector *surfaceShaderAttribute = attribute<IECore::ObjectVector>( g_arnoldSurfaceShaderAttributeName, attributes );
-			surfaceShaderAttribute = surfaceShaderAttribute ? surfaceShaderAttribute : attribute<IECore::ObjectVector>( g_oslSurfaceShaderAttributeName, attributes );
-			surfaceShaderAttribute = surfaceShaderAttribute ? surfaceShaderAttribute : attribute<IECore::ObjectVector>( g_oslShaderAttributeName, attributes );
-			surfaceShaderAttribute = surfaceShaderAttribute ? surfaceShaderAttribute : attribute<IECore::ObjectVector>( g_surfaceShaderAttributeName, attributes );
+			const IECoreScene::ShaderNetwork *surfaceShaderAttribute = attribute<IECoreScene::ShaderNetwork>( g_arnoldSurfaceShaderAttributeName, attributes );
+			surfaceShaderAttribute = surfaceShaderAttribute ? surfaceShaderAttribute : attribute<IECoreScene::ShaderNetwork>( g_oslSurfaceShaderAttributeName, attributes );
+			/// \todo Remove support for interpreting "osl:shader" as a surface shader assignment.
+			surfaceShaderAttribute = surfaceShaderAttribute ? surfaceShaderAttribute : attribute<IECoreScene::ShaderNetwork>( g_oslShaderAttributeName, attributes );
+			surfaceShaderAttribute = surfaceShaderAttribute ? surfaceShaderAttribute : attribute<IECoreScene::ShaderNetwork>( g_surfaceShaderAttributeName, attributes );
 			if( surfaceShaderAttribute )
 			{
-				m_surfaceShader = shaderCache->get( surfaceShaderAttribute );
+				m_surfaceShader = shaderCache->get( surfaceShaderAttribute, attributes );
 			}
 
-			m_lightShader = attribute<IECore::ObjectVector>( g_arnoldLightShaderAttributeName, attributes );
-			m_lightShader = m_lightShader ? m_lightShader : attribute<IECore::ObjectVector>( g_lightShaderAttributeName, attributes );
+			if( auto filterMapAttribute = attribute<IECoreScene::ShaderNetwork>( g_arnoldFilterMapAttributeName, attributes ) )
+			{
+				m_filterMap = shaderCache->get( filterMapAttribute, attributes );
+			}
+			if( auto uvRemapAttribute = attribute<IECoreScene::ShaderNetwork>( g_arnoldUVRemapAttributeName, attributes ) )
+			{
+				m_uvRemap = shaderCache->get( uvRemapAttribute, attributes );
+			}
+
+			m_lightShader = attribute<IECoreScene::ShaderNetwork>( g_arnoldLightShaderAttributeName, attributes );
+			m_lightShader = m_lightShader ? m_lightShader : attribute<IECoreScene::ShaderNetwork>( g_lightShaderAttributeName, attributes );
+			substituteShaderIfNecessary( m_lightShader, attributes );
+
+			m_lightFilterShader = attribute<IECoreScene::ShaderNetwork>( g_arnoldLightFilterShaderAttributeName, attributes );
+			substituteShaderIfNecessary( m_lightFilterShader, attributes );
 
 			m_traceSets = attribute<IECore::InternedStringVectorData>( g_setsAttributeName, attributes );
-			m_stepSize = attributeValue<float>( g_stepSizeAttributeName, attributes, 0.0f );
+			m_transformType = attribute<IECore::StringData>( g_transformTypeAttributeName, attributes );
+			m_stepSize = attributeValue<float>( g_shapeVolumeStepSizeAttributeName, attributes, 0.0f );
+			m_stepScale = attributeValue<float>( g_shapeVolumeStepScaleAttributeName, attributes, 1.0f );
+			m_volumePadding = attributeValue<float>( g_shapeVolumePaddingAttributeName, attributes, 0.0f );
 
-			m_linkedLights = attribute<IECore::StringVectorData>( g_linkedLights, attributes );
+			m_sssSetName = attribute<IECore::StringData>( g_sssSetNameName, attributes );
+			m_toonId = attribute<IECore::StringData>( g_toonIdName, attributes );
 
 			for( IECore::CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; ++it )
 			{
-				if( !boost::starts_with( it->first.string(), "user:" ) )
+				if( boost::starts_with( it->first.string(), "user:" ) )
+				{
+					if( const IECore::Data *data = IECore::runTimeCast<const IECore::Data>( it->second.get() ) )
+					{
+						m_user[it->first] = data;
+					}
+				}
+
+				if( it->first.string() == g_arnoldLightFilterShaderAttributeName )
 				{
 					continue;
 				}
-				if( const IECore::Data *data = IECore::runTimeCast<const IECore::Data>( it->second.get() ) )
+				else if( boost::starts_with( it->first.string(), g_lightFilterPrefix.string() ) )
 				{
-					m_user[it->first] = data;
+					ArnoldShaderPtr filter = shaderCache->get( IECore::runTimeCast<const IECoreScene::ShaderNetwork>( it->second.get() ), attributes );
+					m_lightFilterShaders.push_back( filter );
 				}
 			}
 		}
@@ -551,36 +877,47 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 		// attributes, and is called from InstanceCache during geometry conversion.
 		void applyGeometry( const IECore::Object *object, AtNode *node ) const
 		{
-			if( const IECore::MeshPrimitive *mesh = IECore::runTimeCast<const IECore::MeshPrimitive>( object ) )
+			if( const IECoreScene::MeshPrimitive *mesh = IECore::runTimeCast<const IECoreScene::MeshPrimitive>( object ) )
 			{
-				if( m_stepSize == 0.0f )
-				{
-					m_polyMesh.apply( mesh, node );
-					m_displacement.apply( node );
-				}
-				else
-				{
-					// Non-zero step sizes will have caused conversion to a box,
-					// so we can't apply our mesh attributes at all.
-				}
+				m_polyMesh.apply( mesh, node );
+				m_displacement.apply( node );
 			}
-			else if( IECore::runTimeCast<const IECore::CurvesPrimitive>( object ) )
+			else if( IECore::runTimeCast<const IECoreScene::CurvesPrimitive>( object ) )
 			{
 				m_curves.apply( node );
 			}
+			else if( IECore::runTimeCast<const IECoreVDB::VDBObject>( object ) )
+			{
+				m_volume.apply( node );
+			}
+			else if( const IECoreScene::ExternalProcedural *procedural = IECore::runTimeCast<const IECoreScene::ExternalProcedural>( object ) )
+			{
+				if( procedural->getFileName() == "volume" )
+				{
+					m_volume.apply( node );
+				}
+			}
 
-			if( m_stepSize != 0.0f && AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), "step_size" ) )
+			float actualStepSize = m_stepSize * m_stepScale;
+
+			if( actualStepSize != 0.0f && AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), g_stepSizeArnoldString ) )
 			{
 				// Only apply step_size if it hasn't already been set to a non-zero
 				// value by the geometry converter. This allows procedurals to carry
 				// their step size as a parameter and have it trump the attribute value.
 				// This is important for Gaffer nodes like ArnoldVDB, which carefully
 				// calculate the correct step size and provide it via a parameter.
-				if( AiNodeGetFlt( node, "step_size" ) == 0.0f )
+				if( AiNodeGetFlt( node, g_stepSizeArnoldString ) == 0.0f )
 				{
-					AiNodeSetFlt( node, "step_size", m_stepSize );
+					AiNodeSetFlt( node, g_stepSizeArnoldString, actualStepSize );
 				}
 			}
+
+			if( m_volumePadding != 0.0f && AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), g_volumePaddingArnoldString ) )
+			{
+				AiNodeSetFlt( node, g_volumePaddingArnoldString, m_volumePadding );
+			}
+
 		}
 
 		// Generates a signature for the work done by applyGeometry.
@@ -589,16 +926,16 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			const IECore::TypeId objectType = object->typeId();
 			bool meshInterpolationIsLinear = false;
 			bool proceduralIsVolumetric = false;
-			if( objectType == IECore::MeshPrimitiveTypeId )
+			if( objectType == IECoreScene::MeshPrimitive::staticTypeId() )
 			{
-				meshInterpolationIsLinear = static_cast<const IECore::MeshPrimitive *>( object )->interpolation() == "linear";
+				meshInterpolationIsLinear = static_cast<const IECoreScene::MeshPrimitive *>( object )->interpolation() == "linear";
 			}
-			else if( objectType == IECore::ExternalProceduralTypeId )
+			else if( objectType == IECoreScene::ExternalProcedural::staticTypeId() )
 			{
-				const IECore::ExternalProcedural *procedural = static_cast<const IECore::ExternalProcedural *>( object );
-				if( const IECore::StringData *nodeType = procedural->parameters()->member<const IECore::StringData>( "ai:nodeType" ) )
+				const IECoreScene::ExternalProcedural *procedural = static_cast<const IECoreScene::ExternalProcedural *>( object );
+				if( procedural->getFileName() == "volume" )
 				{
-					proceduralIsVolumetric = nodeType->readable() == "volume";
+					proceduralIsVolumetric = true;
 				}
 			}
 			hashGeometryInternal( objectType, meshInterpolationIsLinear, proceduralIsVolumetric, h );
@@ -608,12 +945,12 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 		// will be applied in `applyGeometry()`.
 		bool canInstanceGeometry( const IECore::Object *object ) const
 		{
-			if( !IECore::runTimeCast<const IECore::VisibleRenderable>( object ) )
+			if( !IECore::runTimeCast<const IECoreScene::VisibleRenderable>( object ) )
 			{
 				return false;
 			}
 
-			if( const IECore::MeshPrimitive *mesh = IECore::runTimeCast<const IECore::MeshPrimitive>( object ) )
+			if( const IECoreScene::MeshPrimitive *mesh = IECore::runTimeCast<const IECoreScene::MeshPrimitive>( object ) )
 			{
 				if( mesh->interpolation() == "linear" )
 				{
@@ -623,10 +960,15 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 				{
 					// We shouldn't instance poly meshes with view dependent subdivision, because the subdivision
 					// for the master mesh might be totally inappropriate for the position of the ginstances in frame.
-					return m_polyMesh.subdivAdaptiveError == 0.0f || m_polyMesh.subdivAdaptiveSpace == g_objectSpace;
+					return m_polyMesh.subdivAdaptiveError == 0.0f || m_polyMesh.subdivAdaptiveSpace == g_objectArnoldString;
 				}
 			}
-			else if( const IECore::ExternalProcedural *procedural = IECore::runTimeCast<const IECore::ExternalProcedural>( object ) )
+			else if( IECore::runTimeCast<const IECoreScene::CurvesPrimitive>( object ) )
+			{
+				// Min pixel width is a screen-space metric, and hence not compatible with instancing.
+				return m_curves.minPixelWidth == 0.0f;
+			}
+			else if( const IECoreScene::ExternalProcedural *procedural = IECore::runTimeCast<const IECoreScene::ExternalProcedural>( object ) )
 			{
 				// We don't instance "ass archive" procedurals, because Arnold
 				// does automatic instancing of those itself, using its procedural
@@ -638,17 +980,6 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			}
 
 			return true;
-		}
-
-		// As if the interaction between attributes and geometry wasn't
-		// bad enough, we want a non-zero step_size value to cause meshes
-		// to be rendered as boxes, because Arnold doesn't currently support
-		// volume rendering of meshes. This method tells the InstanceCache
-		// when this is the case, so it can be taken into account in the
-		// geometry conversion.
-		bool requiresBoxGeometry( const IECore::Object *object ) const
-		{
-			return m_stepSize != 0.0f && IECore::runTimeCast<const IECore::MeshPrimitive>( object );
 		}
 
 		// Most attributes (visibility, surface shader etc) are orthogonal to the
@@ -670,35 +1001,35 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			if( previousAttributes )
 			{
 				const AtNode *geometry = node;
-				if( AiNodeIs( node, "ginstance" ) )
+				if( AiNodeIs( node, g_ginstanceArnoldString ) )
 				{
-					geometry = static_cast<const AtNode *>( AiNodeGetPtr( node, "node" ) );
+					geometry = static_cast<const AtNode *>( AiNodeGetPtr( node, g_nodeArnoldString ) );
 				}
 
 				IECore::TypeId objectType = IECore::InvalidTypeId;
 				bool meshInterpolationIsLinear = false;
 				bool proceduralIsVolumetric = false;
-				if( AiNodeIs( geometry, "polymesh" ) )
+				if( AiNodeIs( geometry, g_polymeshArnoldString ) )
 				{
-					objectType = IECore::MeshPrimitiveTypeId;
-					meshInterpolationIsLinear = strcmp( AiNodeGetStr( geometry, "subdiv_type" ), "catclark" );
+					objectType = IECoreScene::MeshPrimitive::staticTypeId();
+					meshInterpolationIsLinear = AiNodeGetStr( geometry, g_subdivTypeArnoldString ) != g_catclarkArnoldString;
 				}
-				else if( AiNodeIs( geometry, "curves" ) )
+				else if( AiNodeIs( geometry, g_curvesArnoldString ) )
 				{
-					objectType = IECore::CurvesPrimitiveTypeId;
+					objectType = IECoreScene::CurvesPrimitive::staticTypeId();
 				}
-				else if( AiNodeIs( geometry, "box" ) )
+				else if( AiNodeIs( geometry, g_boxArnoldString ) )
 				{
-					objectType = IECore::MeshPrimitiveTypeId;
+					objectType = IECoreScene::MeshPrimitive::staticTypeId();
 				}
-				else if( AiNodeIs( geometry, "volume" ) )
+				else if( AiNodeIs( geometry, g_volumeArnoldString ) )
 				{
-					objectType = IECore::ExternalProceduralTypeId;
+					objectType = IECoreScene::ExternalProcedural::staticTypeId();
 					proceduralIsVolumetric = true;
 				}
-				else if( AiNodeIs( geometry, "sphere" ) )
+				else if( AiNodeIs( geometry, g_sphereArnoldString ) )
 				{
-					objectType = IECore::SpherePrimitiveTypeId;
+					objectType = IECoreScene::SpherePrimitive::staticTypeId();
 				}
 
 				IECore::MurmurHash previousGeometryHash;
@@ -741,21 +1072,32 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 			if( AiNodeEntryGetType( AiNodeGetNodeEntry( node ) ) == AI_NODE_SHAPE )
 			{
-				AiNodeSetByte( node, "visibility", m_visibility );
-				AiNodeSetByte( node, "sidedness", m_sidedness );
+				AiNodeSetByte( node, g_visibilityArnoldString, m_visibility );
+				AiNodeSetByte( node, g_sidednessArnoldString, m_sidedness );
 
-				AiNodeSetBool( node, "receive_shadows", m_shadingFlags & ArnoldAttributes::ReceiveShadows );
-				AiNodeSetBool( node, "self_shadows", m_shadingFlags & ArnoldAttributes::SelfShadows );
-				AiNodeSetBool( node, "opaque", m_shadingFlags & ArnoldAttributes::Opaque );
-				AiNodeSetBool( node, "matte", m_shadingFlags & ArnoldAttributes::Matte );
+				if( m_transformType )
+				{
+					// \todo : Arnold quite explicitly discourages constructing AtStrings repeatedly,
+					// but given the need to pass m_transformType around as a string for consistency
+					// reasons, it seems like there's not much else we can do here.
+					// If we start reusing ArnoldAttributes for multiple locations with identical attributes,
+					// it could be worth caching this, or possibly in the future we could come up with
+					// some way of cleanly exposing enum values as something other than strings.
+					AiNodeSetStr( node, g_transformTypeArnoldString, AtString( m_transformType->readable().c_str() ) );
+				}
+
+				AiNodeSetBool( node, g_receiveShadowsArnoldString, m_shadingFlags & ArnoldAttributes::ReceiveShadows );
+				AiNodeSetBool( node, g_selfShadowsArnoldString, m_shadingFlags & ArnoldAttributes::SelfShadows );
+				AiNodeSetBool( node, g_opaqueArnoldString, m_shadingFlags & ArnoldAttributes::Opaque );
+				AiNodeSetBool( node, g_matteArnoldString, m_shadingFlags & ArnoldAttributes::Matte );
 
 				if( m_surfaceShader && m_surfaceShader->root() )
 				{
-					AiNodeSetPtr( node, "shader", m_surfaceShader->root() );
+					AiNodeSetPtr( node, g_shaderArnoldString, m_surfaceShader->root() );
 				}
 				else
 				{
-					AiNodeResetParameter( node, "shader" );
+					AiNodeResetParameter( node, g_shaderArnoldString );
 				}
 
 				if( m_traceSets && m_traceSets->readable().size() )
@@ -766,48 +1108,83 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 					{
 						AiArraySetStr( array, i, v[i].c_str() );
 					}
-					AiNodeSetArray( node, "trace_sets", array );
+					AiNodeSetArray( node, g_traceSetsArnoldString, array );
 				}
 				else
 				{
 					// Arnold very unhelpfully treats `trace_sets == []` as meaning the object
 					// is in every trace set. So we instead make `trace_sets == [ "__none__" ]`
 					// to get the behaviour people expect.
-					AiNodeSetArray( node, "trace_sets", AiArray( 1, 1, AI_TYPE_STRING, "__none__" ) );
+					AiNodeSetArray( node, g_traceSetsArnoldString, AiArray( 1, 1, AI_TYPE_STRING, "__none__" ) );
 				}
 
-				if( m_linkedLights )
+				if( m_sssSetName )
 				{
-					const std::vector<std::string> &lightNames = m_linkedLights->readable();
-
-					std::vector<AtNode*> lightNodesVector;
-					for ( IECore::StringVectorData::ValueType::const_iterator it = lightNames.begin(); it != lightNames.end(); ++it )
-					{
-						std::string lightName = "light:" + *(it);
-						AtNode *lightNode = AiNodeLookUpByName( lightName.c_str() );
-						if( lightNode )
-						{
-							lightNodesVector.push_back( lightNode );
-						}
-					}
-
-					AtArray *linkedLightNodes = AiArrayConvert( lightNodesVector.size(), 1, AI_TYPE_NODE, lightNodesVector.data() );
-					AiNodeSetArray( node, "light_group", linkedLightNodes );
-					AiNodeSetBool( node, "use_light_group", true );
+					ParameterAlgo::setParameter( node, g_sssSetNameArnoldString, m_sssSetName.get() );
 				}
 				else
 				{
-					AiNodeResetParameter( node, "light_group" );
-					AiNodeResetParameter( node, "use_light_group" );
+					AiNodeResetParameter( node, g_sssSetNameArnoldString );
+				}
+
+				if( m_toonId )
+				{
+					ParameterAlgo::setParameter( node, g_toonIdArnoldString, m_toonId.get() );
+				}
+				else
+				{
+					AiNodeResetParameter( node, g_toonIdArnoldString );
+				}
+			}
+
+			// Add camera specific parameters.
+
+			if( AiNodeEntryGetType( AiNodeGetNodeEntry( node ) ) == AI_NODE_CAMERA )
+			{
+				if( AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), g_filterMapArnoldString ) )
+				{
+					if( m_filterMap && m_filterMap->root() )
+					{
+						AiNodeSetPtr( node, g_filterMapArnoldString, m_filterMap->root() );
+					}
+					else
+					{
+						AiNodeResetParameter( node, g_filterMapArnoldString );
+					}
+				}
+
+				if( AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), g_uvRemapArnoldString ) )
+				{
+					if( m_uvRemap && m_uvRemap->root() )
+					{
+						AiNodeLinkOutput( m_uvRemap->root(), "", node, g_uvRemapArnoldString );
+					}
+					else
+					{
+						AiNodeResetParameter( node, g_uvRemapArnoldString );
+					}
 				}
 			}
 
 			return true;
+
 		}
 
-		const IECore::ObjectVector *lightShader() const
+		const IECoreScene::ShaderNetwork *lightShader() const
 		{
 			return m_lightShader.get();
+		}
+
+		/// Return the shader assigned to a world space light filter
+		const IECoreScene::ShaderNetwork *lightFilterShader() const
+		{
+			return m_lightFilterShader.get();
+		}
+
+		/// Return the shaders for filters directly assigned to a light
+		const std::vector<ArnoldShaderPtr>& lightFilterShaders() const
+		{
+			return m_lightFilterShaders;
 		}
 
 	private :
@@ -819,16 +1196,45 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			{
 				subdivIterations = attributeValue<int>( g_polyMeshSubdivIterationsAttributeName, attributes, 1 );
 				subdivAdaptiveError = attributeValue<float>( g_polyMeshSubdivAdaptiveErrorAttributeName, attributes, 0.0f );
-				subdivAdaptiveMetric = attributeValue<string>( g_polyMeshSubdivAdaptiveMetricAttributeName, attributes, "auto" );
-				subdivAdaptiveSpace = attributeValue<string>( g_polyMeshSubdivAdaptiveSpaceAttributeName, attributes, "raster" );
+
+				const IECore::StringData *subdivAdaptiveMetricData = attribute<IECore::StringData>( g_polyMeshSubdivAdaptiveMetricAttributeName, attributes );
+				if( subdivAdaptiveMetricData )
+				{
+					subdivAdaptiveMetric = AtString( subdivAdaptiveMetricData->readable().c_str() );
+				}
+				else
+				{
+					subdivAdaptiveMetric = g_autoArnoldString;
+				}
+
+				const IECore::StringData *subdivAdaptiveSpaceData = attribute<IECore::StringData>( g_polyMeshSubdivAdaptiveSpaceAttributeName, attributes );
+				if( subdivAdaptiveSpaceData )
+				{
+					subdivAdaptiveSpace = AtString( subdivAdaptiveSpaceData->readable().c_str() );
+				}
+				else
+				{
+					subdivAdaptiveSpace = g_rasterArnoldString;
+				}
+
+				if( auto a = attribute<IECore::StringData>( g_polyMeshSubdivUVSmoothingAttributeName, attributes ) )
+				{
+					subdivUVSmoothing = AtString( a->readable().c_str() );
+				}
+				else
+				{
+					subdivUVSmoothing = g_pinCornersArnoldString;
+				}
+
 				subdividePolygons = attributeValue<bool>( g_polyMeshSubdividePolygonsAttributeName, attributes, false );
 				subdivSmoothDerivs = attributeValue<bool>( g_polyMeshSubdivSmoothDerivsAttributeName, attributes, false );
 			}
 
 			int subdivIterations;
 			float subdivAdaptiveError;
-			IECore::InternedString subdivAdaptiveMetric;
-			IECore::InternedString subdivAdaptiveSpace;
+			AtString subdivAdaptiveMetric;
+			AtString subdivAdaptiveSpace;
+			AtString subdivUVSmoothing;
 			bool subdividePolygons;
 			bool subdivSmoothDerivs;
 
@@ -838,24 +1244,26 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 				{
 					h.append( subdivIterations );
 					h.append( subdivAdaptiveError );
-					h.append( subdivAdaptiveMetric );
-					h.append( subdivAdaptiveSpace );
+					h.append( subdivAdaptiveMetric.c_str() );
+					h.append( subdivAdaptiveSpace.c_str() );
+					h.append( subdivUVSmoothing.c_str() );
 					h.append( subdivSmoothDerivs );
 				}
 			}
 
-			void apply( const IECore::MeshPrimitive *mesh, AtNode *node ) const
+			void apply( const IECoreScene::MeshPrimitive *mesh, AtNode *node ) const
 			{
 				if( mesh->interpolation() != "linear" || subdividePolygons )
 				{
-					AiNodeSetByte( node, "subdiv_iterations", subdivIterations );
-					AiNodeSetFlt( node, "subdiv_adaptive_error", subdivAdaptiveError );
-					AiNodeSetStr( node, "subdiv_adaptive_metric", subdivAdaptiveMetric.c_str() );
-					AiNodeSetStr( node, "subdiv_adaptive_space", subdivAdaptiveSpace.c_str() );
-					AiNodeSetBool( node, "subdiv_smooth_derivs", subdivSmoothDerivs );
+					AiNodeSetByte( node, g_subdivIterationsArnoldString, subdivIterations );
+					AiNodeSetFlt( node, g_subdivAdaptiveErrorArnoldString, subdivAdaptiveError );
+					AiNodeSetStr( node, g_subdivAdaptiveMetricArnoldString, subdivAdaptiveMetric );
+					AiNodeSetStr( node, g_subdivAdaptiveSpaceArnoldString, subdivAdaptiveSpace );
+					AiNodeSetStr( node, g_subdivUVSmoothingArnoldString, subdivUVSmoothing );
+					AiNodeSetBool( node, g_subdivSmoothDerivsArnoldString, subdivSmoothDerivs );
 					if( mesh->interpolation() == "linear" )
 					{
-						AiNodeSetStr( node, "subdiv_type", "linear" );
+						AiNodeSetStr( node, g_subdivTypeArnoldString, g_linearArnoldString );
 					}
 				}
 			}
@@ -867,9 +1275,9 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 			Displacement( const IECore::CompoundObject *attributes, ShaderCache *shaderCache )
 			{
-				if( const IECore::ObjectVector *mapAttribute = attribute<IECore::ObjectVector>( g_dispMapAttributeName, attributes ) )
+				if( const IECoreScene::ShaderNetwork *mapAttribute = attribute<IECoreScene::ShaderNetwork>( g_dispMapAttributeName, attributes ) )
 				{
-					map = shaderCache->get( mapAttribute );
+					map = shaderCache->get( mapAttribute, attributes );
 				}
 				height = attributeValue<float>( g_dispHeightAttributeName, attributes, 1.0f );
 				padding = attributeValue<float>( g_dispPaddingAttributeName, attributes, 0.0f );
@@ -899,17 +1307,17 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			{
 				if( map && map->root() )
 				{
-					AiNodeSetPtr( node, "disp_map", map->root() );
+					AiNodeSetPtr( node, g_dispMapArnoldString, map->root() );
 				}
 				else
 				{
-					AiNodeResetParameter( node, "disp_map" );
+					AiNodeResetParameter( node, g_dispMapArnoldString );
 				}
 
-				AiNodeSetFlt( node, "disp_height", height );
-				AiNodeSetFlt( node, "disp_padding", padding );
-				AiNodeSetFlt( node, "disp_zero_value", zeroValue );
-				AiNodeSetBool( node, "disp_autobump", autoBump );
+				AiNodeSetFlt( node, g_dispHeightArnoldString, height );
+				AiNodeSetFlt( node, g_dispPaddingArnoldString, padding );
+				AiNodeSetFlt( node, g_dispZeroValueArnoldString, zeroValue );
+				AiNodeSetBool( node, g_dispAutoBumpArnoldString, autoBump );
 			}
 
 		};
@@ -947,14 +1355,113 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 			void apply( AtNode *node ) const
 			{
-				AiNodeSetFlt( node, "min_pixel_width", minPixelWidth );
+				AiNodeSetFlt( node, g_minPixelWidthArnoldString, minPixelWidth );
 				if( thick )
 				{
-					AiNodeSetStr( node, "mode", "thick" );
+					AiNodeSetStr( node, g_modeArnoldString, g_thickArnoldString );
 				}
 			}
 
 		};
+
+	struct Volume
+	{
+		Volume( const IECore::CompoundObject *attributes )
+		{
+			volumeGrids = attribute<IECore::StringVectorData>( g_volumeGridsAttributeName, attributes );
+			velocityGrids = attribute<IECore::StringVectorData>( g_velocityGridsAttributeName, attributes );
+			velocityScale = optionalAttribute<float>( g_velocityScaleAttributeName, attributes );
+			velocityFPS = optionalAttribute<float>( g_velocityFPSAttributeName, attributes );
+			velocityOutlierThreshold = optionalAttribute<float>( g_velocityOutlierThresholdAttributeName, attributes );
+			stepSize = optionalAttribute<float> ( g_volumeStepSizeAttributeName, attributes );
+			stepScale = optionalAttribute<float>( g_volumeStepScaleAttributeName, attributes );
+		}
+
+		IECore::ConstStringVectorDataPtr volumeGrids;
+		IECore::ConstStringVectorDataPtr velocityGrids;
+		boost::optional<float> velocityScale;
+		boost::optional<float> velocityFPS;
+		boost::optional<float> velocityOutlierThreshold;
+		boost::optional<float> stepSize;
+		boost::optional<float> stepScale;
+
+		void hash( IECore::MurmurHash &h ) const
+		{
+			if( volumeGrids )
+			{
+				volumeGrids->hash( h );
+			}
+
+			if( velocityGrids )
+			{
+				velocityGrids->hash( h );
+			}
+
+			h.append( velocityScale.get_value_or( 1.0f ) );
+			h.append( velocityFPS.get_value_or( 24.0f ) );
+			h.append( velocityOutlierThreshold.get_value_or( 0.001f ) );
+			h.append( stepSize.get_value_or( 0.0f ) );
+			h.append( stepScale.get_value_or( 1.0f ) );
+		}
+
+		void apply( AtNode *node ) const
+		{
+			if( volumeGrids && volumeGrids->readable().size() )
+			{
+				AtArray *array = ParameterAlgo::dataToArray( volumeGrids.get(), AI_TYPE_STRING );
+				AiNodeSetArray( node, g_volumeGridsArnoldString, array );
+			}
+
+			if( velocityGrids && velocityGrids->readable().size() )
+			{
+				AtArray *array = ParameterAlgo::dataToArray( velocityGrids.get(), AI_TYPE_STRING );
+				AiNodeSetArray( node, g_velocityGridsArnoldString, array );
+			}
+
+			if( !velocityScale || velocityScale.get() > 0 )
+			{
+				AtNode *options = AiUniverseGetOptions();
+				const AtNode *arnoldCamera = static_cast<const AtNode *>( AiNodeGetPtr( options, "camera" ) );
+
+				if( arnoldCamera )
+				{
+					float shutterStart = AiNodeGetFlt( arnoldCamera, g_shutterStartArnoldString );
+					float shutterEnd = AiNodeGetFlt( arnoldCamera, g_shutterEndArnoldString );
+
+					// We're getting very lucky here:
+					//  - Arnold has automatically set options.camera the first time we made a camera
+					//  - All cameras output by Gaffer at present will have the same shutter,
+					//    so it doesn't matter if we get it from the final render camera or not.
+					AiNodeSetFlt( node, g_motionStartArnoldString, shutterStart );
+					AiNodeSetFlt( node, g_motionEndArnoldString, shutterEnd );
+				}
+			}
+
+			if( velocityScale )
+			{
+				AiNodeSetFlt( node, g_velocityScaleArnoldString, velocityScale.get() );
+			}
+
+			if( velocityFPS )
+			{
+				AiNodeSetFlt( node, g_velocityFPSArnoldString, velocityFPS.get() );
+			}
+
+			if( velocityOutlierThreshold )
+			{
+				AiNodeSetFlt( node, g_velocityOutlierThresholdArnoldString, velocityOutlierThreshold.get() );
+			}
+
+			if ( stepSize )
+			{
+				AiNodeSetFlt( node, g_stepSizeArnoldString, stepSize.get() * stepScale.get_value_or( 1.0f ) );
+			}
+			else if ( stepScale )
+			{
+				AiNodeSetFlt( node, g_stepScaleArnoldString, stepScale.get() );
+			}
+		}
+	};
 
 		enum ShadingFlags
 		{
@@ -972,7 +1479,7 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			IECore::CompoundObject::ObjectMap::const_iterator it = attributes->members().find( name );
 			if( it == attributes->members().end() )
 			{
-				return NULL;
+				return nullptr;
 			}
 			return reportedCast<const T>( it->second.get(), "attribute", name );
 		}
@@ -983,6 +1490,14 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 			typedef IECore::TypedData<T> DataType;
 			const DataType *data = attribute<DataType>( name, attributes );
 			return data ? data->readable() : defaultValue;
+		}
+
+		template<typename T>
+		static boost::optional<T> optionalAttribute( const IECore::InternedString &name, const IECore::CompoundObject *attributes )
+		{
+			typedef IECore::TypedData<T> DataType;
+			const DataType *data = attribute<DataType>( name, attributes );
+			return data ? data->readable() : boost::optional<T>();
 		}
 
 		void updateVisibility( const IECore::InternedString &name, unsigned char rayType, const IECore::CompoundObject *attributes )
@@ -1017,24 +1532,37 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 
 		void hashGeometryInternal( IECore::TypeId objectType, bool meshInterpolationIsLinear, bool proceduralIsVolumetric, IECore::MurmurHash &h ) const
 		{
-			switch( objectType )
+			switch( (int)objectType )
 			{
-				case IECore::MeshPrimitiveTypeId :
+				case IECoreScene::MeshPrimitiveTypeId :
 					m_polyMesh.hash( meshInterpolationIsLinear, h );
 					m_displacement.hash( h );
 					h.append( m_stepSize );
+					h.append( m_stepScale );
+					h.append( m_volumePadding );
 					break;
-				case IECore::CurvesPrimitiveTypeId :
+				case IECoreScene::CurvesPrimitiveTypeId :
 					m_curves.hash( h );
 					break;
-				case IECore::SpherePrimitiveTypeId :
+				case IECoreScene::SpherePrimitiveTypeId :
 					h.append( m_stepSize );
+					h.append( m_stepScale );
+					h.append( m_volumePadding );
 					break;
-				case IECore::ExternalProceduralTypeId :
+				case IECoreScene::ExternalProceduralTypeId :
 					if( proceduralIsVolumetric )
 					{
 						h.append( m_stepSize );
+						h.append( m_stepScale );
+						h.append( m_volumePadding );
+
+						m_volume.hash( h );
 					}
+					break;
+				case IECoreVDB::VDBObjectTypeId :
+					h.append( m_volumePadding );
+
+					m_volume.hash( h );
 					break;
 				default :
 					// No geometry attributes for this type.
@@ -1046,16 +1574,26 @@ class ArnoldAttributes : public IECoreScenePreview::Renderer::AttributesInterfac
 		unsigned char m_sidedness;
 		unsigned char m_shadingFlags;
 		ArnoldShaderPtr m_surfaceShader;
-		IECore::ConstObjectVectorPtr m_lightShader;
+		ArnoldShaderPtr m_filterMap;
+		ArnoldShaderPtr m_uvRemap;
+		IECoreScene::ConstShaderNetworkPtr m_lightShader;
+		IECoreScene::ConstShaderNetworkPtr m_lightFilterShader;
+		std::vector<ArnoldShaderPtr> m_lightFilterShaders;
 		IECore::ConstInternedStringVectorDataPtr m_traceSets;
+		IECore::ConstStringDataPtr m_transformType;
 		float m_stepSize;
+		float m_stepScale;
+		float m_volumePadding;
 		PolyMesh m_polyMesh;
 		Displacement m_displacement;
 		Curves m_curves;
-		IECore::ConstStringVectorDataPtr m_linkedLights;
+		Volume m_volume;
+		IECore::ConstStringDataPtr m_toonId;
 
 		typedef boost::container::flat_map<IECore::InternedString, IECore::ConstDataPtr> UserAttributes;
 		UserAttributes m_user;
+
+		IECore::ConstStringDataPtr m_sssSetName;
 
 };
 
@@ -1067,19 +1605,32 @@ IE_CORE_DECLAREPTR( ArnoldAttributes )
 // InstanceCache
 //////////////////////////////////////////////////////////////////////////
 
+namespace
+{
+
 class Instance
 {
 
 	public :
 
-		Instance( boost::shared_ptr<AtNode> node, bool instanced )
+		// Non-instanced
+		Instance( const SharedAtNodePtr &node )
 			:	m_node( node )
 		{
-			if( instanced && node )
+		}
+
+		// Instanced
+		Instance( const SharedAtNodePtr &node, NodeDeleter nodeDeleter, const std::string &instanceName, const AtNode *parent )
+			:	m_node( node )
+		{
+			if( node )
 			{
-				AiNodeSetByte( node.get(), "visibility", 0 );
-				m_ginstance = boost::shared_ptr<AtNode>( AiNode( "ginstance" ), AiNodeDestroy );
-				AiNodeSetPtr( m_ginstance.get(), "node", m_node.get() );
+				AiNodeSetByte( node.get(), g_visibilityArnoldString, 0 );
+				m_ginstance = SharedAtNodePtr(
+					AiNode( g_ginstanceArnoldString, AtString( instanceName.c_str() ), parent ),
+					nodeDeleter
+				);
+				AiNodeSetPtr( m_ginstance.get(), g_nodeArnoldString, m_node.get() );
 			}
 		}
 
@@ -1088,26 +1639,42 @@ class Instance
 			return m_ginstance.get() ? m_ginstance.get() : m_node.get();
 		}
 
+		void nodesCreated( vector<AtNode *> &nodes ) const
+		{
+			if( m_ginstance )
+			{
+				nodes.push_back( m_ginstance.get() );
+			}
+		}
+
 	private :
 
-		boost::shared_ptr<AtNode> m_node;
-		boost::shared_ptr<AtNode> m_ginstance;
+		SharedAtNodePtr m_node;
+		SharedAtNodePtr m_ginstance;
 
 };
+
+// Forward declaration
+AtNode *convertProcedural( IECoreScenePreview::ConstProceduralPtr procedural, const std::string &nodeName, const AtNode *parentNode );
 
 class InstanceCache : public IECore::RefCounted
 {
 
 	public :
 
+		InstanceCache( NodeDeleter nodeDeleter, AtNode *parentNode )
+			:	m_nodeDeleter( nodeDeleter ), m_parentNode( parentNode )
+		{
+		}
+
 		// Can be called concurrently with other get() calls.
-		Instance get( const IECore::Object *object, const IECoreScenePreview::Renderer::AttributesInterface *attributes )
+		Instance get( const IECore::Object *object, const IECoreScenePreview::Renderer::AttributesInterface *attributes, const std::string &nodeName )
 		{
 			const ArnoldAttributes *arnoldAttributes = static_cast<const ArnoldAttributes *>( attributes );
 
-			if( !arnoldAttributes->canInstanceGeometry( object ) )
+			if( !canInstance( object, arnoldAttributes ) )
 			{
-				return Instance( convert( object, arnoldAttributes ), /* instanced = */ false );
+				return Instance( convert( object, arnoldAttributes, nodeName ) );
 			}
 
 			IECore::MurmurHash h = object->hash();
@@ -1117,24 +1684,19 @@ class InstanceCache : public IECore::RefCounted
 			m_cache.insert( a, h );
 			if( !a->second )
 			{
-				a->second = convert( object, arnoldAttributes );
-				if( a->second )
-				{
-					std::string name = "instance:" + h.toString();
-					AiNodeSetStr( a->second.get(), "name", name.c_str() );
-				}
+				a->second = convert( object, arnoldAttributes, "instance:" + h.toString() );
 			}
 
-			return Instance( a->second, /* instanced = */ true );
+			return Instance( a->second, m_nodeDeleter, nodeName, m_parentNode );
 		}
 
-		Instance get( const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const IECoreScenePreview::Renderer::AttributesInterface *attributes )
+		Instance get( const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const IECoreScenePreview::Renderer::AttributesInterface *attributes, const std::string &nodeName )
 		{
 			const ArnoldAttributes *arnoldAttributes = static_cast<const ArnoldAttributes *>( attributes );
 
-			if( !arnoldAttributes->canInstanceGeometry( samples.front() ) )
+			if( !canInstance( samples.front(), arnoldAttributes ) )
 			{
-				return Instance( convert( samples, times, arnoldAttributes ), /* instanced = */ false );
+				return Instance( convert( samples, times, arnoldAttributes, nodeName ) );
 			}
 
 			IECore::MurmurHash h;
@@ -1152,15 +1714,10 @@ class InstanceCache : public IECore::RefCounted
 			m_cache.insert( a, h );
 			if( !a->second )
 			{
-				a->second = convert( samples, times, arnoldAttributes );
-				if( a->second )
-				{
-					std::string name = "instance:" + h.toString();
-					AiNodeSetStr( a->second.get(), "name", name.c_str() );
-				}
+				a->second = convert( samples, times, arnoldAttributes, "instance:" + h.toString() );
 			}
 
-			return Instance( a->second, /* instanced = */ true );
+			return Instance( a->second, m_nodeDeleter, nodeName, m_parentNode );
 		}
 
 		// Must not be called concurrently with anything.
@@ -1183,64 +1740,97 @@ class InstanceCache : public IECore::RefCounted
 			}
 		}
 
+		void nodesCreated( vector<AtNode *> &nodes ) const
+		{
+			for( Cache::const_iterator it = m_cache.begin(), eIt = m_cache.end(); it != eIt; ++it )
+			{
+				if( it->second )
+				{
+					nodes.push_back( it->second.get() );
+				}
+			}
+		}
+
 	private :
 
-		boost::shared_ptr<AtNode> convert( const IECore::Object *object, const ArnoldAttributes *attributes )
+		bool canInstance( const IECore::Object *object, const ArnoldAttributes *attributes ) const
+		{
+			if( IECore::runTimeCast<const IECoreScenePreview::Procedural>( object ) && m_nodeDeleter == AiNodeDestroy )
+			{
+				if( aiVersionLessThan( 5, 0, 1, 4 ) )
+				{
+					// Work around Arnold bug whereby deleting an instanced procedural
+					// can lead to crashes. This unfortunately means that we don't get
+					// to do instancing of procedurals during interactive renders, but
+					// we can at least do it during batch renders.
+					return false;
+				}
+			}
+			return attributes->canInstanceGeometry( object );
+		}
+
+		SharedAtNodePtr convert( const IECore::Object *object, const ArnoldAttributes *attributes, const std::string &nodeName )
 		{
 			if( !object )
 			{
-				return boost::shared_ptr<AtNode>();
+				return SharedAtNodePtr();
 			}
 
-			AtNode *node = NULL;
-			if( attributes->requiresBoxGeometry( object ) )
+			AtNode *node = nullptr;
+			if( const IECoreScenePreview::Procedural *procedural = IECore::runTimeCast<const IECoreScenePreview::Procedural>( object ) )
 			{
-				node = convertToBox( object );
+				node = convertProcedural( procedural, nodeName, m_parentNode );
 			}
 			else
 			{
-				node = NodeAlgo::convert( object );
+				node = NodeAlgo::convert( object, nodeName, m_parentNode );
 			}
 
 			if( !node )
 			{
-				return boost::shared_ptr<AtNode>();
+				return SharedAtNodePtr();
 			}
 
 			attributes->applyGeometry( object, node );
 
-			return boost::shared_ptr<AtNode>( node, AiNodeDestroy );
+			return SharedAtNodePtr( node, m_nodeDeleter );
 		}
 
-		boost::shared_ptr<AtNode> convert( const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const ArnoldAttributes *attributes )
+		SharedAtNodePtr convert( const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const ArnoldAttributes *attributes, const std::string &nodeName )
 		{
-			AtNode *node = NULL;
-			if( attributes->requiresBoxGeometry( samples.front() ) )
+			NodeAlgo::ensureUniformTimeSamples( times );
+			AtNode *node = nullptr;
+			if( const IECoreScenePreview::Procedural *procedural = IECore::runTimeCast<const IECoreScenePreview::Procedural>( samples.front() ) )
 			{
-				node = convertToBox( samples, times );
+				node = convertProcedural( procedural, nodeName, m_parentNode );
 			}
 			else
 			{
-				node = NodeAlgo::convert( samples, times );
+				node = NodeAlgo::convert( samples, times[0], times[times.size() - 1], nodeName, m_parentNode );
 			}
 
 			if( !node )
 			{
-				return boost::shared_ptr<AtNode>();
+				return SharedAtNodePtr();
 			}
 
 			attributes->applyGeometry( samples.front(), node );
 
-			return boost::shared_ptr<AtNode>( node, AiNodeDestroy );
+			return SharedAtNodePtr( node, m_nodeDeleter );
 
 		}
 
-		typedef tbb::concurrent_hash_map<IECore::MurmurHash, boost::shared_ptr<AtNode> > Cache;
+		NodeDeleter m_nodeDeleter;
+		AtNode *m_parentNode;
+
+		typedef tbb::concurrent_hash_map<IECore::MurmurHash, SharedAtNodePtr> Cache;
 		Cache m_cache;
 
 };
 
 IE_CORE_DECLAREPTR( InstanceCache )
+
+} // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // ArnoldObject
@@ -1252,17 +1842,19 @@ namespace
 static IECore::InternedString g_surfaceAttributeName( "surface" );
 static IECore::InternedString g_aiSurfaceAttributeName( "ai:surface" );
 
-class ArnoldObject : public IECoreScenePreview::Renderer::ObjectInterface
+IE_CORE_FORWARDDECLARE( ArnoldLight )
+
+class ArnoldObjectBase : public IECoreScenePreview::Renderer::ObjectInterface
 {
 
 	public :
 
-		ArnoldObject( const Instance &instance )
-			:	m_instance( instance ), m_attributes( NULL )
+		ArnoldObjectBase( const Instance &instance )
+			:	m_instance( instance ), m_attributes( nullptr )
 		{
 		}
 
-		virtual void transform( const Imath::M44f &transform )
+		void transform( const Imath::M44f &transform ) override
 		{
 			AtNode *node = m_instance.node();
 			if( !node )
@@ -1272,7 +1864,7 @@ class ArnoldObject : public IECoreScenePreview::Renderer::ObjectInterface
 			applyTransform( node, transform );
 		}
 
-		virtual void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times )
+		void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times ) override
 		{
 			AtNode *node = m_instance.node();
 			if( !node )
@@ -1282,49 +1874,58 @@ class ArnoldObject : public IECoreScenePreview::Renderer::ObjectInterface
 			applyTransform( node, samples, times );
 		}
 
-		virtual bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes )
+		bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes ) override
 		{
-			AtNode *node = m_instance.node();
-			if( !node )
-			{
-				return true;
-			}
-
 			const ArnoldAttributes *arnoldAttributes = static_cast<const ArnoldAttributes *>( attributes );
-			if( arnoldAttributes->apply( node, m_attributes.get() ) )
+
+			AtNode *node = m_instance.node();
+			if( !node || arnoldAttributes->apply( node, m_attributes.get() ) )
 			{
 				m_attributes = arnoldAttributes;
 				return true;
 			}
+
 			return false;
+		}
+
+		void link( const IECore::InternedString &type, const IECoreScenePreview::Renderer::ConstObjectSetPtr &objects ) override
+		{
+		}
+
+		const Instance &instance() const
+		{
+			return m_instance;
 		}
 
 	protected :
 
-		void applyTransform( AtNode *node, const Imath::M44f &transform )
+		void applyTransform( AtNode *node, const Imath::M44f &transform, const AtString matrixParameterName = g_matrixArnoldString )
 		{
-			AiNodeSetMatrix( node, "matrix", const_cast<float (*)[4]>( transform.x ) );
+			AiNodeSetMatrix( node, matrixParameterName, reinterpret_cast<const AtMatrix&>( transform.x ) );
 		}
 
-		void applyTransform( AtNode *node, const std::vector<Imath::M44f> &samples, const std::vector<float> &times )
+		void applyTransform( AtNode *node, const std::vector<Imath::M44f> &samples, const std::vector<float> &times, const AtString matrixParameterName = g_matrixArnoldString )
 		{
+			const AtParamEntry *parameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), matrixParameterName );
+			if( AiParamGetType( parameter ) != AI_TYPE_ARRAY )
+			{
+				// Parameter doesn't support motion blur
+				applyTransform( node, samples[0], matrixParameterName );
+				return;
+			}
+
 			const size_t numSamples = samples.size();
-			AtArray *timesArray = AiArrayAllocate( samples.size(), 1, AI_TYPE_FLOAT );
 			AtArray *matricesArray = AiArrayAllocate( 1, numSamples, AI_TYPE_MATRIX );
 			for( size_t i = 0; i < numSamples; ++i )
 			{
-				AiArraySetFlt( timesArray, i, times[i] );
-				AiArraySetMtx( matricesArray, i, const_cast<float (*)[4]>( samples[i].x ) );
+				AiArraySetMtx( matricesArray, i, reinterpret_cast<const AtMatrix&>( samples[i].x ) );
 			}
-			AiNodeSetArray( node, "matrix", matricesArray );
-			if( AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( node ), "transform_time_samples" ) )
-			{
-				AiNodeSetArray( node, "transform_time_samples", timesArray );
-			}
-			else
-			{
-				AiNodeSetArray( node, "time_samples", timesArray );
-			}
+			AiNodeSetArray( node, matrixParameterName, matricesArray );
+
+			NodeAlgo::ensureUniformTimeSamples( times );
+			AiNodeSetFlt( node, g_motionStartArnoldString, times[0] );
+			AiNodeSetFlt( node, g_motionEndArnoldString, times[times.size() - 1] );
+
 		}
 
 		Instance m_instance;
@@ -1341,6 +1942,134 @@ class ArnoldObject : public IECoreScenePreview::Renderer::ObjectInterface
 
 };
 
+IE_CORE_FORWARDDECLARE( ArnoldObject )
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// ArnoldLightFilter
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+class ArnoldLightFilter : public ArnoldObjectBase
+{
+
+	public :
+
+		ArnoldLightFilter( const std::string &name, const Instance &instance, NodeDeleter nodeDeleter, const AtNode *parentNode )
+			:	ArnoldObjectBase( instance ), m_name( name ), m_nodeDeleter( nodeDeleter ), m_parentNode( parentNode )
+		{
+		}
+
+		~ArnoldLightFilter() override
+		{
+		}
+
+		void transform( const Imath::M44f &transform ) override
+		{
+			ArnoldObjectBase::transform( transform );
+			m_transformMatrices.clear();
+			m_transformTimes.clear();
+			m_transformMatrices.push_back( transform );
+			applyLightFilterTransform();
+		}
+
+		void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times ) override
+		{
+			ArnoldObjectBase::transform( samples, times );
+			m_transformMatrices = samples;
+			m_transformTimes = times;
+			applyLightFilterTransform();
+		}
+
+		bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes ) override
+		{
+			if( !ArnoldObjectBase::attributes( attributes ) )
+			{
+				return false;
+			}
+
+			// Update light filter shader.
+
+			if( m_attributes->lightFilterShader() )
+			{
+				if( !m_lightFilterShader )
+				{
+					m_lightFilterShader = new ArnoldShader( m_attributes->lightFilterShader(), m_nodeDeleter, "lightFilter:" + m_name, m_parentNode );
+					applyLightFilterTransform();
+				}
+				else
+				{
+					bool keptRootShader = m_lightFilterShader->update( m_attributes->lightFilterShader() );
+					if( !keptRootShader )
+					{
+						// Couldn't update existing shader in place because the shader type
+						// was changed. This will leave dangling pointers in any `filters` lists
+						// held by lights. Return false to force the client to rebuild from
+						// scratch.
+						return false;
+					}
+				}
+			}
+			else
+			{
+				if( m_lightFilterShader )
+				{
+					// Removing `m_lightFilterShader` would create dangling pointers,
+					// so we can not make the edit.
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		void nodesCreated( vector<AtNode *> &nodes ) const
+		{
+			if( m_lightFilterShader )
+			{
+				m_lightFilterShader->nodesCreated( nodes );
+			}
+		}
+
+		ArnoldShader *lightFilterShader() const
+		{
+			return m_lightFilterShader.get();
+		}
+
+	private :
+
+		void applyLightFilterTransform()
+		{
+			if( !m_lightFilterShader || m_transformMatrices.empty() )
+			{
+				return;
+			}
+			AtNode *root = m_lightFilterShader->root();
+			if( m_transformTimes.empty() )
+			{
+				assert( m_transformMatrices.size() == 1 );
+				applyTransform( root, m_transformMatrices[0], g_geometryMatrixArnoldString );
+			}
+			else
+			{
+				applyTransform( root, m_transformMatrices, m_transformTimes, g_geometryMatrixArnoldString );
+			}
+		}
+
+		std::string m_name;
+		vector<Imath::M44f> m_transformMatrices;
+		vector<float> m_transformTimes;
+		NodeDeleter m_nodeDeleter;
+		const AtNode *m_parentNode;
+		ArnoldShaderPtr m_lightFilterShader;
+
+};
+
+IE_CORE_DECLAREPTR( ArnoldLightFilter )
+
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
@@ -1350,74 +2079,130 @@ class ArnoldObject : public IECoreScenePreview::Renderer::ObjectInterface
 namespace
 {
 
-class ArnoldLight : public ArnoldObject
+IECore::InternedString g_lightFilters( "lightFilters" );
+
+class ArnoldLight : public ArnoldObjectBase
 {
 
 	public :
 
-		ArnoldLight( const std::string &name, const Instance &instance )
-			:	ArnoldObject( instance ), m_name( name )
+		ArnoldLight( const std::string &name, const Instance &instance, NodeDeleter nodeDeleter, const AtNode *parentNode )
+			:	ArnoldObjectBase( instance ), m_name( name ), m_nodeDeleter( nodeDeleter ), m_parentNode( parentNode )
 		{
 		}
 
-		virtual void transform( const Imath::M44f &transform )
+		~ArnoldLight() override
 		{
-			ArnoldObject::transform( transform );
+		}
+
+		void transform( const Imath::M44f &transform ) override
+		{
+			ArnoldObjectBase::transform( transform );
 			m_transformMatrices.clear();
 			m_transformTimes.clear();
 			m_transformMatrices.push_back( transform );
 			applyLightTransform();
 		}
 
-		virtual void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times )
+		void transform( const std::vector<Imath::M44f> &samples, const std::vector<float> &times ) override
 		{
-			ArnoldObject::transform( samples, times );
+			ArnoldObjectBase::transform( samples, times );
 			m_transformMatrices = samples;
 			m_transformTimes = times;
 			applyLightTransform();
 		}
 
-		virtual bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes )
+		bool attributes( const IECoreScenePreview::Renderer::AttributesInterface *attributes ) override
 		{
-			if( !ArnoldObject::attributes( attributes ) )
+			ConstArnoldAttributesPtr oldAttributes = m_attributes;
+			if( !ArnoldObjectBase::attributes( attributes ) )
 			{
 				return false;
 			}
 
-			const ArnoldAttributes *arnoldAttributes = static_cast<const ArnoldAttributes *>( attributes );
-
 			// Update light shader.
 
-			m_lightShader = NULL;
-			if( !arnoldAttributes->lightShader() )
+			if( m_attributes->lightShader() )
 			{
-				return true;
-			}
-
-			m_lightShader = new ArnoldShader( arnoldAttributes->lightShader(), "light:" + m_name + ":" );
-
-			// Simplify name for the root shader, for ease of reading of ass files.
-			const std::string name = "light:" + m_name;
-			AiNodeSetStr( m_lightShader->root(), "name", name.c_str() );
-
-			// Deal with mesh_lights.
-
-			if( AiNodeIs( m_lightShader->root(), "mesh_light" ) )
-			{
-				if( m_instance.node() )
+				if( !m_lightShader )
 				{
-					AiNodeSetPtr( m_lightShader->root(), "mesh", m_instance.node() );
+					m_lightShader = new ArnoldShader( m_attributes->lightShader(), m_nodeDeleter, "light:" + m_name, m_parentNode );
+
+					applyLightTransform();
+
+					// Link mesh lights to the geometry held by ArnoldObjectBase.
+
+					if( AiNodeIs( m_lightShader->root(), g_meshLightArnoldString ) )
+					{
+						if( m_instance.node() )
+						{
+							AiNodeSetPtr( m_lightShader->root(), g_meshArnoldString, m_instance.node() );
+						}
+						else
+						{
+							// Don't output mesh lights from locations with no object
+							m_lightShader = nullptr;
+						}
+					}
 				}
 				else
 				{
-					// Don't output mesh_lights from locations with no object
-					m_lightShader = NULL;
-					return true;
+					bool keptRootShader = m_lightShader->update( m_attributes->lightShader() );
+					if( !keptRootShader )
+					{
+						// Couldn't update existing shader in place because the shader type
+						// was changed. This will leave dangling pointers in any `light_group`
+						// lists held by objects. Return false to force the client to rebuild from
+						// scratch.
+						return false;
+					}
+				}
+			}
+			else
+			{
+				if( m_lightShader )
+				{
+					// Removing `m_lightShader` would create dangling light linking pointers,
+					// so we can not make the edit - the client must rebuild instead.
+					return false;
 				}
 			}
 
-			applyLightTransform();
+			// Update filter links if needed.
+
+			if(
+				( oldAttributes && oldAttributes->lightFilterShaders() != m_attributes->lightFilterShaders() ) ||
+				( !oldAttributes && m_attributes->lightFilterShaders().size() )
+			)
+			{
+				updateLightFilterLinks();
+			}
+
 			return true;
+		}
+
+		void link( const IECore::InternedString &type, const IECoreScenePreview::Renderer::ConstObjectSetPtr &lightFilters ) override
+		{
+			if( type != g_lightFilters || lightFilters == m_linkedLightFilters )
+			{
+				return;
+			}
+
+			m_linkedLightFilters = lightFilters;
+			updateLightFilterLinks();
+		}
+
+		const ArnoldShader *lightShader() const
+		{
+			return m_lightShader.get();
+		}
+
+		void nodesCreated( vector<AtNode *> &nodes ) const
+		{
+			if( m_lightShader )
+			{
+				m_lightShader->nodesCreated( nodes );
+			}
 		}
 
 	private :
@@ -1440,104 +2225,311 @@ class ArnoldLight : public ArnoldObject
 			}
 		}
 
+		void updateLightFilterLinks()
+		{
+			if( !m_lightShader )
+			{
+				return;
+			}
+
+			auto &attributesLightFilters = m_attributes->lightFilterShaders();
+			vector<AtNode *> lightFilterNodes;
+			lightFilterNodes.reserve(
+				( m_linkedLightFilters ? m_linkedLightFilters->size() : 0 ) + attributesLightFilters.size()
+			);
+
+			if( m_linkedLightFilters )
+			{
+				for( const auto &filter : *m_linkedLightFilters )
+				{
+					const ArnoldLightFilter *arnoldFilter = static_cast<const ArnoldLightFilter *>( filter.get() );
+					if( arnoldFilter->lightFilterShader() )
+					{
+						lightFilterNodes.push_back( arnoldFilter->lightFilterShader()->root() );
+					}
+				}
+			}
+
+			for( const auto &filterShader : attributesLightFilters )
+			{
+				lightFilterNodes.push_back( filterShader->root() );
+			}
+
+			AiNodeSetArray(
+				m_lightShader->root(), g_filtersArnoldString,
+				AiArrayConvert( lightFilterNodes.size(), 1, AI_TYPE_NODE, lightFilterNodes.data() )
+			);
+		}
+
 		// Because the AtNode for the light arrives via attributes(),
 		// we need to store the transform and name ourselves so we have
 		// them later when we need them.
 		std::string m_name;
 		vector<Imath::M44f> m_transformMatrices;
 		vector<float> m_transformTimes;
+		NodeDeleter m_nodeDeleter;
+		const AtNode *m_parentNode;
 		ArnoldShaderPtr m_lightShader;
+		IECoreScenePreview::Renderer::ConstObjectSetPtr m_linkedLightFilters;
 
 };
+
+IE_CORE_DECLAREPTR( ArnoldLight )
 
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
-// ArnoldRenderer
+// ArnoldObject
 //////////////////////////////////////////////////////////////////////////
 
 namespace
 {
 
-class InteractiveRenderController
+IECore::InternedString g_lights( "lights" );
+
+class ArnoldObject : public ArnoldObjectBase
 {
 
 	public :
 
-		InteractiveRenderController()
+		ArnoldObject( const Instance &instance )
+			:	ArnoldObjectBase( instance )
 		{
-			m_rendering = false;
 		}
 
-		void setRendering( bool rendering )
+		~ArnoldObject() override
 		{
-			if( rendering == m_rendering )
+		}
+
+		void link( const IECore::InternedString &type, const IECoreScenePreview::Renderer::ConstObjectSetPtr &objects ) override
+		{
+			AtNode *node = m_instance.node();
+			if( !node )
 			{
 				return;
 			}
 
-			m_rendering = rendering;
-
-			if( rendering )
+			AtString groupParameterName;
+			AtString useParameterName;
+			if( type == g_lights )
 			{
-				std::thread thread( boost::bind( &InteractiveRenderController::performInteractiveRender, this ) );
-				m_thread.swap( thread );
+				groupParameterName = g_lightGroupArnoldString;
+				useParameterName = g_useLightGroupArnoldString;
+			}
+			else if( type == g_shadowGroup )
+			{
+				groupParameterName = g_shadowGroupArnoldString;
+				useParameterName = g_useShadowGroupArnoldString;
 			}
 			else
 			{
-				if( AiRendering() )
-				{
-					AiRenderInterrupt();
-				}
-				m_thread.join();
+				return;
 			}
-		}
 
-		bool getRendering() const
-		{
-			return m_rendering;
-		}
-
-	private :
-
-		// Called in a background thread to control a
-		// progressive interactive render.
-		void performInteractiveRender()
-		{
-			AtNode *options = AiUniverseGetOptions();
-			const int finalAASamples = AiNodeGetInt( options, "AA_samples" );
-			const int startAASamples = min( -5, finalAASamples );
-
-			for( int aaSamples = startAASamples; aaSamples <= finalAASamples; ++aaSamples )
+			if( objects )
 			{
-				if( aaSamples == 0 || ( aaSamples > 1 && aaSamples != finalAASamples ) )
+				vector<AtNode *> lightNodes; lightNodes.reserve( objects->size() );
+				for( const auto &o : *objects )
 				{
-					// 0 AA_samples is meaningless, and we want to jump straight
-					// from 1 AA_sample to the final sampling quality.
-					continue;
+					auto arnoldLight = dynamic_cast<const ArnoldLight *>( o.get() );
+					if( arnoldLight && arnoldLight->lightShader() )
+					{
+						lightNodes.push_back( arnoldLight->lightShader()->root() );
+					}
+					else
+					{
+						IECore::msg( IECore::Msg::Warning, "ArnoldObject::link()", "Attempt to link nonexistent light" );
+					}
 				}
 
-				AiNodeSetInt( options, "AA_samples", aaSamples );
-				if( !m_rendering || AiRender( AI_RENDER_MODE_CAMERA ) != AI_SUCCESS )
-				{
-					// Render cancelled on main thread.
-					break;
-				}
+				AiNodeSetArray( node, groupParameterName, AiArrayConvert( lightNodes.size(), 1, AI_TYPE_NODE, lightNodes.data() ) );
+				AiNodeSetBool( node, useParameterName, true );
 			}
-
-			// Restore the setting we've been monkeying with.
-			AiNodeSetInt( options, "AA_samples", finalAASamples );
+			else
+			{
+				AiNodeResetParameter( node, groupParameterName );
+				AiNodeResetParameter( node, useParameterName );
+			}
 		}
-
-		std::thread m_thread;
-		tbb::atomic<bool> m_rendering;
 
 };
+
+IE_CORE_DECLAREPTR( ArnoldLight )
 
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
-// ArnoldRenderer
+// Procedurals
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+class ProceduralRenderer final : public ArnoldRendererBase
+{
+
+	public :
+
+		// We use a null node deleter because Arnold will automatically
+		// destroy all nodes belonging to the procedural when the procedural
+		// itself is destroyed.
+		/// \todo The base class currently makes a new shader cache
+		/// and a new instance cache. Can we share with the parent
+		/// renderer instead?
+		ProceduralRenderer( AtNode *procedural )
+			:	ArnoldRendererBase( nullNodeDeleter, procedural )
+		{
+		}
+
+		void option( const IECore::InternedString &name, const IECore::Object *value ) override
+		{
+			IECore::msg( IECore::Msg::Warning, "ArnoldRenderer", "Procedurals can not call option()" );
+		}
+
+		void output( const IECore::InternedString &name, const IECoreScene::Output *output ) override
+		{
+			IECore::msg( IECore::Msg::Warning, "ArnoldRenderer", "Procedurals can not call output()" );
+		}
+
+		ObjectInterfacePtr camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes ) override
+		{
+			IECore::msg( IECore::Msg::Warning, "ArnoldRenderer", "Procedurals can not call camera()" );
+			return nullptr;
+		}
+
+		ObjectInterfacePtr light( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override
+		{
+			ArnoldLightPtr result = static_pointer_cast<ArnoldLight>(
+				ArnoldRendererBase::light( name, object, attributes )
+			);
+
+			NodesCreatedMutex::scoped_lock lock( m_nodesCreatedMutex );
+			result->instance().nodesCreated( m_nodesCreated );
+			result->nodesCreated( m_nodesCreated );
+			return result;
+		}
+
+		ObjectInterfacePtr lightFilter( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override
+		{
+			ArnoldLightFilterPtr result = static_pointer_cast<ArnoldLightFilter>(
+				ArnoldRendererBase::lightFilter( name, object, attributes )
+			);
+
+			NodesCreatedMutex::scoped_lock lock( m_nodesCreatedMutex );
+			result->instance().nodesCreated( m_nodesCreated );
+			result->nodesCreated( m_nodesCreated );
+			return result;
+		}
+
+		Renderer::ObjectInterfacePtr object( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes ) override
+		{
+			ArnoldObjectPtr result = static_pointer_cast<ArnoldObject>(
+				ArnoldRendererBase::object( name, object, attributes )
+			);
+
+			NodesCreatedMutex::scoped_lock lock( m_nodesCreatedMutex );
+			result->instance().nodesCreated( m_nodesCreated );
+			return result;
+		}
+
+		ObjectInterfacePtr object( const std::string &name, const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const AttributesInterface *attributes ) override
+		{
+			ArnoldObjectPtr result = static_pointer_cast<ArnoldObject>(
+				ArnoldRendererBase::object( name, samples, times, attributes )
+			);
+
+			NodesCreatedMutex::scoped_lock lock( m_nodesCreatedMutex );
+			result->instance().nodesCreated( m_nodesCreated );
+			return result;
+		}
+
+		void render() override
+		{
+			IECore::msg( IECore::Msg::Warning, "ArnoldRenderer", "Procedurals can not call render()" );
+		}
+
+		void pause() override
+		{
+			IECore::msg( IECore::Msg::Warning, "ArnoldRenderer", "Procedurals can not call pause()" );
+		}
+
+		void nodesCreated( vector<AtNode *> &nodes )
+		{
+			nodes.insert( nodes.begin(), m_nodesCreated.begin(), m_nodesCreated.end() );
+			m_instanceCache->nodesCreated( nodes );
+			m_shaderCache->nodesCreated( nodes );
+		}
+
+	private :
+
+		typedef tbb::spin_mutex NodesCreatedMutex;
+		NodesCreatedMutex m_nodesCreatedMutex;
+		vector<AtNode *> m_nodesCreated;
+
+};
+
+IE_CORE_DECLAREPTR( ProceduralRenderer )
+
+struct ProceduralData : boost::noncopyable
+{
+	vector<AtNode *> nodesCreated;
+};
+
+int procInit( AtNode *node, void **userPtr )
+{
+	ProceduralData *data = (ProceduralData *)( AiNodeGetPtr( node, g_userPtrArnoldString ) );
+	*userPtr = data;
+	return 1;
+}
+
+int procCleanup( const AtNode *node, void *userPtr )
+{
+	const ProceduralData *data = (ProceduralData *)( userPtr );
+	delete data;
+	return 1;
+}
+
+int procNumNodes( const AtNode *node, void *userPtr )
+{
+	const ProceduralData *data = (ProceduralData *)( userPtr );
+	return data->nodesCreated.size();
+}
+
+AtNode *procGetNode( const AtNode *node, void *userPtr, int i )
+{
+	const ProceduralData *data = (ProceduralData *)( userPtr );
+	return data->nodesCreated[i];
+}
+
+int procFunc( AtProceduralNodeMethods *methods )
+{
+	methods->Init = procInit;
+	methods->Cleanup = procCleanup;
+	methods->NumNodes = procNumNodes;
+	methods->GetNode = procGetNode;
+	return 1;
+}
+
+AtNode *convertProcedural( IECoreScenePreview::ConstProceduralPtr procedural, const std::string &nodeName, const AtNode *parentNode )
+{
+	AtNode *node = AiNode( g_proceduralArnoldString, AtString( nodeName.c_str() ), parentNode );
+
+	AiNodeSetPtr( node, g_funcPtrArnoldString, (void *)procFunc );
+
+	ProceduralRendererPtr renderer = new ProceduralRenderer( node );
+	procedural->render( renderer.get() );
+
+	ProceduralData *data = new ProceduralData;
+	renderer->nodesCreated( data->nodesCreated );
+	AiNodeSetPtr( node, g_userPtrArnoldString, data );
+
+	return node;
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// Globals
 //////////////////////////////////////////////////////////////////////////
 
 namespace
@@ -1547,11 +2539,18 @@ namespace
 /// Or maybe be in a utility header somewhere?
 IECore::InternedString g_frameOptionName( "frame" );
 IECore::InternedString g_cameraOptionName( "camera" );
+
 IECore::InternedString g_logFileNameOptionName( "ai:log:filename" );
 IECore::InternedString g_logMaxWarningsOptionName( "ai:log:max_warnings" );
-IECore::InternedString g_shaderSearchPathOptionName( "ai:shader_searchpath" );
+IECore::InternedString g_statisticsFileNameOptionName( "ai:statisticsFileName" );
+IECore::InternedString g_profileFileNameOptionName( "ai:profileFileName" );
+IECore::InternedString g_pluginSearchPathOptionName( "ai:plugin_searchpath" );
 IECore::InternedString g_aaSeedOptionName( "ai:AA_seed" );
+IECore::InternedString g_progressiveMinAASamplesOptionName( "ai:progressive_min_AA_samples" );
 IECore::InternedString g_sampleMotionOptionName( "sampleMotion" );
+IECore::InternedString g_atmosphereOptionName( "ai:atmosphere" );
+IECore::InternedString g_backgroundOptionName( "ai:background" );
+IECore::InternedString g_subdivDicingCameraOptionName( "ai:subdiv_dicing_camera" );
 
 std::string g_logFlagsOptionPrefix( "ai:log:" );
 std::string g_consoleFlagsOptionPrefix( "ai:console:" );
@@ -1559,37 +2558,41 @@ std::string g_consoleFlagsOptionPrefix( "ai:console:" );
 const int g_logFlagsDefault = AI_LOG_ALL;
 const int g_consoleFlagsDefault = AI_LOG_WARNINGS | AI_LOG_ERRORS | AI_LOG_TIMESTAMP | AI_LOG_BACKTRACE | AI_LOG_MEMORY | AI_LOG_COLOR;
 
-class ArnoldRenderer : public IECoreScenePreview::Renderer
+class ArnoldGlobals
 {
 
 	public :
 
-		ArnoldRenderer( RenderType renderType, const std::string &fileName )
+		ArnoldGlobals( IECoreScenePreview::Renderer::RenderType renderType, const std::string &fileName, ShaderCache *shaderCache )
 			:	m_renderType( renderType ),
-				m_universeBlock( boost::make_shared<UniverseBlock>(  /* writable = */ true ) ),
-				m_shaderCache( new ShaderCache ),
-				m_instanceCache( new InstanceCache ),
+				m_universeBlock( /* writable = */ true ),
 				m_logFileFlags( g_logFlagsDefault ),
 				m_consoleFlags( g_consoleFlagsDefault ),
+				m_shaderCache( shaderCache ),
+				m_renderBegun( false ),
 				m_assFileName( fileName )
 		{
 			AiMsgSetLogFileFlags( m_logFileFlags );
 			AiMsgSetConsoleFlags( m_consoleFlags );
 			// Get OSL shaders onto the shader searchpath.
-			option( g_shaderSearchPathOptionName, new IECore::StringData( "" ) );
+			option( g_pluginSearchPathOptionName, new IECore::StringData( "" ) );
 		}
 
-		virtual ~ArnoldRenderer()
+		~ArnoldGlobals()
 		{
-			pause();
+			if( m_renderBegun )
+			{
+				AiRenderInterrupt( AI_BLOCKING );
+				AiRenderEnd();
+			}
 		}
 
-		virtual void option( const IECore::InternedString &name, const IECore::Data *value )
+		void option( const IECore::InternedString &name, const IECore::Object *value )
 		{
 			AtNode *options = AiUniverseGetOptions();
 			if( name == g_frameOptionName )
 			{
-				if( value == NULL )
+				if( value == nullptr )
 				{
 					m_frame = boost::none;
 				}
@@ -1601,7 +2604,7 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 			}
 			else if( name == g_cameraOptionName )
 			{
-				if( value == NULL )
+				if( value == nullptr )
 				{
 					m_cameraName = "";
 				}
@@ -1612,9 +2615,22 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 				}
 				return;
 			}
+			else if( name == g_subdivDicingCameraOptionName )
+			{
+				if( value == nullptr )
+				{
+					m_subdivDicingCameraName = "";
+				}
+				else if( const IECore::StringData *d = reportedCast<const IECore::StringData>( value, "option", name ) )
+				{
+					m_subdivDicingCameraName = d->readable();
+
+				}
+				return;
+			}
 			else if( name == g_logFileNameOptionName )
 			{
-				if( value == NULL )
+				if( value == nullptr )
 				{
 					AiMsgSetLogFileName( "" );
 				}
@@ -1638,9 +2654,63 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 				}
 				return;
 			}
+			else if( name == g_statisticsFileNameOptionName )
+			{
+				AiStatsSetMode( AI_STATS_MODE_OVERWRITE );
+
+				if( value == nullptr )
+				{
+					AiStatsSetFileName( "" );
+				}
+				else if( const IECore::StringData *d = reportedCast<const IECore::StringData>( value, "option", name ) )
+				{
+					if( !d->readable().empty() )
+					{
+						try
+						{
+							boost::filesystem::path path( d->readable() );
+							path.remove_filename();
+							boost::filesystem::create_directories( path );
+						}
+						catch( const std::exception &e )
+						{
+							IECore::msg( IECore::Msg::Error, "ArnoldRenderer::option()", e.what() );
+						}
+					}
+					AiStatsSetFileName( d->readable().c_str() );
+
+				}
+				return;
+			}
+			else if( name == g_profileFileNameOptionName )
+			{
+				if( value == nullptr )
+				{
+					AiProfileSetFileName( "" );
+				}
+				else if( const IECore::StringData *d = reportedCast<const IECore::StringData>( value, "option", name ) )
+				{
+					if( !d->readable().empty() )
+					{
+						try
+						{
+							boost::filesystem::path path( d->readable() );
+							path.remove_filename();
+							boost::filesystem::create_directories( path );
+						}
+						catch( const std::exception &e )
+						{
+							IECore::msg( IECore::Msg::Error, "ArnoldRenderer::option()", e.what() );
+						}
+					}
+
+					AiProfileSetFileName( d->readable().c_str() );
+				}
+				return;
+			}
 			else if( name == g_logMaxWarningsOptionName )
 			{
-				if( value == NULL )
+				if( value == nullptr )
 				{
 					AiMsgSetMaxWarnings( 100 );
 				}
@@ -1652,21 +2722,33 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 			}
 			else if( boost::starts_with( name.c_str(), g_logFlagsOptionPrefix ) )
 			{
-				if( updateLogFlags( name.string().substr( g_logFlagsOptionPrefix.size() ), value, /* console = */ false ) )
+				if( updateLogFlags( name.string().substr( g_logFlagsOptionPrefix.size() ), IECore::runTimeCast<const IECore::Data>( value ), /* console = */ false ) )
 				{
 					return;
 				}
 			}
 			else if( boost::starts_with( name.c_str(), g_consoleFlagsOptionPrefix ) )
 			{
-				if( updateLogFlags( name.string().substr( g_consoleFlagsOptionPrefix.size() ), value, /* console = */ true ) )
+				if( updateLogFlags( name.string().substr( g_consoleFlagsOptionPrefix.size() ), IECore::runTimeCast<const IECore::Data>( value ), /* console = */ true ) )
 				{
 					return;
 				}
 			}
+			else if( name == g_progressiveMinAASamplesOptionName )
+			{
+				if( value == nullptr )
+				{
+					m_progressiveMinAASamples = boost::none;
+				}
+				else if( const IECore::IntData *d = reportedCast<const IECore::IntData>( value, "option", name ) )
+				{
+					m_progressiveMinAASamples = d->readable();
+				}
+				return;
+			}
 			else if( name == g_aaSeedOptionName )
 			{
-				if( value == NULL )
+				if( value == nullptr )
 				{
 					m_aaSeed = boost::none;
 				}
@@ -1678,7 +2760,7 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 			}
 			else if( name == g_sampleMotionOptionName )
 			{
-				if( value == NULL )
+				if( value == nullptr )
 				{
 					m_sampleMotion = boost::none;
 				}
@@ -1688,7 +2770,7 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 				}
 				return;
 			}
-			else if( name == g_shaderSearchPathOptionName )
+			else if( name == g_pluginSearchPathOptionName )
 			{
 				// We must include the OSL searchpaths in Arnold's shader
 				// searchpaths so that the OSL shaders can be found.
@@ -1701,55 +2783,107 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 						s = d->readable() + ":" + s;
 					}
 				}
-				AiNodeSetStr( options, "shader_searchpath", s.c_str() );
+				AiNodeSetStr( options, g_pluginSearchPathArnoldString, AtString( s.c_str() ) );
+				return;
+			}
+			else if( name == g_atmosphereOptionName )
+			{
+				m_atmosphere = nullptr;
+				if( value )
+				{
+					if( const IECoreScene::ShaderNetwork *d = reportedCast<const IECoreScene::ShaderNetwork>( value, "option", name ) )
+					{
+						m_atmosphere = m_shaderCache->get( d, nullptr );
+					}
+				}
+				AiNodeSetPtr( options, g_atmosphereArnoldString, m_atmosphere ? m_atmosphere->root() : nullptr );
+				return;
+			}
+			else if( name == g_backgroundOptionName )
+			{
+				m_background = nullptr;
+				if( value )
+				{
+					if( const IECoreScene::ShaderNetwork *d = reportedCast<const IECoreScene::ShaderNetwork>( value, "option", name ) )
+					{
+						m_background = m_shaderCache->get( d, nullptr );
+					}
+				}
+				AiNodeSetPtr( options, g_backgroundArnoldString, m_background ? m_background->root() : nullptr );
+				return;
+			}
+			else if( boost::starts_with( name.c_str(), "ai:aov_shader:" ) )
+			{
+				m_aovShaders.erase( name );
+				if( value )
+				{
+					if( const IECoreScene::ShaderNetwork *d = reportedCast<const IECoreScene::ShaderNetwork>( value, "option", name ) )
+					{
+						m_aovShaders[name] = m_shaderCache->get( d, nullptr );
+					}
+				}
+
+				AtArray *array = AiArrayAllocate( m_aovShaders.size(), 1, AI_TYPE_NODE );
+				int i = 0;
+				for( AOVShaderMap::const_iterator it = m_aovShaders.begin(); it != m_aovShaders.end(); ++it )
+				{
+					AiArraySetPtr( array, i++, it->second->root() );
+				}
+				AiNodeSetArray( options, g_aovShadersArnoldString, array );
 				return;
 			}
 			else if( boost::starts_with( name.c_str(), "ai:declare:" ) )
 			{
-				const AtParamEntry *parameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( options ), name.c_str() + 11 );
+				AtString arnoldName( name.c_str() + 11 );
+				const AtParamEntry *parameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( options ), arnoldName );
 				if( parameter )
 				{
-					IECore::msg( IECore::Msg::Warning, "IECoreArnold::Renderer::option", boost::format( "Unable to declare existing option \"%s\"." ) % (name.c_str() + 11) );
+					IECore::msg( IECore::Msg::Warning, "IECoreArnold::Renderer::option", boost::format( "Unable to declare existing option \"%s\"." ) % arnoldName.c_str() );
 				}
 				else
 				{
-					const AtUserParamEntry *userParameter = AiNodeLookUpUserParameter( options, name.c_str() + 11);
+					const AtUserParamEntry *userParameter = AiNodeLookUpUserParameter( options, arnoldName );
 					if( userParameter )
 					{
-						AiNodeResetParameter( options, name.c_str() + 11 );
+						AiNodeResetParameter( options, arnoldName );
 					}
-					if( value )
+					const IECore::Data *dataValue = IECore::runTimeCast<const IECore::Data>( value );
+					if( dataValue )
 					{
-						ParameterAlgo::setParameter( options, name.c_str() + 11, value );
+						ParameterAlgo::setParameter( options, arnoldName, dataValue );
 					}
 				}
 				return;
 			}
 			else if( boost::starts_with( name.c_str(), "ai:" ) )
 			{
-				const AtParamEntry *parameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( options ), name.c_str() + 3 );
+				AtString arnoldName( name.c_str() + 3 );
+				const AtParamEntry *parameter = AiNodeEntryLookUpParameter( AiNodeGetNodeEntry( options ), arnoldName );
 				if( parameter )
 				{
-					if( value )
+					const IECore::Data *dataValue = IECore::runTimeCast<const IECore::Data>( value );
+					if( dataValue )
 					{
-						ParameterAlgo::setParameter( options, name.c_str() + 3, value );
+						ParameterAlgo::setParameter( options, arnoldName, dataValue );
 					}
 					else
 					{
-						AiNodeResetParameter( options, name.c_str() + 3 );
+						AiNodeResetParameter( options, arnoldName );
 					}
 					return;
 				}
 			}
 			else if( boost::starts_with( name.c_str(), "user:" ) )
 			{
-				if( value )
+				AtString arnoldName( name.c_str() );
+				const IECore::Data *dataValue = IECore::runTimeCast<const IECore::Data>( value );
+				if( dataValue )
 				{
-					ParameterAlgo::setParameter( options, name.c_str(), value );
+					ParameterAlgo::setParameter( options, arnoldName, dataValue );
 				}
 				else
 				{
-					AiNodeResetParameter( options, name.c_str() );
+					AiNodeResetParameter( options, arnoldName );
 				}
 				return;
 			}
@@ -1762,14 +2896,14 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 			IECore::msg( IECore::Msg::Warning, "IECoreArnold::Renderer::option", boost::format( "Unknown option \"%s\"." ) % name.c_str() );
 		}
 
-		virtual void output( const IECore::InternedString &name, const Output *output )
+		void output( const IECore::InternedString &name, const IECoreScene::Output *output )
 		{
 			m_outputs.erase( name );
 			if( output )
 			{
 				try
 				{
-					m_outputs[name] = new ArnoldOutput( name, output );
+					m_outputs[name] = new ArnoldOutput( name, output, nodeDeleter( m_renderType ) );
 				}
 				catch( const std::exception &e )
 				{
@@ -1777,109 +2911,138 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 				}
 			}
 
-			IECore::StringVectorDataPtr outputs = new IECore::StringVectorData;
-			for( OutputMap::const_iterator it = m_outputs.begin(), eIt = m_outputs.end(); it != eIt; ++it )
-			{
-				outputs->writable().push_back( it->second->string() );
-			}
-
-			IECoreArnold::ParameterAlgo::setParameter( AiUniverseGetOptions(), "outputs", outputs.get() );
 		}
 
-		virtual Renderer::AttributesInterfacePtr attributes( const IECore::CompoundObject *attributes )
+		// Some of Arnold's globals come from camera parameters, so the
+		// ArnoldRenderer calls this method to notify the ArnoldGlobals
+		// of each camera as it is created.
+		void camera( const std::string &name, IECoreScene::ConstCameraPtr camera )
 		{
-			return new ArnoldAttributes( attributes, m_shaderCache.get() );
+			m_cameras[name] = camera;
 		}
 
-		virtual ObjectInterfacePtr camera( const std::string &name, const IECore::Camera *camera, const AttributesInterface *attributes )
+		void render()
 		{
-			IECore::CameraPtr cameraCopy = camera->copy();
-			cameraCopy->addStandardParameters();
-			m_cameras[name] = cameraCopy;
+			updateCameraMeshes();
 
-			Instance instance = m_instanceCache->get( camera, attributes );
-			if( AtNode *node = instance.node() )
-			{
-				AiNodeSetStr( node, "name", name.c_str() );
-			}
+			AtNode *options = AiUniverseGetOptions();
 
-			ObjectInterfacePtr result = store( new ArnoldObject( instance ) );
-			result->attributes( attributes );
-			return result;
-		}
-
-		virtual ObjectInterfacePtr light( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes )
-		{
-			Instance instance = m_instanceCache->get( object, attributes );
-			if( AtNode *node = instance.node() )
-			{
-				AiNodeSetStr( node, "name", name.c_str() );
-			}
-
-			ObjectInterfacePtr result = store( new ArnoldLight( name, instance ) );
-			result->attributes( attributes );
-			return result;
-		}
-
-		virtual Renderer::ObjectInterfacePtr object( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes )
-		{
-			Instance instance = m_instanceCache->get( object, attributes );
-			if( AtNode *node = instance.node() )
-			{
-				AiNodeSetStr( node, "name", name.c_str() );
-			}
-
-			ObjectInterfacePtr result = store( new ArnoldObject( instance ) );
-			result->attributes( attributes );
-			return result;
-		}
-
-		virtual ObjectInterfacePtr object( const std::string &name, const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const AttributesInterface *attributes )
-		{
-			Instance instance = m_instanceCache->get( samples, times, attributes );
-			if( AtNode *node = instance.node() )
-			{
-				AiNodeSetStr( node, "name", name.c_str() );
-			}
-
-			ObjectInterfacePtr result = store( new ArnoldObject( instance ) );
-			result->attributes( attributes );
-			return result;
-		}
-
-		virtual void render()
-		{
-			updateCamera();
 			AiNodeSetInt(
-				AiUniverseGetOptions(), "AA_seed",
+				options, g_aaSeedArnoldString,
 				m_aaSeed.get_value_or( m_frame.get_value_or( 1 ) )
 			);
 
-			m_shaderCache->clearUnused();
-			m_instanceCache->clearUnused();
+			AtNode *dicingCamera = nullptr;
+			if( m_subdivDicingCameraName.size() )
+			{
+				dicingCamera = AiNodeLookUpByName( AtString( m_subdivDicingCameraName.c_str() ) );
+				if( !dicingCamera )
+				{
+					IECore::msg( IECore::Msg::Warning, "IECoreArnold::Renderer", "Could not find dicing camera named: " + m_subdivDicingCameraName );
+				}
+			}
+
+			if( dicingCamera )
+			{
+				AiNodeSetPtr( options, g_subdivDicingCameraString, dicingCamera );
+			}
+			else
+			{
+				AiNodeResetParameter( options, g_subdivDicingCameraString );
+			}
 
 			// Do the appropriate render based on
 			// m_renderType.
 			switch( m_renderType )
 			{
-				case Batch :
-					AiRender( AI_RENDER_MODE_CAMERA );
+				case IECoreScenePreview::Renderer::Batch :
+				{
+					// Loop through all cameras referenced by any current outputs,
+					// and do a render for each
+					std::set<std::string> cameraOverrides;
+					for( const auto &it : m_outputs )
+					{
+						cameraOverrides.insert( it.second->cameraOverride() );
+					}
+
+					for( const auto &cameraOverride : cameraOverrides )
+					{
+						updateCamera( cameraOverride.size() ? cameraOverride : m_cameraName );
+						const int result = AiRender( AI_RENDER_MODE_CAMERA );
+						if( result != AI_SUCCESS )
+						{
+							throwError( result );
+						}
+					}
 					break;
-				case SceneDescription :
+				}
+				case IECoreScenePreview::Renderer::SceneDescription :
+					// An ASS file can only contain options to render from one camera,
+					// so just use the default camera
+					updateCamera( m_cameraName );
 					AiASSWrite( m_assFileName.c_str(), AI_NODE_ALL );
 					break;
-				case Interactive :
-					m_interactiveRenderController.setRendering( true );
+				case IECoreScenePreview::Renderer::Interactive :
+					// If we want to use Arnold's progressive refinement, we can't be constantly switching
+					// the camera around, so just use the default camera
+					if( m_renderBegun )
+					{
+						AiRenderInterrupt( AI_BLOCKING );
+					}
+					updateCamera( m_cameraName );
+
+					AiNodeSetBool( AiUniverseGetOptions(), g_enableProgressiveRenderString, true );
+					AiRenderSetHintBool( AtString( "progressive" ), true );
+					AiRenderSetHintInt( AtString( "progressive_min_AA_samples" ), m_progressiveMinAASamples.get_value_or( -4 ) );
+
+					if( !m_renderBegun )
+					{
+						AiRenderBegin( AI_RENDER_MODE_CAMERA );
+
+						// Arnold's AiRenderGetStatus is not particularly reliable - renders start up on a separate thread,
+						// and the currently reported status may not include recent changes.  So instead, we track a basic
+						// status flag for whether we are already rendering ourselves
+						m_renderBegun = true;
+					}
+					else
+					{
+						AiRenderRestart();
+					}
 					break;
 			}
 		}
 
-		virtual void pause()
+		void pause()
 		{
-			m_interactiveRenderController.setRendering( false );
+			// We need to block here because pause() is used to make sure that the render isn't running
+			// before performing IPR edits.
+			AiRenderInterrupt( AI_BLOCKING );
 		}
 
 	private :
+
+		void throwError( int errorCode )
+		{
+			switch( errorCode )
+			{
+				case AI_ABORT :
+					throw IECore::Exception( "Render aborted" );
+				case AI_ERROR_NO_CAMERA :
+					throw IECore::Exception( "Camera not defined" );
+				case AI_ERROR_BAD_CAMERA :
+					throw IECore::Exception( "Bad camera" );
+				case AI_ERROR_VALIDATION :
+					throw IECore::Exception( "Usage not validated" );
+				case AI_ERROR_RENDER_REGION :
+					throw IECore::Exception( "Invalid render region" );
+				case AI_INTERRUPT :
+					throw IECore::Exception( "Render interrupted by user" );
+				case AI_ERROR_NO_OUTPUTS :
+					throw IECore::Exception( "No outputs" );
+				case AI_ERROR :
+					throw IECore::Exception( "Generic Arnold error" );
+			}
+		}
 
 		bool updateLogFlags( const std::string name, const IECore::Data *value, bool console )
 		{
@@ -1942,7 +3105,7 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 			}
 
 			bool turnOn = false;
-			if( value == NULL )
+			if( value == nullptr )
 			{
 				turnOn = flagToModify & ( console == false ? g_logFlagsDefault : g_consoleFlagsDefault );
 			}
@@ -1977,138 +3140,313 @@ class ArnoldRenderer : public IECoreScenePreview::Renderer
 			return true;
 		}
 
-
-		ObjectInterfacePtr store( ObjectInterface *objectInterface )
-		{
-			if( m_renderType != Interactive )
-			{
-				// Our ObjectInterface class owns the AtNodes it
-				// represents. In Interactive mode the client is
-				// responsible for keeping it alive as long as the
-				// object should exist, but in non-interactive modes
-				// we are responsible for ensuring the object doesn't
-				// die. Storing it is the simplest approach.
-				//
-				// \todo We might want to save memory by not storing
-				// ObjectInterfaces, but instead giving them the notion
-				// of whether or not they own the AtNodes they created.
-				m_objects.push_back( objectInterface );
-			}
-			return objectInterface;
-		}
-
-		void updateCamera()
+		void updateCamera( const std::string &cameraName )
 		{
 			AtNode *options = AiUniverseGetOptions();
 
-			const IECore::Camera *cortexCamera = m_cameras[m_cameraName].get();
-			AtNode *arnoldCamera;
-			if( cortexCamera )
+			// Set the global output list in the options to all outputs matching the current camera
+			IECore::StringVectorDataPtr outputs = new IECore::StringVectorData;
+			IECore::StringVectorDataPtr lpes = new IECore::StringVectorData;
+			for( OutputMap::const_iterator it = m_outputs.begin(), eIt = m_outputs.end(); it != eIt; ++it )
 			{
-				arnoldCamera = AiNodeLookUpByName( m_cameraName.c_str() );
-				m_defaultCamera = NULL;
+				std::string outputCamera = it->second->cameraOverride();
+				if( outputCamera == "" )
+				{
+					outputCamera = m_cameraName;
+				}
+
+				if( outputCamera == cameraName )
+				{
+					it->second->append( outputs->writable(), lpes->writable() );
+				}
+			}
+			std::sort( outputs->writable().begin(), outputs->writable().end() );
+			IECoreArnold::ParameterAlgo::setParameter( options, "outputs", outputs.get() );
+			IECoreArnold::ParameterAlgo::setParameter( options, "light_path_expressions", lpes.get() );
+		
+			// Set the beauty as the output to get frequent interactive updates	
+			unsigned int primaryOutput = 0;
+			for( unsigned int i = 0; i < outputs->readable().size(); i++ )
+			{
+				if( boost::starts_with( outputs->readable()[i], "RGBA " ) )
+				{
+					primaryOutput = i;
+					break;
+				}
+			}
+			AiRenderSetInteractiveOutput( primaryOutput );
+
+			const IECoreScene::Camera *cortexCamera;
+			AtNode *arnoldCamera = AiNodeLookUpByName( AtString( cameraName.c_str() ) );
+			if( arnoldCamera )
+			{
+				cortexCamera = m_cameras[cameraName].get();
+				m_defaultCamera = nullptr;
 			}
 			else
 			{
 				if( !m_defaultCamera )
 				{
-					IECore::CameraPtr defaultCortexCamera = new IECore::Camera();
-					defaultCortexCamera->addStandardParameters();
-					IECore::CompoundObjectPtr defaultCortexAttributes = new IECore::CompoundObject();
-					AttributesInterfacePtr defaultAttributes = this->attributes( defaultCortexAttributes.get() );
-					m_defaultCamera = camera( "ieCoreArnold:defaultCamera", defaultCortexCamera.get(), defaultAttributes.get() );
+					IECoreScene::ConstCameraPtr defaultCortexCamera = new IECoreScene::Camera();
+					m_cameras["ieCoreArnold:defaultCamera"] = defaultCortexCamera;
+					m_defaultCamera = SharedAtNodePtr(
+						CameraAlgo::convert( defaultCortexCamera.get(), "ieCoreArnold:defaultCamera", nullptr ),
+						nodeDeleter( m_renderType )
+					);
 				}
 				cortexCamera = m_cameras["ieCoreArnold:defaultCamera"].get();
-				arnoldCamera = AiNodeLookUpByName( "ieCoreArnold:defaultCamera" );
+				arnoldCamera = m_defaultCamera.get();
 			}
-			AiNodeSetPtr( options, "camera", arnoldCamera );
+			AiNodeSetPtr( options, g_cameraArnoldString, arnoldCamera );
 
-			const IECore::V2iData *resolution = cortexCamera->parametersData()->member<IECore::V2iData>( "resolution" );
-			AiNodeSetInt( options, "xres", resolution->readable().x );
-			AiNodeSetInt( options, "yres", resolution->readable().y );
+			Imath::V2i resolution = cortexCamera->renderResolution();
+			Imath::Box2i renderRegion = cortexCamera->renderRegion();
 
-			const IECore::FloatData *pixelAspectRatio = cortexCamera->parametersData()->member<IECore::FloatData>( "pixelAspectRatio" );
-			AiNodeSetFlt( options, "aspect_ratio", 1.0f / pixelAspectRatio->readable() ); // arnold is y/x, we're x/y
+			AiNodeSetInt( options, g_xresArnoldString, resolution.x );
+			AiNodeSetInt( options, g_yresArnoldString, resolution.y );
 
-			const IECore::Box2iData *renderRegion = cortexCamera->parametersData()->member<IECore::Box2iData>( "renderRegion" );
+			AiNodeSetFlt( options, g_pixelAspectRatioArnoldString, cortexCamera->getPixelAspectRatio() );
 
-			if( renderRegion )
+			if(
+				renderRegion.min.x >= renderRegion.max.x ||
+				renderRegion.min.y >= renderRegion.max.y
+			)
 			{
-				if( renderRegion->readable().isEmpty() )
-				{
-					// Arnold does not permit empty render regions.  The user intent of an empty render
-					// region is probably to render as little as possible ( it could happen if you
-					// built a tool to crop to an object which passed out of frame ).
-					// We just pick one pixel in the corner
-
-					AiNodeSetInt( options, "region_min_x", 0 );
-					AiNodeSetInt( options, "region_min_y", 0 );
-					AiNodeSetInt( options, "region_max_x", 0 );
-					AiNodeSetInt( options, "region_max_y", 0 );
-				}
-				else
-				{
-					AiNodeSetInt( options, "region_min_x", renderRegion->readable().min.x );
-					AiNodeSetInt( options, "region_min_y", renderRegion->readable().min.y );
-					AiNodeSetInt( options, "region_max_x", renderRegion->readable().max.x );
-					AiNodeSetInt( options, "region_max_y", renderRegion->readable().max.y );
-				}
-			}
-			else
-			{
-				AiNodeResetParameter( options, "region_min_x" );
-				AiNodeResetParameter( options, "region_min_y" );
-				AiNodeResetParameter( options, "region_max_x" );
-				AiNodeResetParameter( options, "region_max_y" );
+				// Arnold does not permit empty render regions.  The user intent of an empty render
+				// region is probably to render as little as possible ( it could happen if you
+				// built a tool to crop to an object which passed out of frame ).
+				// We just pick one pixel in the corner
+				renderRegion = Imath::Box2i( Imath::V2i( 0 ), Imath::V2i( 1 ) );
 			}
 
-			Imath::V2f shutter = cortexCamera->parametersData()->member<IECore::V2fData>( "shutter", true )->readable();
+			// Note that we have to flip Y and subtract 1 from the max value, because
+			// renderRegion is stored in Gaffer image format ( +Y up and an exclusive upper bound )
+			AiNodeSetInt( options, g_regionMinXArnoldString, renderRegion.min.x );
+			AiNodeSetInt( options, g_regionMinYArnoldString, resolution.y - renderRegion.max.y );
+			AiNodeSetInt( options, g_regionMaxXArnoldString, renderRegion.max.x - 1 );
+			AiNodeSetInt( options, g_regionMaxYArnoldString, resolution.y - renderRegion.min.y - 1 );
+
+			Imath::V2f shutter = cortexCamera->getShutter();
 			if( m_sampleMotion.get_value_or( true ) )
 			{
-				AiNodeSetFlt( arnoldCamera, "shutter_start", shutter[0] );
-				AiNodeSetFlt( arnoldCamera, "shutter_end", shutter[1] );
+				AiNodeSetFlt( arnoldCamera, g_shutterStartArnoldString, shutter[0] );
+				AiNodeSetFlt( arnoldCamera, g_shutterEndArnoldString, shutter[1] );
 			}
 			else
 			{
-				AiNodeSetFlt( arnoldCamera, "shutter_start", shutter[0] );
-				AiNodeSetFlt( arnoldCamera, "shutter_end", shutter[0] );
+				AiNodeSetFlt( arnoldCamera, g_shutterStartArnoldString, shutter[0] );
+				AiNodeSetFlt( arnoldCamera, g_shutterEndArnoldString, shutter[0] );
 			}
 		}
 
-		// Members used by all render types.
+		void updateCameraMeshes()
+		{
+			for( const auto &it : m_cameras )
+			{
+				IECoreScene::ConstCameraPtr cortexCamera = it.second;
 
-		RenderType m_renderType;
+				std::string meshPath = parameter( cortexCamera->parameters(), "mesh", std::string("") );
+				if( !meshPath.size() )
+				{
+					continue;
+				}
 
-		boost::shared_ptr<IECoreArnold::UniverseBlock> m_universeBlock;
+				AtNode *arnoldCamera = AiNodeLookUpByName( AtString( it.first.c_str() ) );
+				if( !arnoldCamera )
+				{
+					continue;
+				}
+
+				AtNode *meshNode = AiNodeLookUpByName( AtString( meshPath.c_str() ) );
+				if( meshNode )
+				{
+					AtString meshType = AiNodeEntryGetNameAtString( AiNodeGetNodeEntry( meshNode ) );
+					if( meshType == g_ginstanceArnoldString )
+					{
+						AiNodeSetPtr( arnoldCamera, g_meshArnoldString, AiNodeGetPtr( meshNode, g_nodeArnoldString ) );
+						AiNodeSetMatrix( arnoldCamera, g_matrixArnoldString, AiNodeGetMatrix( meshNode, g_matrixArnoldString ) );
+						continue;
+					}
+					else if( meshType == g_polymeshArnoldString )
+					{
+						AiNodeSetPtr( arnoldCamera, g_meshArnoldString, meshNode );
+						AiNodeSetMatrix( arnoldCamera, g_matrixArnoldString, AiM4Identity() );
+						continue;
+					}
+				}
+
+				throw IECore::Exception( boost::str( boost::format( "While outputting camera \"%s\", could not find target mesh at \"%s\"" ) % it.first % meshPath ) );
+			}
+		}
+
+
+		// Members used by all render types
+
+		IECoreScenePreview::Renderer::RenderType m_renderType;
+
+		IECoreArnold::UniverseBlock m_universeBlock;
 
 		typedef std::map<IECore::InternedString, ArnoldOutputPtr> OutputMap;
 		OutputMap m_outputs;
 
-		std::string m_cameraName;
-		typedef tbb::concurrent_unordered_map<std::string, IECore::ConstCameraPtr> CameraMap;
-		CameraMap m_cameras;
-		ObjectInterfacePtr m_defaultCamera;
+		typedef std::map<IECore::InternedString, ArnoldShaderPtr> AOVShaderMap;
+		AOVShaderMap m_aovShaders;
 
-		ShaderCachePtr m_shaderCache;
-		InstanceCachePtr m_instanceCache;
+		ArnoldShaderPtr m_atmosphere;
+		ArnoldShaderPtr m_background;
+
+		std::string m_cameraName;
+		typedef tbb::concurrent_unordered_map<std::string, IECoreScene::ConstCameraPtr> CameraMap;
+		CameraMap m_cameras;
+		SharedAtNodePtr m_defaultCamera;
+		std::string m_subdivDicingCameraName;
 
 		int m_logFileFlags;
 		int m_consoleFlags;
 		boost::optional<int> m_frame;
 		boost::optional<int> m_aaSeed;
+		boost::optional<int> m_progressiveMinAASamples;
 		boost::optional<bool> m_sampleMotion;
+		ShaderCache *m_shaderCache;
 
-		// Members used by batch renders
-
-		tbb::concurrent_vector<ObjectInterfacePtr> m_objects;
-
-		// Members used by interactive renders
-
-		InteractiveRenderController m_interactiveRenderController;
+		bool m_renderBegun;
 
 		// Members used by ass generation "renders"
 
 		std::string m_assFileName;
+
+};
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// ArnoldRendererBase definition
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+ArnoldRendererBase::ArnoldRendererBase( NodeDeleter nodeDeleter, AtNode *parentNode )
+	:	m_nodeDeleter( nodeDeleter ),
+		m_shaderCache( new ShaderCache( nodeDeleter, parentNode ) ),
+		m_instanceCache( new InstanceCache( nodeDeleter, parentNode ) ),
+		m_parentNode( parentNode )
+{
+}
+
+ArnoldRendererBase::~ArnoldRendererBase()
+{
+}
+
+IECore::InternedString ArnoldRendererBase::name() const
+{
+	return "Arnold";
+}
+
+ArnoldRendererBase::AttributesInterfacePtr ArnoldRendererBase::attributes( const IECore::CompoundObject *attributes )
+{
+	return new ArnoldAttributes( attributes, m_shaderCache.get() );
+}
+
+ArnoldRendererBase::ObjectInterfacePtr ArnoldRendererBase::camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes )
+{
+	Instance instance = m_instanceCache->get( camera, attributes, name );
+
+	ObjectInterfacePtr result = new ArnoldObject( instance );
+	result->attributes( attributes );
+	return result;
+}
+
+ArnoldRendererBase::ObjectInterfacePtr ArnoldRendererBase::light( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes )
+{
+	Instance instance = m_instanceCache->get( object, attributes, name );
+	ObjectInterfacePtr result = new ArnoldLight( name, instance, m_nodeDeleter, m_parentNode );
+	result->attributes( attributes );
+	return result;
+}
+
+ArnoldRendererBase::ObjectInterfacePtr ArnoldRendererBase::lightFilter( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes )
+{
+	Instance instance = m_instanceCache->get( object, attributes, name );
+	ObjectInterfacePtr result = new ArnoldLightFilter( name, instance, m_nodeDeleter, m_parentNode );
+	result->attributes( attributes );
+
+	return result;
+}
+
+ArnoldRendererBase::ObjectInterfacePtr ArnoldRendererBase::object( const std::string &name, const IECore::Object *object, const AttributesInterface *attributes )
+{
+	Instance instance = m_instanceCache->get( object, attributes, name );
+	ObjectInterfacePtr result = new ArnoldObject( instance );
+	result->attributes( attributes );
+	return result;
+}
+
+ArnoldRendererBase::ObjectInterfacePtr ArnoldRendererBase::object( const std::string &name, const std::vector<const IECore::Object *> &samples, const std::vector<float> &times, const AttributesInterface *attributes )
+{
+	Instance instance = m_instanceCache->get( samples, times, attributes, name );
+	ObjectInterfacePtr result = new ArnoldObject( instance );
+	result->attributes( attributes );
+	return result;
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// ArnoldRenderer
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+/// The full renderer implementation as presented to the outside world.
+class ArnoldRenderer final : public ArnoldRendererBase
+{
+
+	public :
+
+		ArnoldRenderer( RenderType renderType, const std::string &fileName )
+			:	ArnoldRendererBase( nodeDeleter( renderType ) ),
+				m_globals( new ArnoldGlobals( renderType, fileName, m_shaderCache.get() ) )
+		{
+		}
+
+		~ArnoldRenderer() override
+		{
+			pause();
+		}
+
+		void option( const IECore::InternedString &name, const IECore::Object *value ) override
+		{
+			m_globals->option( name, value );
+		}
+
+		void output( const IECore::InternedString &name, const IECoreScene::Output *output ) override
+		{
+			m_globals->output( name, output );
+		}
+
+		ObjectInterfacePtr camera( const std::string &name, const IECoreScene::Camera *camera, const AttributesInterface *attributes ) override
+		{
+			m_globals->camera( name, camera );
+			return ArnoldRendererBase::camera( name, camera, attributes );
+		}
+
+		void render() override
+		{
+			m_shaderCache->clearUnused();
+			m_instanceCache->clearUnused();
+			m_globals->render();
+		}
+
+		void pause() override
+		{
+			m_globals->pause();
+		}
+
+	private :
+
+		std::unique_ptr<ArnoldGlobals> m_globals;
 
 		// Registration with factory
 

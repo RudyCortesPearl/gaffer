@@ -36,6 +36,9 @@
 
 import os
 import threading
+import stat
+import shutil
+import imath
 
 import IECore
 
@@ -46,40 +49,19 @@ import GafferImageTest
 
 class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
-	def setUp( self ) :
-
-		GafferImageTest.ImageTestCase.setUp( self )
-
-		# Emulate the UI
-		self.__executeOnUIThreadConnection = GafferImage.Display.executeOnUIThreadSignal().connect( lambda f : f() )
-
-	def tearDown( self ) :
-
-		self.__executeOnUIThreadConnection.disconnect()
-
 	@staticmethod
-	def sendImage( image, catalogue, extraParameters = {} ) :
+	def sendImage( image, catalogue, extraParameters = {}, waitForSave = True, close = True ) :
 
-		if catalogue["directory"].getValue() :
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as h :
+			result = GafferImageTest.DisplayTest.Driver.sendImage( image, GafferImage.Catalogue.displayDriverServer().portNumber(), extraParameters, close = close )
+			if catalogue["directory"].getValue() and waitForSave :
+				# When the image has been received, the Catalogue will
+				# save it to disk on a background thread, and we need
+				# to wait for that to complete.
+				h.assertCalled()
+				h.assertDone()
 
-			# When the image has been received, the Catalogue will
-			# save it to disk on a background thread, and we need
-			# to wait for that to complete. The background thread uses
-			# executeOnUIThread to signal completion, so we can hook
-			# into that.
-			semaphore = threading.Semaphore( 0 )
-
-			def f( f ) :
-
-				if catalogue["images"][-1]["fileName"].getValue() :
-					semaphore.release()
-
-			c = GafferImage.Display.executeOnUIThreadSignal().connect( f )
-
-		GafferImageTest.DisplayTest.sendImage( image, GafferImage.Catalogue.displayDriverServer().portNumber(), extraParameters )
-
-		if catalogue["directory"].getValue() :
-			semaphore.acquire()
+		return result
 
 	def testImages( self ) :
 
@@ -94,13 +76,13 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		for image in images :
 			c["images"].addChild( image )
-			self.assertImagesEqual( readers[0]["out"], c["out"], ignoreMetadata = True )
+			self.assertImagesEqual( readers[0]["out"], c["out"] )
 
 		def assertExpectedImages() :
 
 			for i, reader in enumerate( readers ) :
 				c["imageIndex"].setValue( i )
-				self.assertImagesEqual( readers[i]["out"], c["out"], ignoreMetadata = True )
+				self.assertImagesEqual( readers[i]["out"], c["out"] )
 
 		assertExpectedImages()
 
@@ -113,7 +95,7 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		c = GafferImage.Catalogue()
 		c["images"].addChild( c.Image.load( "${GAFFER_ROOT}/python/GafferImageTest/images/blurRange.exr" ) )
-		self.assertEqual( c["out"]["metadata"].getValue()["ImageDescription"].value, "" )
+		self.assertNotIn( "ImageDescription", c["out"]["metadata"].getValue() )
 
 		c["images"][-1]["description"].setValue( "ddd" )
 		self.assertEqual( c["out"]["metadata"].getValue()["ImageDescription"].value, "ddd" )
@@ -124,7 +106,7 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		m = GafferImage.ImageMetadata()
 		m["in"].setInput( c["out"] )
-		m["metadata"].addMember( "ImageDescription", "i am a description" )
+		m["metadata"].addChild( Gaffer.NameValuePlug( "ImageDescription", "i am a description" ) )
 
 		w = GafferImage.ImageWriter()
 		w["in"].setInput( m["out"] )
@@ -134,8 +116,10 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		r = GafferImage.ImageReader()
 		r["fileName"].setValue( w["fileName"].getValue() )
 
-		i = GafferImage.Catalogue.Image.load( w["fileName"].getValue() )
-		self.assertEqual( i["description"].getValue(), "i am a description" )
+		c = GafferImage.Catalogue()
+		c["images"].addChild( GafferImage.Catalogue.Image.load( w["fileName"].getValue() ) )
+		self.assertEqual( c["images"][0]["description"].getValue(), "" )
+		self.assertEqual( c["out"]["metadata"].getValue()["ImageDescription"].value, "i am a description" )
 
 	def testSerialisation( self ) :
 
@@ -186,7 +170,7 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		c2["enabled"].setValue( False )
 		self.assertNotEqual( c2["out"]["format"].getValue(), c1["out"]["format"].getValue() )
 		self.assertNotEqual( c2["out"]["dataWindow"].getValue(), c1["out"]["dataWindow"].getValue() )
-		self.assertEqual( c2["out"]["dataWindow"].getValue(), IECore.Box2i() )
+		self.assertEqual( c2["out"]["dataWindow"].getValue(), imath.Box2i() )
 
 		disabledConstant = GafferImage.Constant()
 		disabledConstant["enabled"].setValue( False )
@@ -205,7 +189,7 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( c["images"][0]["fileName"].getValue(), "" )
 		self.assertEqual( c["imageIndex"].getValue(), 0 )
 
-		self.assertImagesEqual( r["out"], c["out"], ignoreMetadata = True )
+		self.assertImagesEqual( r["out"], c["out"] )
 
 		r["fileName"].setValue( "${GAFFER_ROOT}/python/GafferImageTest/images/blurRange.exr" )
 		self.sendImage( r["out"], c )
@@ -213,7 +197,7 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( len( c["images"] ), 2 )
 		self.assertEqual( c["images"][1]["fileName"].getValue(), "" )
 		self.assertEqual( c["imageIndex"].getValue(), 1 )
-		self.assertImagesEqual( r["out"], c["out"], ignoreMetadata = True )
+		self.assertImagesEqual( r["out"], c["out"] )
 
 	def testDisplayDriverAOVGrouping( self ) :
 
@@ -222,11 +206,11 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		aov1 = GafferImage.Constant()
 		aov1["format"].setValue( GafferImage.Format( 100, 100 ) )
-		aov1["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		aov1["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 
 		aov2 = GafferImage.Constant()
 		aov2["format"].setValue( GafferImage.Format( 100, 100 ) )
-		aov2["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		aov2["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 		aov2["layer"].setValue( "diffuse" )
 
 		self.sendImage( aov1["out"], c )
@@ -272,8 +256,8 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		constant2 = GafferImage.Constant()
 		constant1["format"].setValue( GafferImage.Format( 100, 100 ) )
 		constant2["format"].setValue( GafferImage.Format( 100, 100 ) )
-		constant1["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
-		constant2["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		constant1["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
+		constant2["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
 		self.sendImage(
 			constant1["out"],
@@ -291,8 +275,8 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( len( c1["images"] ), 1 )
 		self.assertEqual( len( c2["images"] ), 1 )
 
-		self.assertImagesEqual( c1["out"], constant1["out"], ignoreMetadata = True )
-		self.assertImagesEqual( c2["out"], constant2["out"], ignoreMetadata = True )
+		self.assertImagesEqual( c1["out"], constant1["out"] )
+		self.assertImagesEqual( c2["out"], constant2["out"] )
 
 	def testDontSerialiseUnsavedRenders( self ) :
 
@@ -331,25 +315,25 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		for image in images :
 			promotedImages.addChild( image )
-			self.assertImagesEqual( readers[0]["out"], promotedOut, ignoreMetadata = True )
+			self.assertImagesEqual( readers[0]["out"], promotedOut )
 
 		for i, reader in enumerate( readers ) :
 			promotedImageIndex.setValue( i )
-			self.assertImagesEqual( readers[i]["out"], promotedOut, ignoreMetadata = True )
+			self.assertImagesEqual( readers[i]["out"], promotedOut )
 
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s.serialise() )
 
 		for i, reader in enumerate( readers ) :
 			s2["b"]["imageIndex"].setValue( i )
-			self.assertImagesEqual( readers[i]["out"], s2["b"]["out"], ignoreMetadata = True )
+			self.assertImagesEqual( readers[i]["out"], s2["b"]["out"] )
 
 		s3 = Gaffer.ScriptNode()
 		s3.execute( s.serialise() )
 
 		for i, reader in enumerate( readers ) :
 			s3["b"]["imageIndex"].setValue( i )
-			self.assertImagesEqual( readers[i]["out"], s3["b"]["out"], ignoreMetadata = True )
+			self.assertImagesEqual( readers[i]["out"], s3["b"]["out"] )
 
 	def testDisplayDriverAndPromotion( self ) :
 
@@ -434,7 +418,7 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 			self.assertEqual( len( s["c"]["images"] ), 2 )
 			self.assertEqual( s["c"]["imageIndex"].getValue(), 1 )
-			self.assertImagesEqual( s["c"]["out"], r["out"], ignoreMetadata = True )
+			self.assertImagesEqual( s["c"]["out"], r["out"] )
 
 		assertPostConditions()
 
@@ -514,12 +498,12 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 		display.setDriver( drivers[0][0] )
 
 		self.assertEqual(
-			display["out"].channelDataHash( "R", IECore.V2i( 0 ) ),
-			c["out"].channelDataHash( "R", IECore.V2i( 0 ) )
+			display["out"].channelDataHash( "R", imath.V2i( 0 ) ),
+			c["out"].channelDataHash( "R", imath.V2i( 0 ) )
 		)
 		self.assertTrue(
-			display["out"].channelData( "R", IECore.V2i( 0 ), _copy = False ).isSame(
-				c["out"].channelData( "R", IECore.V2i( 0 ), _copy = False )
+			display["out"].channelData( "R", imath.V2i( 0 ), _copy = False ).isSame(
+				c["out"].channelData( "R", imath.V2i( 0 ), _copy = False )
 			)
 		)
 
@@ -531,12 +515,12 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		c["imageIndex"].setValue( 1 )
 		self.assertEqual(
-			display["out"].channelDataHash( "R", IECore.V2i( 0 ) ),
-			c["out"].channelDataHash( "R", IECore.V2i( 0 ) )
+			display["out"].channelDataHash( "R", imath.V2i( 0 ) ),
+			c["out"].channelDataHash( "R", imath.V2i( 0 ) )
 		)
 		self.assertTrue(
-			display["out"].channelData( "R", IECore.V2i( 0 ), _copy = False ).isSame(
-				c["out"].channelData( "R", IECore.V2i( 0 ), _copy = False )
+			display["out"].channelData( "R", imath.V2i( 0 ), _copy = False ).isSame(
+				c["out"].channelData( "R", imath.V2i( 0 ), _copy = False )
 			)
 		)
 
@@ -551,6 +535,199 @@ class CatalogueTest( GafferImageTest.ImageTestCase ) :
 
 		self.assertEqual( c["images"][1]["description"].getValue(), c["images"][0]["description"].getValue() )
 		self.assertEqual( c["images"][1]["fileName"].getValue(), c["images"][0]["fileName"].getValue() )
+
+	def testDeleteBeforeSaveCompletes( self ) :
+
+		c = GafferImage.Catalogue()
+		c["directory"].setValue( os.path.join( self.temporaryDirectory(), "catalogue" ) )
+
+		r = GafferImage.ImageReader()
+		r["fileName"].setValue( "${GAFFER_ROOT}/python/GafferImageTest/images/checker.exr" )
+
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as h :
+			self.sendImage( r["out"], c, waitForSave = False )
+			del c
+
+	def testDeleteBeforeSaveCompletesWithScriptVariables( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( "testDeleteBeforeSaveCompletesWithScriptVariables" )
+		self.assertEqual( s.context().substitute( "${script:name}" ), "testDeleteBeforeSaveCompletesWithScriptVariables" )
+
+		baseDirectory = os.path.join( self.temporaryDirectory(), "catalogue" )
+		# we don't expect to need to write here, but to ensure
+		# we didn't even try to do so we make it read only.
+		os.mkdir( baseDirectory )
+		os.chmod( baseDirectory, stat.S_IREAD )
+		directory = os.path.join( baseDirectory, "${script:name}", "images" )
+
+		s["c"] = GafferImage.Catalogue()
+		s["c"]["directory"].setValue( directory )
+
+		fullDirectory = s.context().substitute( s["c"]["directory"].getValue() )
+		self.assertNotEqual( directory, fullDirectory )
+		self.assertFalse( os.path.exists( directory ) )
+		self.assertFalse( os.path.exists( fullDirectory ) )
+
+		r = GafferImage.ImageReader()
+		r["fileName"].setValue( "${GAFFER_ROOT}/python/GafferImageTest/images/checker.exr" )
+
+		driver = self.sendImage( r["out"], s["c"], waitForSave = False, close = False )
+		# Simulate deletion by removing it from the script but keeping it alive.
+		# This would typically be fine, but we've setup the directory to require
+		# a script and then removed the script prior to closing the driver. Note
+		# we can't actually delete the catalogue yet or `driver.close()` would
+		# hang indefinitely waiting for an imageReceivedSignal.
+		c = s["c"]
+		s.removeChild( s["c"] )
+		driver.close()
+
+		self.assertFalse( os.path.exists( directory ) )
+		self.assertFalse( os.path.exists( fullDirectory ) )
+
+	def testNonWritableDirectory( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["c"] = GafferImage.Catalogue()
+		s["c"]["directory"].setValue( os.path.join( self.temporaryDirectory(), "catalogue" ) )
+		os.chmod( self.temporaryDirectory(), stat.S_IREAD )
+
+		r = GafferImage.ImageReader()
+		r["fileName"].setValue( "${GAFFER_ROOT}/python/GafferImageTest/images/blurRange.exr" )
+
+		originalMessageHandler = IECore.MessageHandler.getDefaultHandler()
+		mh = IECore.CapturingMessageHandler()
+		IECore.MessageHandler.setDefaultHandler( mh )
+
+		try :
+			self.sendImage( r["out"], s["c"] )
+		finally :
+			IECore.MessageHandler.setDefaultHandler( originalMessageHandler )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertIn( "Permission denied", mh.messages[0].message )
+
+		with self.assertRaisesRegexp( RuntimeError, "Could not open file" ) :
+			GafferImage.ImageAlgo.image( s["c"]["out"] )
+
+	def testDeleteKeepsOrder( self ) :
+
+		# Send 4 images to a Catalogue : red, green, blue, yellow
+
+		script = Gaffer.ScriptNode()
+		script["catalogue"] = GafferImage.Catalogue()
+		script["catalogue"]["directory"].setValue( os.path.join( self.temporaryDirectory(), "catalogue" ) )
+
+		script["red"] = GafferImage.Constant()
+		script["red"]["format"].setValue( GafferImage.Format( 64, 64 ) )
+		script["red"]["color"]["r"].setValue( 1 )
+		self.sendImage( script["red"]["out"], script["catalogue"] )
+		script["catalogue"]["images"][-1].setName( "Red" )
+
+		script["green"] = GafferImage.Constant()
+		script["green"]["format"].setValue( GafferImage.Format( 64, 64 ) )
+		script["green"]["color"]["g"].setValue( 1 )
+		self.sendImage( script["green"]["out"], script["catalogue"] )
+		script["catalogue"]["images"][-1].setName( "Green" )
+
+		script["blue"] = GafferImage.Constant()
+		script["blue"]["format"].setValue( GafferImage.Format( 64, 64 ) )
+		script["blue"]["color"]["b"].setValue( 1 )
+		self.sendImage( script["blue"]["out"], script["catalogue"] )
+		script["catalogue"]["images"][-1].setName( "Blue" )
+
+		script["yellow"] = GafferImage.Constant()
+		script["yellow"]["format"].setValue( GafferImage.Format( 64, 64 ) )
+		script["yellow"]["color"].setValue( imath.Color4f( 1, 1, 0, 1 ) )
+		self.sendImage( script["yellow"]["out"], script["catalogue"] )
+		script["catalogue"]["images"][-1].setName( "Yellow" )
+
+		script["fileName"].setValue( "/tmp/ttt.gfr" )
+		script.save()
+
+		# Check it worked
+
+		def assertPreconditions() :
+
+			self.assertEqual( len( script["catalogue"]["images"] ), 4 )
+			self.assertEqual( script["catalogue"]["images"][0].getName(), "Red" )
+			self.assertEqual( script["catalogue"]["images"][1].getName(), "Green" )
+			self.assertEqual( script["catalogue"]["images"][2].getName(), "Blue" )
+			self.assertEqual( script["catalogue"]["images"][3].getName(), "Yellow" )
+
+			script["catalogue"]["imageIndex"].setValue( 0 )
+			self.assertImagesEqual( script["catalogue"]["out"], script["red"]["out"], ignoreMetadata = True )
+			script["catalogue"]["imageIndex"].setValue( 1 )
+			self.assertImagesEqual( script["catalogue"]["out"], script["green"]["out"], ignoreMetadata = True )
+			script["catalogue"]["imageIndex"].setValue( 2 )
+			self.assertImagesEqual( script["catalogue"]["out"], script["blue"]["out"], ignoreMetadata = True )
+			script["catalogue"]["imageIndex"].setValue( 3 )
+			self.assertImagesEqual( script["catalogue"]["out"], script["yellow"]["out"], ignoreMetadata = True )
+
+			with Gaffer.Context( script.context() ) as c :
+				c["catalogue:imageName"] = "Red"
+				self.assertImagesEqual( script["catalogue"]["out"], script["red"]["out"], ignoreMetadata = True )
+				c["catalogue:imageName"] = "Green"
+				self.assertImagesEqual( script["catalogue"]["out"], script["green"]["out"], ignoreMetadata = True )
+				c["catalogue:imageName"] = "Blue"
+				self.assertImagesEqual( script["catalogue"]["out"], script["blue"]["out"], ignoreMetadata = True )
+				c["catalogue:imageName"] = "Yellow"
+				self.assertImagesEqual( script["catalogue"]["out"], script["yellow"]["out"], ignoreMetadata = True )
+
+		assertPreconditions()
+
+		# Delete green, then blue, then yellow
+
+		script["catalogue"]["imageIndex"].setValue( 0 )
+
+		with Gaffer.UndoScope( script ) :
+			del script["catalogue"]["images"][1]
+			del script["catalogue"]["images"][1]
+			del script["catalogue"]["images"][1]
+
+		# Check it worked
+
+		def assertPostConditions() :
+
+			self.assertEqual( len( script["catalogue"]["images"] ), 1 )
+			self.assertEqual( script["catalogue"]["images"][0].getName(), "Red" )
+
+			script["catalogue"]["imageIndex"].setValue( 0 )
+			self.assertImagesEqual( script["catalogue"]["out"], script["red"]["out"], ignoreMetadata = True )
+
+			with Gaffer.Context( script.context() ) as c :
+				c["catalogue:imageName"] = "Red"
+				self.assertImagesEqual( script["catalogue"]["out"], script["red"]["out"], ignoreMetadata = True )
+
+
+		assertPostConditions()
+
+		# Check that undo and redo work
+
+		script.undo()
+		assertPreconditions()
+
+		script.redo()
+		assertPostConditions()
+
+		script.undo()
+		assertPreconditions()
+
+	def testLoadWithInvalidNames( self ) :
+
+		sourceFile = os.path.join( os.path.dirname( __file__ ), "images", "blurRange.exr" )
+
+		for name, expectedName in [
+			( "0", "_0" ),
+			( "[]", "__" ),
+			( "(", "_" ),
+			( "%", "_" ),
+		] :
+
+			fileName = os.path.join( self.temporaryDirectory(), name + ".exr" )
+			shutil.copyfile( sourceFile, fileName )
+			GafferImage.Catalogue.Image.load( fileName )
 
 if __name__ == "__main__":
 	unittest.main()

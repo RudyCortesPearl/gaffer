@@ -34,66 +34,131 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Primitive.h"
+#include "GafferOSL/OSLObject.h"
+
+#include "GafferOSL/ClosurePlug.h"
+#include "GafferOSL/OSLCode.h"
+#include "GafferOSL/ShadingEngine.h"
 
 #include "GafferScene/ResamplePrimitiveVariables.h"
 
-#include "GafferOSL/OSLShader.h"
-#include "GafferOSL/OSLObject.h"
-#include "GafferOSL/ShadingEngine.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/UndoScope.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/NameValuePlug.h"
+
+#include "IECoreScene/Primitive.h"
+#include "IECoreImage/OpenImageIOAlgo.h"
+
+#include "IECore/MessageHandler.h"
+
+#include "boost/bind.hpp"
 
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 using namespace GafferOSL;
 
-IE_CORE_DEFINERUNTIMETYPED( OSLObject );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( OSLObject );
 
 size_t OSLObject::g_firstPlugIndex;
 
 namespace
 {
 
-CompoundDataPtr prepareShadingPoints( const Primitive *primitive )
+CompoundDataPtr prepareShadingPoints( const Primitive *primitive, const ShadingEngine *shadingEngine, const CompoundObject *gafferAttributes = nullptr )
 {
 	CompoundDataPtr shadingPoints = new CompoundData;
 	for( PrimitiveVariableMap::const_iterator it = primitive->variables.begin(), eIt = primitive->variables.end(); it != eIt; ++it )
 	{
-		// cast is ok - we're only using it to be able to reference the data from the shadingPoints,
-		// but nothing will modify the data itself.
-		shadingPoints->writable()[it->first] = boost::const_pointer_cast<Data>( it->second.data );
+		// todo: consider passing something like IndexedView to the ShadingEngine to avoid the expansion of indexed data.
+		if( shadingEngine->needsAttribute( it->first ) )
+		{
+			if( it->second.indices )
+			{
+				shadingPoints->writable()[it->first] = it->second.expandedData();
+			}
+			else
+			{
+				shadingPoints->writable()[it->first] = boost::const_pointer_cast<Data>( it->second.data );
+			}
+		}
+	}
+
+	if( gafferAttributes )
+	{
+		for( const auto &i : gafferAttributes->members() )
+		{
+			if( shadingEngine->needsAttribute( i.first ) )
+			{
+				if( shadingPoints->writable().find( i.first ) == shadingPoints->writable().end() )
+				{
+					const IECore::Data* data = IECore::runTimeCast< IECore::Data >( i.second.get() );
+
+					// We currently don't support array attributes
+					// ( because ShadingEngine assumes that all arrays contain per-shading-point
+					// data of the appropriate length. )
+					// Using OpenImageIOAlgo to check if it's an array feels a bit weird, but it
+					// seems important to exactly match the logic of GafferOSL::ShadingEngine
+					if( data && !IECoreImage::OpenImageIOAlgo::DataView( data ).type.arraylen )
+					{
+						const IECore::BoolData* boolData = IECore::runTimeCast< const IECore::BoolData >( data );
+						if( boolData )
+						{
+							shadingPoints->writable()[i.first] = new IECore::IntData( boolData->readable() );
+						}
+						else
+						{
+							// Const cast is safe because the resulting dict is const
+							shadingPoints->writable()[i.first] = const_cast< IECore::Data* >( data );
+						}
+					}
+					else
+					{
+						// If we hit this branch, it means either that the shader needs to read an attribute
+						// which is invalid, in which case it would be nice to throw an error ... or it means
+						// that OSL couldn't determine which attributes the shader needs, and we're trying to
+						// pass it everything.  Because we can't tell which case we're in here, we can't throw
+						// an error, and we just silently don't pass this attribute
+					}
+				}
+			}
+		}
 	}
 
 	return shadingPoints;
 }
 
-};
+} // namespace
 
 OSLObject::OSLObject( const std::string &name )
-	:	SceneElementProcessor( name, Filter::NoMatch )
+	:	Deformer( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new ShaderPlug( "shader" ) );
+	addChild( new GafferScene::ShaderPlug( "__shader", Plug::In, Plug::Default & ~Plug::Serialisable ) );
 	addChild( new IntPlug( "interpolation", Plug::In, PrimitiveVariable::Vertex, PrimitiveVariable::Invalid, PrimitiveVariable::FaceVarying ) );
+	addChild( new BoolPlug( "useTransform", Plug::In, false ) );
+	addChild( new BoolPlug( "useAttributes", Plug::In, false ) );
 	addChild( new ScenePlug( "__resampledIn", Plug::In, Plug::Default & ~Plug::Serialisable ) );
-
 	addChild( new StringPlug( "__resampleNames", Plug::Out ) );
+	addChild( new Plug( "primitiveVariables", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
+	addChild( new OSLCode( "__oslCode" ) );
+	shaderPlug()->setInput( oslCode()->outPlug() );
+
+	primitiveVariablesPlug()->childAddedSignal().connect( boost::bind( &OSLObject::primitiveVariableAdded, this, ::_1, ::_2 ) );
+	primitiveVariablesPlug()->childRemovedSignal().connect( boost::bind( &OSLObject::primitiveVariableRemoved, this, ::_1, ::_2 ) );
 
 	GafferScene::ResamplePrimitiveVariablesPtr resample = new ResamplePrimitiveVariables( "__resample" );
 	addChild( resample );
 
-	//todo only resample variables which we've read from in the OSL shader
 	resample->namesPlug()->setInput( resampledNamesPlug() );
 	resample->inPlug()->setInput( inPlug() );
 	resample->interpolationPlug()->setInput( interpolationPlug() );
 	resample->filterPlug()->setInput( filterPlug() );
 
 	resampledInPlug()->setInput( resample->outPlug() );
-
-	// Pass-throughs for things we don't want to modify
-	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
-	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
 }
 
 OSLObject::~OSLObject()
@@ -102,12 +167,12 @@ OSLObject::~OSLObject()
 
 GafferScene::ShaderPlug *OSLObject::shaderPlug()
 {
-	return getChild<ShaderPlug>( g_firstPlugIndex );
+	return getChild<GafferScene::ShaderPlug>( g_firstPlugIndex );
 }
 
 const GafferScene::ShaderPlug *OSLObject::shaderPlug() const
 {
-	return getChild<ShaderPlug>( g_firstPlugIndex );
+	return getChild<GafferScene::ShaderPlug>( g_firstPlugIndex );
 }
 
 Gaffer::IntPlug *OSLObject::interpolationPlug()
@@ -120,123 +185,147 @@ const Gaffer::IntPlug *OSLObject::interpolationPlug() const
 	return getChild<IntPlug>( g_firstPlugIndex + 1 );
 }
 
+Gaffer::BoolPlug *OSLObject::useTransformPlug()
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+}
+
+const Gaffer::BoolPlug *OSLObject::useTransformPlug() const
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+}
+
+Gaffer::BoolPlug *OSLObject::useAttributesPlug()
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 3 );
+}
+
+const Gaffer::BoolPlug *OSLObject::useAttributesPlug() const
+{
+	return getChild<BoolPlug>( g_firstPlugIndex + 3 );
+}
+
 ScenePlug *OSLObject::resampledInPlug()
 {
-	return getChild<ScenePlug>( g_firstPlugIndex + 2 );
+	return getChild<ScenePlug>( g_firstPlugIndex + 4 );
 }
 
 const ScenePlug *OSLObject::resampledInPlug() const
 {
-	return getChild<ScenePlug>( g_firstPlugIndex + 2 );
+	return getChild<ScenePlug>( g_firstPlugIndex + 4 );
 }
 
 StringPlug *OSLObject::resampledNamesPlug()
 {
-	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+	return getChild<StringPlug>( g_firstPlugIndex + 5 );
 }
 
 const StringPlug *OSLObject::resampledNamesPlug() const
 {
-	return getChild<StringPlug>( g_firstPlugIndex + 3 );
+	return getChild<StringPlug>( g_firstPlugIndex + 5 );
+}
+
+Gaffer::Plug *OSLObject::primitiveVariablesPlug()
+{
+	return getChild<Gaffer::Plug>( g_firstPlugIndex + 6 );
+}
+
+const Gaffer::Plug *OSLObject::primitiveVariablesPlug() const
+{
+	return getChild<Gaffer::Plug>( g_firstPlugIndex + 6 );
+}
+
+GafferOSL::OSLCode *OSLObject::oslCode()
+{
+	return getChild<GafferOSL::OSLCode>( g_firstPlugIndex + 7 );
+}
+
+const GafferOSL::OSLCode *OSLObject::oslCode() const
+{
+	return getChild<GafferOSL::OSLCode>( g_firstPlugIndex + 7 );
+}
+
+namespace
+{
+	// Copied from Switch::variesWithContext.  Should be shared somewhere central
+	bool requiresCompute( const Plug *plug )
+	{
+		plug = plug->source<Gaffer::Plug>();
+		return plug->direction() == Plug::Out && IECore::runTimeCast<const ComputeNode>( plug->node() );
+	}
 }
 
 void OSLObject::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	SceneElementProcessor::affects( input, outputs );
+	Deformer::affects( input, outputs );
 
-	if( input == shaderPlug() ||
-		input == inPlug()->transformPlug() ||
-		input == interpolationPlug() ||
-		input == resampledInPlug()->objectPlug()
-		)
-	{
-		outputs.push_back( outPlug()->objectPlug() );
-	}
-	else if( input == inPlug()->objectPlug() )
+	if(
+		input == shaderPlug() ||
+		input == inPlug()->objectPlug()
+	)
 	{
 		outputs.push_back( resampledNamesPlug() );
 	}
-	else if( input == outPlug()->objectPlug() )
-	{
-		outputs.push_back( outPlug()->boundPlug() );
-	}
 }
 
-bool OSLObject::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const
+bool OSLObject::affectsProcessedObject( const Gaffer::Plug *input ) const
 {
-	if( !SceneElementProcessor::acceptsInput( plug, inputPlug ) )
-	{
-		return false;
-	}
+	const bool transformTrigger = input == inPlug()->transformPlug() && (
+		requiresCompute( useTransformPlug() ) || useTransformPlug()->getValue()
+	);
 
-	if( !inputPlug )
-	{
-		return true;
-	}
+	const bool attributeTrigger = input == inPlug()->attributesPlug() && (
+		requiresCompute( useAttributesPlug() ) || useAttributesPlug()->getValue()
+	);
 
-	if( plug == shaderPlug() )
-	{
-		if( const GafferScene::Shader *shader = runTimeCast<const GafferScene::Shader>( inputPlug->source<Plug>()->node() ) )
-		{
-			const OSLShader *oslShader = runTimeCast<const OSLShader>( shader );
-			return oslShader && oslShader->typePlug()->getValue() == "osl:surface";
-		}
-	}
-
-	return true;
-}
-
-bool OSLObject::processesBound() const
-{
-	return runTimeCast<const OSLShader>( shaderPlug()->source<Plug>()->node() );
-}
-
-void OSLObject::hashProcessedBound( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	hashProcessedObject( path, context, h );
-}
-
-Imath::Box3f OSLObject::computeProcessedBound( const ScenePath &path, const Gaffer::Context *context, const Imath::Box3f &inputBound ) const
-{
-	ConstObjectPtr object = outPlug()->objectPlug()->getValue();
-	if( const Primitive *primitive = runTimeCast<const Primitive>( object.get() ) )
-	{
-		return primitive->bound();
-	}
-	return inputBound;
-}
-
-bool OSLObject::processesObject() const
-{
-	return runTimeCast<const OSLShader>( shaderPlug()->source<Plug>()->node() );
+	return
+		Deformer::affectsProcessedObject( input ) ||
+		input == shaderPlug() ||
+		input == interpolationPlug() ||
+		input == useTransformPlug() ||
+		input == useAttributesPlug() ||
+		input == resampledInPlug()->objectPlug() ||
+		transformTrigger ||
+		attributeTrigger
+	;
 }
 
 void OSLObject::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	const OSLShader *shader = runTimeCast<const OSLShader>( shaderPlug()->source<Plug>()->node() );
-	if( shader )
+	ConstShadingEnginePtr shadingEngine = this->shadingEngine( context );
+	if( !shadingEngine )
 	{
-		shader->attributesHash( h );
+		h = inPlug()->objectPlug()->hash();
+		return;
 	}
 
+	Deformer::hashProcessedObject( path, context, h );
+
+	shadingEngine->hash( h );
 	interpolationPlug()->hash( h );
-	h.append( inPlug()->fullTransformHash( path ) );
 	h.append( resampledInPlug()->objectPlug()->hash() );
+
+	if( useTransformPlug()->getValue() )
+	{
+		h.append( inPlug()->fullTransformHash( path ) );
+	}
+	if( useAttributesPlug()->getValue() )
+	{
+		h.append( inPlug()->fullAttributesHash( path ) );
+	}
 }
 
 static const IECore::InternedString g_world("world");
 
-IECore::ConstObjectPtr OSLObject::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const
+IECore::ConstObjectPtr OSLObject::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const
 {
-	const Primitive *inputPrimitive = runTimeCast<const Primitive>( inputObject.get() );
+	const Primitive *inputPrimitive = runTimeCast<const Primitive>( inputObject );
 	if( !inputPrimitive )
 	{
 		return inputObject;
 	}
 
-	ConstOSLShaderPtr shader = runTimeCast<const OSLShader>( shaderPlug()->source<Plug>()->node() );
-	ConstShadingEnginePtr shadingEngine = shader ? shader->shadingEngine() : NULL;
-
+	ConstShadingEnginePtr shadingEngine = this->shadingEngine( context );
 	if( !shadingEngine )
 	{
 		return inputObject;
@@ -244,14 +333,27 @@ IECore::ConstObjectPtr OSLObject::computeProcessedObject( const ScenePath &path,
 
 	PrimitiveVariable::Interpolation interpolation = static_cast<PrimitiveVariable::Interpolation>( interpolationPlug()->getValue() );
 
-	IECore::ConstPrimitivePtr resampledObject = IECore::runTimeCast<const IECore::Primitive>( resampledInPlug()->objectPlug()->getValue() );
-	CompoundDataPtr shadingPoints = prepareShadingPoints( resampledObject.get() );
+	ConstCompoundObjectPtr gafferAttributes;
+	if( useAttributesPlug()->getValue() )
+	{
+		gafferAttributes = inPlug()->fullAttributes( path );
+	}
+
+	IECoreScene::ConstPrimitivePtr resampledObject = IECore::runTimeCast<const IECoreScene::Primitive>( resampledInPlug()->objectPlug()->getValue() );
+	CompoundDataPtr shadingPoints = prepareShadingPoints( resampledObject.get(), shadingEngine.get(), gafferAttributes.get() );
 
 	PrimitivePtr outputPrimitive = inputPrimitive->copy();
 
 	ShadingEngine::Transforms transforms;
 
-	transforms[ g_world ] = ShadingEngine::Transform( inPlug()->fullTransform( path ));
+	if( useTransformPlug()->getValue() )
+	{
+		transforms[ g_world ] = ShadingEngine::Transform( inPlug()->fullTransform( path ));
+	}
+	else
+	{
+		transforms[ g_world ] = ShadingEngine::Transform( Imath::M44f(), Imath::M44f() );
+	}
 
 	CompoundDataPtr shadedPoints = shadingEngine->shade( shadingPoints.get(), transforms );
 	for( CompoundDataMap::const_iterator it = shadedPoints->readable().begin(), eIt = shadedPoints->readable().end(); it != eIt; ++it )
@@ -267,13 +369,26 @@ IECore::ConstObjectPtr OSLObject::computeProcessedObject( const ScenePath &path,
 	return outputPrimitive;
 }
 
+bool OSLObject::adjustBounds() const
+{
+	if( !Deformer::adjustBounds() )
+	{
+		return false;
+	}
+
+	ConstShadingEnginePtr s = shadingEngine( Context::current() );
+	return s && s->hasDeformation();
+}
+
 void OSLObject::hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const
 {
-	SceneElementProcessor::hash( output, context, h );
+	Deformer::hash( output, context, h );
 
 	if( output == resampledNamesPlug() )
 	{
 		inPlug()->objectPlug()->hash( h );
+		ScenePlug::GlobalScope globalScope( context );
+		h.append( shaderPlug()->attributesHash() );
 	}
 }
 
@@ -281,7 +396,7 @@ void OSLObject::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 {
 	if( output == resampledNamesPlug() )
 	{
-		ConstPrimitivePtr prim = runTimeCast<const IECore::Primitive>( inPlug()->objectPlug()->getValue() );
+		ConstPrimitivePtr prim = runTimeCast<const IECoreScene::Primitive>( inPlug()->objectPlug()->getValue() );
 
 		if (!prim)
 		{
@@ -289,8 +404,9 @@ void OSLObject::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 			return;
 		}
 
-		std::string nonConstantPrimitiveVariables;
+		ConstShadingEnginePtr shadingEngine = this->shadingEngine( context );
 
+		std::string primitiveVariablesToResample;
 		for( PrimitiveVariableMap::const_iterator it = prim->variables.begin(); it != prim->variables.end(); ++it )
 		{
 			if( it->second.interpolation == PrimitiveVariable::Constant )
@@ -298,12 +414,154 @@ void OSLObject::compute( Gaffer::ValuePlug *output, const Gaffer::Context *conte
 				continue;
 			}
 
-			nonConstantPrimitiveVariables += " " + it->first;
+			if( shadingEngine && !shadingEngine->needsAttribute( it->first ) )
+			{
+				continue;
+			}
+
+			primitiveVariablesToResample += " " + it->first;
 		}
 
-		static_cast<StringPlug *>( output )->setValue( nonConstantPrimitiveVariables );
+		static_cast<StringPlug *>( output )->setValue( primitiveVariablesToResample );
 		return;
 	}
 
-	SceneElementProcessor::compute( output, context );
+	Deformer::compute( output, context );
+}
+
+ConstShadingEnginePtr OSLObject::shadingEngine( const Gaffer::Context *context ) const
+{
+	auto shader = runTimeCast<const OSLShader>( shaderPlug()->source()->node() );
+	if( !shader )
+	{
+		return nullptr;
+	}
+
+	ScenePlug::GlobalScope globalScope( context );
+	return shader->shadingEngine();
+}
+
+void OSLObject::updatePrimitiveVariables()
+{
+	// Disable undo for the actions we perform, because anything that can
+	// trigger an update is undoable itself, and we will take care of everything as a whole
+	// when we are undone.
+	UndoScope undoDisabler( scriptNode(), UndoScope::Disabled );
+
+	// Currently the OSLCode node will recompile every time an input is added.
+	// We're hoping in the future to avoid doing this until the network is actually needed,
+	// but in the meantime, we can save some time by emptying the code first, so that at least
+	// all the redundant recompiles are of shorter code.
+	oslCode()->codePlug()->setValue( "" );
+
+	oslCode()->parametersPlug()->clearChildren();
+
+	std::string code = "closure color out = 0;\n";
+
+	for( NameValuePlugIterator inputPlug( primitiveVariablesPlug() ); !inputPlug.done(); ++inputPlug )
+	{
+		std::string prefix = "";
+		BoolPlug* enabledPlug = (*inputPlug)->enabledPlug();
+		if( enabledPlug )
+		{
+			IntPlugPtr codeEnablePlug = new IntPlug( "enable" );
+			oslCode()->parametersPlug()->addChild( codeEnablePlug );
+			codeEnablePlug->setInput( enabledPlug );
+			prefix = "if( " + codeEnablePlug->getName().string() + " ) ";
+		}
+
+		Plug *valuePlug = (*inputPlug)->valuePlug();
+
+		if( valuePlug->typeId() == ClosurePlug::staticTypeId() )
+		{
+			// Closures are a special case that doesn't need a wrapper function
+			ClosurePlugPtr codeClosurePlug = new ClosurePlug( "closureIn" );
+			oslCode()->parametersPlug()->addChild( codeClosurePlug );
+			codeClosurePlug->setInput( valuePlug );
+
+			code += prefix + "out = out + " + codeClosurePlug->getName().string() + ";\n";
+			continue;
+		}
+
+		std::string outFunction;
+		PlugPtr codeValuePlug;
+		const Gaffer::TypeId valueType = (Gaffer::TypeId)valuePlug->typeId();
+		switch( (int)valueType )
+		{
+			case FloatPlugTypeId :
+				codeValuePlug = new FloatPlug( "value" );
+				outFunction = "outFloat";
+				break;
+			case IntPlugTypeId :
+				codeValuePlug = new IntPlug( "value" );
+				outFunction = "outInt";
+				break;
+			case Color3fPlugTypeId :
+				codeValuePlug = new Color3fPlug( "value" );
+				outFunction = "outColor";
+				break;
+			case V3fPlugTypeId :
+				codeValuePlug = new V3fPlug( "value" );
+				{
+					V3fPlug *v3fPlug = runTimeCast<V3fPlug>( valuePlug );
+					if( v3fPlug->interpretation() == GeometricData::Point )
+					{
+						outFunction = "outPoint";
+					}
+					else if( v3fPlug->interpretation() == GeometricData::Normal )
+					{
+						outFunction = "outNormal";
+					}
+					else if( v3fPlug->interpretation() == GeometricData::UV )
+					{
+						outFunction = "outUV";
+					}
+					else
+					{
+						outFunction = "outVector";
+					}
+				}
+				break;
+			case M44fPlugTypeId :
+				codeValuePlug = new M44fPlug( "value" );
+				outFunction = "outMatrix";
+				break;
+			case StringPlugTypeId :
+				codeValuePlug = new StringPlug( "value" );
+				outFunction = "outString";
+				break;
+		}
+
+		if( codeValuePlug )
+		{
+
+			StringPlugPtr codeNamePlug = new StringPlug( "name" );
+			oslCode()->parametersPlug()->addChild( codeNamePlug );
+			codeNamePlug->setInput( (*inputPlug)->namePlug() );
+
+			oslCode()->parametersPlug()->addChild( codeValuePlug );
+			codeValuePlug->setInput( valuePlug );
+
+			code += prefix + "out = out + " + outFunction + "( " + codeNamePlug->getName().string() + ", "
+				+ codeValuePlug->getName().string() + ");\n";
+			continue;
+		}
+
+		IECore::msg( IECore::Msg::Warning, "OSLObject::updatePrimitiveVariables",
+			"Could not create primitive variable from plug: " + (*inputPlug)->fullName()
+		);
+	}
+	code += "Ci = out;\n";
+
+	oslCode()->codePlug()->setValue( code );
+}
+
+void OSLObject::primitiveVariableAdded( const Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child )
+{
+	updatePrimitiveVariables();
+}
+
+void OSLObject::primitiveVariableRemoved( const Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child )
+{
+	updatePrimitiveVariables();
 }

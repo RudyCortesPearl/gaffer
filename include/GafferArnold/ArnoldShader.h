@@ -38,29 +38,30 @@
 #ifndef GAFFERARNOLD_ARNOLDSHADER_H
 #define GAFFERARNOLD_ARNOLDSHADER_H
 
-#include "GafferScene/Shader.h"
-
+#include "GafferArnold/Export.h"
 #include "GafferArnold/TypeIds.h"
+
+#include "GafferScene/Shader.h"
 
 namespace GafferArnold
 {
 
-class ArnoldShader : public GafferScene::Shader
+class GAFFERARNOLD_API ArnoldShader : public GafferScene::Shader
 {
 
 	public :
 
 		ArnoldShader( const std::string &name=defaultName<ArnoldShader>() );
-		virtual ~ArnoldShader();
+		~ArnoldShader() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferArnold::ArnoldShader, ArnoldShaderTypeId, GafferScene::Shader );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferArnold::ArnoldShader, ArnoldShaderTypeId, GafferScene::Shader );
 
 		/// Implemented for outPlug(), returning the parameter named in the "primaryInput"
 		/// shader annotation if it has been specified.
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override;
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override;
 
-		virtual void loadShader( const std::string &shaderName, bool keepExistingValues=false );
+		void loadShader( const std::string &shaderName, bool keepExistingValues=false ) override;
 
 	private :
 

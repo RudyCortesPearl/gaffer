@@ -43,15 +43,15 @@
 namespace GafferScene
 {
 
-class StandardOptions : public Options
+class GAFFERSCENE_API StandardOptions : public Options
 {
 
 	public :
 
 		StandardOptions( const std::string &name=defaultName<StandardOptions>() );
-		virtual ~StandardOptions();
+		~StandardOptions() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::StandardOptions, StandardOptionsTypeId, Options );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::StandardOptions, StandardOptionsTypeId, Options );
 
 };
 

@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import re
 
 import Gaffer
@@ -56,7 +54,7 @@ class NameWidget( GafferUI.TextWidget ) :
 		self.__graphComponent = None
 		self.setGraphComponent( graphComponent )
 
-		self.__editingFinishedConnection = self.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setName ) )
+		self.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setName ), scoped = False )
 
 	def setGraphComponent( self, graphComponent ) :
 
@@ -66,10 +64,18 @@ class NameWidget( GafferUI.TextWidget ) :
 		self.__graphComponent = graphComponent
 		if self.__graphComponent is not None :
 			self.__nameChangedConnection = self.__graphComponent.nameChangedSignal().connect( Gaffer.WeakMethod( self.__setText ) )
+			if isinstance( self.__graphComponent, Gaffer.Node ) :
+				self.__metadataChangedConnection = Gaffer.Metadata.nodeValueChangedSignal().connect( Gaffer.WeakMethod( self.__nodeMetadataChanged ) )
+			elif isinstance( self.__graphComponent, Gaffer.Plug ) :
+				self.__metadataChangedConnection = Gaffer.Metadata.plugValueChangedSignal().connect( Gaffer.WeakMethod( self.__plugMetadataChanged ) )
+			else :
+				self.__metadataChangedConnection = None
 		else :
 			self.__nameChangedConnection = None
+			self.__metadataChangedConnection = None
 
 		self.__setText()
+		self.__updateEditability()
 
 	def getGraphComponent( self ) :
 
@@ -86,6 +92,30 @@ class NameWidget( GafferUI.TextWidget ) :
 	def __setText( self, *unwantedArgs ) :
 
 		self.setText( self.__graphComponent.getName() if self.__graphComponent is not None else "" )
+
+	def __updateEditability( self ) :
+
+		editable = False
+		if self.__graphComponent is not None :
+			editable = not Gaffer.MetadataAlgo.readOnly( self.__graphComponent ) and Gaffer.Metadata.value( self.__graphComponent, "renameable" )
+
+		self.setEditable( editable )
+
+	def __nodeMetadataChanged( self, nodeTypeId, key, node ) :
+
+		if (
+			Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__graphComponent, nodeTypeId, key, node ) or
+			node == self.__graphComponent and key == "renameable"
+		) :
+			self.__updateEditability()
+
+	def __plugMetadataChanged( self, nodeTypeId, plugPath, key, plug ) :
+
+		if (
+			Gaffer.MetadataAlgo.readOnlyAffectedByChange( self.__graphComponent, nodeTypeId, plugPath, key, plug ) or
+			plug == self.__graphComponent and key == "renameable"
+		) :
+			self.__updateEditability()
 
 class _Validator( QtGui.QValidator ) :
 

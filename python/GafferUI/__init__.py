@@ -96,18 +96,7 @@ def _qtAddress( o ) :
 		import sip
 		return sip.unwrapinstance( o )
 	else :
-		if Qt.__binding__ == "PySide2" :
-			try :
-				import PySide2.shiboken2 as shiboken
-			except ImportError :
-				import shiboken2 as shiboken
-		else :
-			try :
-				import PySide.shiboken
-			except ImportError :
-				import shiboken
-
-		return shiboken.getCppPointer( o )[0]
+		return __shiboken().getCppPointer( o )[0]
 
 ##########################################################################
 # Function to return a wrapped Qt object from the given C++ address.
@@ -122,18 +111,45 @@ def _qtObject( address, type ) :
 		import sip
 		return sip.wrapinstance( address, type )
 	else :
-		if Qt.__binding__ == "PySide2" :
-			try :
-				import PySide2.shiboken2 as shiboken
-			except ImportError :
-				import shiboken2 as shiboken
-		else :
-			try :
-				import PySide.shiboken
-			except ImportError :
-				import shiboken
+		return __shiboken().wrapInstance( address, type )
 
-		return shiboken.wrapInstance( address, type )
+##########################################################################
+# Determines if the wrapped Qt object is still valid
+# Useful when having to deal with the consequences of C++/Python deletion
+# order challeneges, see:
+#    https://github.com/GafferHQ/gaffer/pull/3179
+##########################################################################
+
+def _qtObjectIsValid( o ) :
+
+	import Qt
+	if "PyQt" in Qt.__binding__ :
+		import sip
+		return not sip.isdeleted( o )
+	else :
+		return __shiboken().isValid( o )
+
+##########################################################################
+# Shiboken lives in a variety of places depending on which PySide it is.
+##########################################################################
+
+def __shiboken() :
+
+	import Qt
+	assert( "PyQt" not in Qt.__binding__ )
+
+	if Qt.__binding__ == "PySide2" :
+		try :
+			import PySide2.shiboken2 as shiboken
+		except ImportError :
+			import shiboken2 as shiboken
+	else :
+		try :
+			import PySide.shiboken
+		except ImportError :
+			import shiboken
+
+	return shiboken
 
 ##########################################################################
 # now import our actual functionality
@@ -220,6 +236,7 @@ from DataPathPreview import DataPathPreview
 
 # then stuff specific to graph uis
 
+from BackgroundMethod import BackgroundMethod
 from PlugValueWidget import PlugValueWidget
 from StringPlugValueWidget import StringPlugValueWidget
 from NumericPlugValueWidget import NumericPlugValueWidget
@@ -231,10 +248,10 @@ from PathVectorDataPlugValueWidget import PathVectorDataPlugValueWidget
 from FileSystemPathVectorDataPlugValueWidget import FileSystemPathVectorDataPlugValueWidget
 from PlugWidget import PlugWidget
 from PlugLayout import PlugLayout
-from EditorWidget import EditorWidget
-from ScriptEditor import ScriptEditor
+from Editor import Editor
+from PythonEditor import PythonEditor
 from GadgetWidget import GadgetWidget
-from NodeGraph import NodeGraph
+from GraphEditor import GraphEditor
 from ScriptWindow import ScriptWindow
 from CompoundEditor import CompoundEditor
 from NameWidget import NameWidget
@@ -262,8 +279,6 @@ import ApplicationMenu
 from BrowserEditor import BrowserEditor
 from Timeline import Timeline
 from MultiLineStringPlugValueWidget import MultiLineStringPlugValueWidget
-from CompoundPlugValueWidget import CompoundPlugValueWidget
-from EnumPlugValueWidget import EnumPlugValueWidget
 from PresetsPlugValueWidget import PresetsPlugValueWidget
 from GraphComponentBrowserMode import GraphComponentBrowserMode
 from ToolPlugValueWidget import ToolPlugValueWidget
@@ -271,26 +286,35 @@ from LabelPlugValueWidget import LabelPlugValueWidget
 from CompoundDataPlugValueWidget import CompoundDataPlugValueWidget
 from LayoutPlugValueWidget import LayoutPlugValueWidget
 import ScriptNodeUI
-from IncrementingPlugValueWidget import IncrementingPlugValueWidget
 from RefreshPlugValueWidget import RefreshPlugValueWidget
 import PreferencesUI
 from SplinePlugValueWidget import SplinePlugValueWidget
 from RampPlugValueWidget import RampPlugValueWidget
 from NodeFinderDialogue import NodeFinderDialogue
 from ConnectionPlugValueWidget import ConnectionPlugValueWidget
-from SplineBasisPlugValueWidget import SplineBasisPlugValueWidget
+from ButtonPlugValueWidget import ButtonPlugValueWidget
 import ViewUI
+import ToolUI
 from Playback import Playback
+import MetadataWidget
 from UIEditor import UIEditor
 import GraphBookmarksUI
 import DocumentationAlgo
 import _PlugAdder
+from Backups import Backups
+from AnimationEditor import AnimationEditor
+import CompoundNumericNoduleUI
+import Examples
+from NameValuePlugValueWidget import NameValuePlugValueWidget
+from ShufflePlugValueWidget import ShufflePlugValueWidget
+from ShufflePlugValueWidget import ShufflesPlugValueWidget
 
 # and then specific node uis
 
 import DependencyNodeUI
 import ComputeNodeUI
 import RandomUI
+import SpreadsheetUI
 import ExpressionUI
 import BoxUI
 import ReferenceUI
@@ -298,6 +322,7 @@ import BackdropUI
 import DotUI
 import SubGraphUI
 import SwitchUI
+import ContextProcessorUI
 import ContextVariablesUI
 import DeleteContextVariablesUI
 import TimeWarpUI
@@ -306,9 +331,11 @@ import AnimationUI
 import BoxIOUI
 import BoxInUI
 import BoxOutUI
+import NameSwitchUI
+import EditScopeUI
 
 # backwards compatibility
 ## \todo Remove me
 Metadata = __import__( "Gaffer" ).Metadata
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferUI" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferUI" )

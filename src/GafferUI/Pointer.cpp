@@ -34,9 +34,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/CachedReader.h"
-
 #include "GafferUI/Pointer.h"
+
+#include "IECore/CachedReader.h"
 
 using namespace GafferUI;
 
@@ -49,6 +49,7 @@ static Registry &registry()
 	if( !r.size() )
 	{
 		// register standard pointers
+		r["move"] = new Pointer( "move.png", Imath::V2i( 10, 10 ) );
 		r["moveDiagonallyUp"] = new Pointer( "moveDiagonallyUp.png", Imath::V2i( 7 ) );
 		r["moveDiagonallyDown"] = new Pointer( "moveDiagonallyDown.png", Imath::V2i( 7 ) );
 		r["moveHorizontally"] = new Pointer( "moveHorizontally.png", Imath::V2i( 9, 5 ) );
@@ -60,27 +61,31 @@ static Registry &registry()
 		r["values"] = new Pointer( "values.png", Imath::V2i( 19, 14 ) );
 		r["paths"] = new Pointer( "paths.png", Imath::V2i( 8 ) );
 		r["contextMenu"] = new Pointer( "pointerContextMenu.png", Imath::V2i( 1 ) );
+		r["tab"] = new Pointer( "pointerTab.png", Imath::V2i( 12, 15 ) );
+		r["detachedPanel"] = new Pointer( "pointerDetachedPanel.png", Imath::V2i( 12, 15 ) );
+		r["target"] = new Pointer( "pointerTarget.png", Imath::V2i( 12, 12 ) );
+		r["crossHair"] = new Pointer( "pointerCrossHair.png", Imath::V2i( 8, 8 ) );
 	}
 	return r;
 }
 
-Pointer::Pointer( const IECore::ImagePrimitive *image, const Imath::V2i &hotspot )
+Pointer::Pointer( const IECoreImage::ImagePrimitive *image, const Imath::V2i &hotspot )
 	:	m_image( image->copy() ), m_hotspot( hotspot )
 {
 }
 
 Pointer::Pointer( const std::string &fileName, const Imath::V2i &hotspot )
-	:	m_image( NULL ), m_hotspot( hotspot )
+	:	m_image( nullptr ), m_hotspot( hotspot )
 {
 	static IECore::CachedReaderPtr g_reader;
 	if( !g_reader )
 	{
 		const char *sp = getenv( "GAFFERUI_IMAGE_PATHS" );
 		sp = sp ? sp : "";
-		g_reader = new IECore::CachedReader( IECore::SearchPath( sp, ":" ) );
+		g_reader = new IECore::CachedReader( IECore::SearchPath( sp ) );
 	}
 
-	m_image = IECore::runTimeCast<const IECore::ImagePrimitive>( g_reader->read( fileName ) );
+	m_image = IECore::runTimeCast<const IECoreImage::ImagePrimitive>( g_reader->read( fileName ) );
 	if( !m_image )
 	{
 		throw IECore::Exception(
@@ -89,7 +94,7 @@ Pointer::Pointer( const std::string &fileName, const Imath::V2i &hotspot )
 	}
 }
 
-const IECore::ImagePrimitive *Pointer::image() const
+const IECoreImage::ImagePrimitive *Pointer::image() const
 {
 	return m_image.get();
 }
@@ -121,7 +126,7 @@ void Pointer::setCurrent( const std::string &name )
 {
 	if( !name.size() )
 	{
-		Pointer::setCurrent( (Pointer *)NULL );
+		Pointer::setCurrent( (Pointer *)nullptr );
 		return;
 	}
 

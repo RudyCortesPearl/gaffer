@@ -37,11 +37,15 @@
 import time
 import inspect
 import unittest
+import imath
 
 import IECore
+import IECoreScene
+import IECoreImage
 
 import Gaffer
 import GafferTest
+import GafferImage
 import GafferScene
 import GafferSceneTest
 
@@ -69,7 +73,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
@@ -86,10 +90,44 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+		time.sleep( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertTrue( isinstance( image, IECore.ImagePrimitive ) )
+		image = IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere" )
+		self.assertTrue( isinstance( image, IECoreImage.ImagePrimitive ) )
+
+	def testMetadata( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["variables"].addChild( Gaffer.NameValuePlug( "a", "A", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+
+		s["s"] = GafferScene.Sphere()
+
+		s["o"] = GafferScene.Outputs()
+		s["o"].addOutput(
+			"beauty",
+			IECoreScene.Output(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"driverType" : "ImageDisplayDriver",
+					"handle" : "myLovelySphere",
+				}
+			)
+		)
+		s["o"]["in"].setInput( s["s"]["out"] )
+
+		s["r"] = self._createInteractiveRender()
+		s["r"]["in"].setInput( s["o"]["out"] )
+
+		s["r"]["state"].setValue( s["r"].State.Running )
+
+		time.sleep( 1.0 )
+
+		image = IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere" )
+		headers = image.blindData()
+		self.assertEqual( headers["gaffer:sourceScene"], IECore.StringData( "r.__adaptedIn" ) )
+		self.assertEqual( headers["gaffer:context:a"], IECore.StringData( "A" ) )
 
 	def testAddAndRemoveOutput( self ):
 
@@ -100,7 +138,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		s["o"].addOutput(
 			"beauty1",
-			IECore.Display(
+			IECoreScene.Output(
 				"test1",
 				"ieDisplay",
 				"rgba",
@@ -117,18 +155,18 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+		time.sleep( 1.0 )
 
 		# Check we have our first image, but not a second one.
 
-		self.assertTrue( isinstance( IECore.ImageDisplayDriver.storedImage( "myLovelySphere1" ), IECore.ImagePrimitive ) )
-		self.assertTrue( IECore.ImageDisplayDriver.storedImage( "myLovelySphere2" ) is None )
+		self.assertTrue( isinstance( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere1" ), IECoreImage.ImagePrimitive ) )
+		self.assertTrue( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere2" ) is None )
 
 		# Add a second image and check we can have that too.
 
 		s["o"].addOutput(
 			"beauty2",
-			IECore.Display(
+			IECoreScene.Output(
 				"test1",
 				"ieDisplay",
 				"rgba",
@@ -139,25 +177,25 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 			)
 		)
 
-		time.sleep( 0.5 )
+		time.sleep( 1.0 )
 
-		self.assertTrue( isinstance( IECore.ImageDisplayDriver.storedImage( "myLovelySphere1" ), IECore.ImagePrimitive ) )
-		self.assertTrue( isinstance( IECore.ImageDisplayDriver.storedImage( "myLovelySphere2" ), IECore.ImagePrimitive ) )
+		self.assertTrue( isinstance( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere1" ), IECoreImage.ImagePrimitive ) )
+		self.assertTrue( isinstance( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere2" ), IECoreImage.ImagePrimitive ) )
 
 		# Remove the second image and check that it stops updating.
 
-		IECore.ImageDisplayDriver.removeStoredImage( "myLovelySphere2" )
+		IECoreImage.ImageDisplayDriver.removeStoredImage( "myLovelySphere2" )
 		s["o"]["outputs"][1]["active"].setValue( False )
 
-		time.sleep( 0.5 )
+		time.sleep( 1.0 )
 
-		self.assertTrue( IECore.ImageDisplayDriver.storedImage( "myLovelySphere2" ) is None )
+		self.assertTrue( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere2" ) is None )
 
 		# Add a third image and check we can have that too.
 
 		s["o"].addOutput(
 			"beauty3",
-			IECore.Display(
+			IECoreScene.Output(
 				"test1",
 				"ieDisplay",
 				"rgba",
@@ -168,27 +206,31 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 			)
 		)
 
-		time.sleep( 0.5 )
+		time.sleep( 1.0 )
 
-		self.assertTrue( isinstance( IECore.ImageDisplayDriver.storedImage( "myLovelySphere1" ), IECore.ImagePrimitive ) )
-		self.assertTrue( IECore.ImageDisplayDriver.storedImage( "myLovelySphere2" ) is None )
-		self.assertTrue( isinstance( IECore.ImageDisplayDriver.storedImage( "myLovelySphere3" ), IECore.ImagePrimitive ) )
+		self.assertTrue( isinstance( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere1" ), IECoreImage.ImagePrimitive ) )
+		self.assertTrue( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere2" ) is None )
+		self.assertTrue( isinstance( IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere3" ), IECoreImage.ImagePrimitive ) )
 
 	def testAddAndRemoveLocation( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
+
 		s["s"] = GafferScene.Sphere()
 
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -197,28 +239,29 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		s["s"]["enabled"].setValue( False )
-		time.sleep( 0.5 )
+			s["s"]["enabled"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		s["s"]["enabled"].setValue( True )
-		time.sleep( 0.5 )
+			s["s"]["enabled"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testAddAndRemoveObject( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		# Switch between a sphere and a group, so
 		# we can keep the hierarchy the same ( "/thing" )
@@ -230,20 +273,23 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["g"] = GafferScene.Group()
 		s["g"]["name"].setValue( "thing" )
 
-		s["switch"] = GafferScene.SceneSwitch()
+		s["switch"] = Gaffer.Switch()
+		s["switch"].setup( GafferScene.ScenePlug() )
 		s["switch"]["in"][0].setInput( s["s"]["out"] )
 		s["switch"]["in"][1].setInput( s["g"]["out"] )
 
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -254,35 +300,36 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		# Render the sphere.
 
-		s["r"]["state"].setValue( s["r"].State.Running )
-		time.sleep( 0.5 )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Switch to the empty group.
+			# Switch to the empty group.
 
-		s["switch"]["index"].setValue( 1 )
-		time.sleep( 0.5 )
+			s["switch"]["index"].setValue( 1 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Switch back to the sphere.
+			# Switch back to the sphere.
 
-		s["switch"]["index"].setValue( 0 )
-		time.sleep( 0.5 )
+			s["switch"]["index"].setValue( 0 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testEditObjectVisibility( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["s"]["out"] )
 
 		s["f"] = GafferScene.PathFilter()
 
@@ -294,13 +341,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -309,82 +358,83 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Hide /group/sphere
+			# Hide /group/sphere
 
-		s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group/sphere" ] ) )
-		s["a"]["attributes"]["visibility"]["value"].setValue( False )
-		time.sleep( 0.5 )
+			s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group/sphere" ] ) )
+			s["a"]["attributes"]["visibility"]["value"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Tweak the sphere geometry - it should remain hidden
+			# Tweak the sphere geometry - it should remain hidden
 
-		s["s"]["radius"].setValue( 1.01 )
-		time.sleep( 0.5 )
+			s["s"]["radius"].setValue( 1.01 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Show it again
+			# Show it again
 
-		s["a"]["attributes"]["visibility"]["value"].setValue( True )
-		time.sleep( 0.5 )
+			s["a"]["attributes"]["visibility"]["value"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Hide /group
+			# Hide /group
 
-		s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) )
-		s["a"]["attributes"]["visibility"]["value"].setValue( False )
-		time.sleep( 0.5 )
+			s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) )
+			s["a"]["attributes"]["visibility"]["value"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Show it again
+			# Show it again
 
-		s["a"]["attributes"]["visibility"]["value"].setValue( True )
-		time.sleep( 0.5 )
+			s["a"]["attributes"]["visibility"]["value"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testEditCameraVisibility( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["s"]["out"] )
 
 		s["f"] = GafferScene.PathFilter()
 
 		s["a"] = GafferScene.CustomAttributes()
 		s["a"]["in"].setInput( s["g"]["out"] )
 		s["a"]["filter"].setInput( s["f"]["out"] )
-		visibilityPlug = s["a"]["attributes"].addMember( self._cameraVisibilityAttribute(), False )
+		visibilityPlug = Gaffer.NameValuePlug( self._cameraVisibilityAttribute(), False )
+		s["a"]["attributes"].addChild( visibilityPlug )
 
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -393,64 +443,65 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Hide /group/sphere
+			# Hide /group/sphere
 
-		s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group/sphere" ] ) )
-		visibilityPlug["value"].setValue( False )
-		time.sleep( 0.5 )
+			s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group/sphere" ] ) )
+			visibilityPlug["value"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Show it again
+			# Show it again
 
-		visibilityPlug["value"].setValue( True )
-		time.sleep( 0.5 )
+			visibilityPlug["value"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Hide /group
+			# Hide /group
 
-		s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) )
-		visibilityPlug["value"].setValue( False )
-		time.sleep( 0.5 )
+			s["f"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) )
+			visibilityPlug["value"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Show it again
+			# Show it again
 
-		visibilityPlug["value"].setValue( True )
-		time.sleep( 0.5 )
+			visibilityPlug["value"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testEditObjectTransform( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -459,38 +510,39 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Move to one side
+			# Move to one side
 
-		s["s"]["transform"]["translate"]["x"].setValue( 2 )
-		time.sleep( 0.5 )
+			s["s"]["transform"]["translate"]["x"].setValue( 2 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Move back
+			# Move back
 
-		s["s"]["transform"]["translate"]["x"].setValue( 0 )
-		time.sleep( 0.5 )
+			s["s"]["transform"]["translate"]["x"].setValue( 0 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testShaderEdits( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		s["shader"], colorPlug = self._createConstantShader()
-		colorPlug.setValue( IECore.Color3f( 1, 0, 0 ) )
+		colorPlug.setValue( imath.Color3f( 1, 0, 0 ) )
 
 		s["a"] = GafferScene.ShaderAssignment()
 		s["a"]["in"].setInput( s["s"]["out"] )
@@ -499,13 +551,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -514,34 +568,35 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 2.0 )
 
-		# Render red sphere
+			# Render red sphere
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.__assertColorsAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ), IECore.Color4f( 1, 0, 0, 1 ), delta = 0.01 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 1, 0, 0, 1 ), delta = 0.01 )
 
-		# Make it green
+			# Make it green
 
-		colorPlug.setValue( IECore.Color3f( 0, 1, 0 ) )
-		time.sleep( 0.5 )
+			colorPlug.setValue( imath.Color3f( 0, 1, 0 ) )
+			handler.waitFor( 2.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.__assertColorsAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ), IECore.Color4f( 0, 1, 0, 1 ), delta = 0.01 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 1, 0, 1 ), delta = 0.01 )
 
-		# Make it blue
+			# Make it blue
 
-		colorPlug.setValue( IECore.Color3f( 0, 0, 1 ) )
-		time.sleep( 0.5 )
+			colorPlug.setValue( imath.Color3f( 0, 0, 1 ) )
+			handler.waitFor( 2.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.__assertColorsAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ), IECore.Color4f( 0, 0, 1, 1 ), delta = 0.01 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 1, 1 ), delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testEditCameraTransform( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		s["s"] = GafferScene.Sphere()
 		s["c"] = GafferScene.Camera()
@@ -553,13 +608,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -573,30 +630,29 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["options"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Move to one side
+			# Move to one side
 
-		s["c"]["transform"]["translate"]["x"].setValue( 2 )
-		time.sleep( 0.5 )
+			s["c"]["transform"]["translate"]["x"].setValue( 2 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Move back
+			# Move back
 
-		s["c"]["transform"]["translate"]["x"].setValue( 0 )
-		time.sleep( 0.5 )
+			s["c"]["transform"]["translate"]["x"].setValue( 0 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testEditResolution( self ) :
 
@@ -612,7 +668,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
@@ -639,47 +695,47 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 				"" if withDefaultCamera else "/group/camera"
 			)
 
-			time.sleep( 0.5 )
+			time.sleep( 1.0 )
 
 			# Use the default resolution to start with
 
 			self.assertEqual(
-				IECore.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
-				IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 639, 479 ) )
+				IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
+				imath.Box2i( imath.V2i( 0 ), imath.V2i( 639, 479 ) )
 			)
 
 			# Now specify a resolution
 
 			s["options"]["options"]["renderResolution"]["enabled"].setValue( True )
-			s["options"]["options"]["renderResolution"]["value"].setValue( IECore.V2i( 200, 100 ) )
+			s["options"]["options"]["renderResolution"]["value"].setValue( imath.V2i( 200, 100 ) )
 
-			time.sleep( 0.5 )
+			time.sleep( 1.0 )
 
 			self.assertEqual(
-				IECore.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
-				IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 199, 99 ) )
+				IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
+				imath.Box2i( imath.V2i( 0 ), imath.V2i( 199, 99 ) )
 			)
 
 			# And specify another resolution
 
-			s["options"]["options"]["renderResolution"]["value"].setValue( IECore.V2i( 300, 100 ) )
+			s["options"]["options"]["renderResolution"]["value"].setValue( imath.V2i( 300, 100 ) )
 
-			time.sleep( 0.5 )
+			time.sleep( 1.0 )
 
 			self.assertEqual(
-				IECore.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
-				IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 299, 99 ) )
+				IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
+				imath.Box2i( imath.V2i( 0 ), imath.V2i( 299, 99 ) )
 			)
 
 			# And back to the default
 
 			s["options"]["options"]["renderResolution"]["enabled"].setValue( False )
 
-			time.sleep( 0.5 )
+			time.sleep( 1.0 )
 
 			self.assertEqual(
-				IECore.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
-				IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 639, 479 ) )
+				IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphere" ).displayWindow,
+				imath.Box2i( imath.V2i( 0 ), imath.V2i( 639, 479 ) )
 			)
 
 	def testDeleteWhilePaused( self ) :
@@ -698,12 +754,12 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 					"driverType" : "ImageDisplayDriver",
 					"handle" : "myLovelyPlane",
 				}
@@ -743,14 +799,14 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
 					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelyPlane",
+					"handle" : "subdivisionTest",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 				}
 			)
 		)
@@ -784,6 +840,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 	def testEditContext( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		# Sphere moves with time.
@@ -793,13 +850,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -808,53 +867,52 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Move to one side
+			# Move to one side
 
-		s.context().setFrame( 3 )
-		time.sleep( 0.5 )
+			s.context().setFrame( 3 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Move back
+			# Move back
 
-		s.context().setFrame( 1 )
-		time.sleep( 0.5 )
+			s.context().setFrame( 1 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Repeat, using a context we set directly ourselves.
+			# Repeat, using a context we set directly ourselves.
 
-		c = Gaffer.Context()
-		c.setFrame( 3 )
-		s["r"].setContext( c )
-		time.sleep( 0.5 )
+			c = Gaffer.Context()
+			c.setFrame( 3 )
+			s["r"].setContext( c )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		c.setFrame( 1 )
-		time.sleep( 0.5 )
+			c.setFrame( 1 )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testLights( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		s["l"], colorPlug = self._createPointLight()
-		colorPlug.setValue( IECore.Color3f( 1, 0.5, 0.25 ) )
+		colorPlug.setValue( imath.Color3f( 1, 0.5, 0.25 ) )
 		s["l"]["transform"]["translate"]["z"].setValue( 1 )
 
 		s["p"] = GafferScene.Plane()
@@ -875,14 +933,16 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelyPlane",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 				}
 			)
 		)
@@ -898,70 +958,59 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		# Start a render, give it time to finish, and check the output.
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 2 )
+			handler.waitFor( 2 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[0], IECore.Color3f( 1, 0.5, 0.25 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 0.5, 0.25 ) )
 
-		# Adjust a parameter, give it time to update, and check the output.
+			# Adjust a parameter, give it time to update, and check the output.
 
-		colorPlug.setValue( IECore.Color3f( 0.25, 0.5, 1 ) )
+			colorPlug.setValue( imath.Color3f( 0.25, 0.5, 1 ) )
 
-		time.sleep( 1 )
+			handler.waitFor( 1 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[2], IECore.Color3f( 0.25, 0.5, 1 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[2], imath.Color3f( 0.25, 0.5, 1 ) )
 
-		# Pause it, adjust a parameter, wait, and check that nothing changed.
+			# Pause it, adjust a parameter, wait, and check that nothing changed.
 
-		s["r"]["state"].setValue( s["r"].State.Paused )
-		colorPlug.setValue( IECore.Color3f( 1, 0.5, 0.25 ) )
+			s["r"]["state"].setValue( s["r"].State.Paused )
+			colorPlug.setValue( imath.Color3f( 1, 0.5, 0.25 ) )
 
-		time.sleep( 1 )
+			handler.waitFor( 1 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[2], IECore.Color3f( 0.25, 0.5, 1 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[2], imath.Color3f( 0.25, 0.5, 1 ) )
 
-		# Unpause it, wait, and check that the update happened.
+			# Unpause it, wait, and check that the update happened.
 
-		s["r"]["state"].setValue( s["r"].State.Running )
-		time.sleep( 1 )
+			s["r"]["state"].setValue( s["r"].State.Running )
+			handler.waitFor( 1 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[0], IECore.Color3f( 1, 0.5, 0.25 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 0.5, 0.25 ) )
 
-		# Stop the render, tweak a parameter and check that nothing happened.
+			# Stop the render, tweak a parameter and check that nothing happened.
 
-		s["r"]["state"].setValue( s["r"].State.Stopped )
-		colorPlug.setValue( IECore.Color3f( 0.25, 0.5, 1 ) )
-		time.sleep( 1 )
+			s["r"]["state"].setValue( s["r"].State.Stopped )
+			colorPlug.setValue( imath.Color3f( 0.25, 0.5, 1 ) )
+			handler.waitFor( 1 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[0], IECore.Color3f( 1, 0.5, 0.25 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 0.5, 0.25 ) )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testAddLight( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		s["l"], colorPlug = self._createPointLight()
-		colorPlug.setValue( IECore.Color3f( 1, 0, 0 ) )
+		colorPlug.setValue( imath.Color3f( 1, 0, 0 ) )
 		s["l"]["transform"]["translate"]["z"].setValue( 1 )
 
 		s["p"] = GafferScene.Plane()
@@ -982,14 +1031,16 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelyPlane",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 				}
 			)
 		)
@@ -1005,37 +1056,35 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		# Start a render, give it time to finish, and check the output.
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 2 )
+			handler.waitFor( 2 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[0], IECore.Color3f( 1, 0, 0 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 0, 0 ) )
 
-		# Add a light
+			# Add a light
 
-		s["l2"], colorPlug = self._createPointLight()
-		colorPlug.setValue( IECore.Color3f( 0, 1, 0 ) )
-		s["l2"]["transform"]["translate"]["z"].setValue( 1 )
+			s["l2"], colorPlug = self._createPointLight()
+			colorPlug.setValue( imath.Color3f( 0, 1, 0 ) )
+			s["l2"]["transform"]["translate"]["z"].setValue( 1 )
 
-		s["g"]["in"][3].setInput( s["l2"]["out"] )
+			s["g"]["in"][3].setInput( s["l2"]["out"] )
 
-		# Give it time to update, and check the output.
+			# Give it time to update, and check the output.
 
-		time.sleep( 1 )
+			handler.waitFor( 1 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c / c[0], IECore.Color3f( 1, 1, 0 ) )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 1, 0 ) )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testRemoveLight( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		s["l"], unused = self._createPointLight()
 		s["l"]["transform"]["translate"]["z"].setValue( 1 )
@@ -1058,14 +1107,16 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelyPlane",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 				}
 			)
 		)
@@ -1081,41 +1132,36 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		# Start a render, give it time to finish, and check the output.
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 2 )
+			handler.waitFor( 2 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertNotEqual( c[0], 0.0 )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertNotEqual( c[0], 0.0 )
 
-		# Remove the light by disabling it.
+			# Remove the light by disabling it.
 
-		s["l"]["enabled"].setValue( False )
-		time.sleep( 2 )
+			s["l"]["enabled"].setValue( False )
+			handler.waitFor( 2 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c[0], 0.0 )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c[0], 0.0 )
 
-		# Enable it again.
+			# Enable it again.
 
-		s["l"]["enabled"].setValue( True )
-		time.sleep( 2 )
+			s["l"]["enabled"].setValue( True )
+			handler.waitFor( 2 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertNotEqual( c[0], 0.0 )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertNotEqual( c[0], 0.0 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testHideLight( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		s["l"], unused = self._createPointLight()
 		s["l"]["transform"]["translate"]["z"].setValue( 1 )
@@ -1142,14 +1188,16 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelyPlane",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 				}
 			)
 		)
@@ -1165,50 +1213,41 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		# Start a render, give it time to finish, and check the output.
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 2 )
+			handler.waitFor( 2 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertNotEqual( c[0], 0.0 )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertNotEqual( c[0], 0.0 )
 
-		IECore.EXRImageWriter( IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ), "/tmp/test1.exr" ).write()
+			# Remove the light by hiding it.
 
-		# Remove the light by hiding it.
+			s["v"]["attributes"]["visibility"]["value"].setValue( False )
+			handler.waitFor( 2 )
 
-		s["v"]["attributes"]["visibility"]["value"].setValue( False )
-		time.sleep( 2 )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c[0], 0.0 )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
-		self.assertEqual( c[0], 0.0 )
+			# Put the light back by showing it.
 
-		# Put the light back by showing it.
+			s["v"]["attributes"]["visibility"]["value"].setValue( True )
+			handler.waitFor( 2 )
 
-		s["v"]["attributes"]["visibility"]["value"].setValue( True )
-		time.sleep( 2 )
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
 
-		c = self.__color3fAtUV(
-			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
-			IECore.V2f( 0.5 ),
-		)
+			self.assertNotEqual( c[0], 0.0 )
 
-		IECore.EXRImageWriter( IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ), "/tmp/test2.exr" ).write()
-
-		self.assertNotEqual( c[0], 0.0 )
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testGlobalAttributes( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["s"]["out"] )
 
 		s["a"] = GafferScene.StandardAttributes()
 		s["a"]["in"].setInput( s["g"]["out"] )
@@ -1218,13 +1257,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -1233,54 +1274,58 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Hide
+			# Hide
 
-		s["a"]["attributes"]["visibility"]["value"].setValue( False )
-		time.sleep( 0.5 )
+			s["a"]["attributes"]["visibility"]["value"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Show again
+			# Show again
 
-		s["a"]["attributes"]["visibility"]["value"].setValue( True )
-		time.sleep( 0.5 )
+			s["a"]["attributes"]["visibility"]["value"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testGlobalCameraVisibility( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["s"]["out"] )
 
 		s["a"] = GafferScene.CustomAttributes()
 		s["a"]["in"].setInput( s["g"]["out"] )
 		s["a"]["global"].setValue( True )
-		visibilityPlug = s["a"]["attributes"].addMember( self._cameraVisibilityAttribute(), True )
+		visibilityPlug = Gaffer.NameValuePlug( self._cameraVisibilityAttribute(), True )
+		s["a"]["attributes"].addChild( visibilityPlug )
 
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -1289,30 +1334,30 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# Visible to start with
+			# Visible to start with
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
 
-		# Hide
+			# Hide
 
-		visibilityPlug["value"].setValue( False )
-		time.sleep( 0.5 )
+			visibilityPlug["value"].setValue( False )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0, delta = 0.01 )
 
-		# Show again
+			# Show again
 
-		visibilityPlug["value"].setValue( True )
-		time.sleep( 0.5 )
+			visibilityPlug["value"].setValue( True )
+			handler.waitFor( 1.0 )
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.assertAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+			self.assertAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 1, delta = 0.01 )
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
 
 	def testEffectiveContext( self ) :
 
@@ -1332,7 +1377,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
@@ -1398,14 +1443,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 	def testTraceSets( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 
 		s["reflector"] = GafferScene.Plane()
 		s["reflector"]["name"].setValue( "reflector" )
-		s["reflector"]["transform"]["translate"].setValue( IECore.V3f( 0, 0, -1 ) )
+		s["reflector"]["transform"]["translate"].setValue( imath.V3f( 0, 0, -1 ) )
 
 		s["reflected"] = GafferScene.Plane()
 		s["reflected"]["name"].setValue( "reflected" )
-		s["reflected"]["transform"]["translate"].setValue( IECore.V3f( 0, 0, 1 ) )
+		s["reflected"]["transform"]["translate"].setValue( imath.V3f( 0, 0, 1 ) )
 
 		s["group"] = GafferScene.Group()
 		s["group"]["in"][0].setInput( s["reflector"]["out"] )
@@ -1437,18 +1483,20 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["options"] = GafferScene.CustomOptions()
 		s["options"]["in"].setInput( s["set"]["out"] )
 		for o in self._traceDepthOptions() :
-			s["options"]["options"].addMember( o, IECore.IntData( 1 ) )
+			s["options"]["options"].addChild( Gaffer.NameValuePlug( o, IECore.IntData( 1 ) ) )
 
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "traceSetsTest",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -1456,58 +1504,60 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		s["render"] = self._createInteractiveRender()
 		s["render"]["in"].setInput( s["outputs"]["out"] )
-		s["render"]["state"].setValue( s["render"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["render"]["state"].setValue( s["render"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 1.0 )
 
-		# We haven't used the trace sets yet, so should be able to see
-		# the reflection.
+			# We haven't used the trace sets yet, so should be able to see
+			# the reflection.
 
-		def assertReflected( reflected ) :
+			def assertReflected( reflected ) :
 
-			image = IECore.ImageDisplayDriver.storedImage( "traceSetsTest" )
-			self.assertGreater( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).a, 0.9 )
-			if reflected :
-				self.assertGreater( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0.9 )
-			else :
-				self.assertLess( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ).r, 0.1 )
+				self.assertGreater( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).a, 0.9 )
+				if reflected :
+					self.assertGreater( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0.9 )
+				else :
+					self.assertLess( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ).r, 0.1 )
 
-		assertReflected( True )
+			assertReflected( True )
 
-		# Ask to use a trace set. Reflection should disappear because
-		# we haven't added anything to the set.
+			# Ask to use a trace set. Reflection should disappear because
+			# we haven't added anything to the set.
 
-		traceSetParameter.setValue( "myTraceSet" )
-		time.sleep( 0.5 )
-		assertReflected( False )
+			traceSetParameter.setValue( "myTraceSet" )
+			handler.waitFor( 1.0 )
+			assertReflected( False )
 
-		# Now add the reflected object into the set. Reflection should
-		# come back.
+			# Now add the reflected object into the set. Reflection should
+			# come back.
 
-		s["set"]["paths"].setValue( IECore.StringVectorData( [ "/group/reflected" ] ) )
-		time.sleep( 0.5 )
-		assertReflected( True )
+			s["set"]["paths"].setValue( IECore.StringVectorData( [ "/group/reflected" ] ) )
+			handler.waitFor( 1.0 )
+			assertReflected( True )
 
-		# Rename the set so that it's not a trace set any more. Reflection
-		# should disappear.
+			# Rename the set so that it's not a trace set any more. Reflection
+			# should disappear.
 
-		s["set"]["name"].setValue( "myTraceSet" )
-		time.sleep( 0.5 )
-		assertReflected( False )
+			s["set"]["name"].setValue( "myTraceSet" )
+			handler.waitFor( 1.0 )
+			assertReflected( False )
 
-		# Rename the set so that it is a trace set, but with a different namer.
-		# Reflection should not reappear.
+			# Rename the set so that it is a trace set, but with a different namer.
+			# Reflection should not reappear.
 
-		s["set"]["name"].setValue( "render:myOtherTraceSet" )
-		time.sleep( 0.5 )
-		assertReflected( False )
+			s["set"]["name"].setValue( "render:myOtherTraceSet" )
+			handler.waitFor( 1.0 )
+			assertReflected( False )
 
-		# Update the shader to use this new trace set. Reflection should
-		# reappear.
+			# Update the shader to use this new trace set. Reflection should
+			# reappear.
 
-		traceSetParameter.setValue( "myOtherTraceSet" )
-		time.sleep( 0.5 )
-		assertReflected( True )
+			traceSetParameter.setValue( "myOtherTraceSet" )
+			handler.waitFor( 1.0 )
+			assertReflected( True )
+
+			s["render"]["state"].setValue( s["render"].State.Stopped )
 
 	def testRendererContextVariable( self ):
 
@@ -1517,7 +1567,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
@@ -1534,15 +1584,278 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+		time.sleep( 1.0 )
 
 		renderer = s["r"]["renderer"].getValue() if "renderer" in s["r"] else s["r"]["__renderer"].getValue()
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphereRenderedIn" + renderer )
-		self.assertTrue( isinstance( image, IECore.ImagePrimitive ) )
+		image = IECoreImage.ImageDisplayDriver.storedImage( "myLovelySphereRenderedIn" + renderer )
+		self.assertTrue( isinstance( image, IECoreImage.ImagePrimitive ) )
+
+	def testLightFilters( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["catalogue"] = GafferImage.Catalogue()
+
+		script["light"], colorPlug = self._createSpotLight()
+		colorPlug.setValue( imath.Color3f( 1, 1, 0 ) )
+		script["light"]["transform"]["translate"]["z"].setValue( 1 )
+
+		script["gobo"], goboColorPlug = self._createGobo()
+		goboColorPlug.setValue( imath.Color3f( 0, 1, 1 ) )
+		script["gobo"]["enabled"].setValue( False )
+
+		script["goboAssignment"] = GafferScene.ShaderAssignment()
+		script["goboAssignment"]["in"].setInput( script["light"]["out"] )
+		script["goboAssignment"]["shader"].setInput( script["gobo"]["out"] )
+
+		script["plane"] = GafferScene.Plane()
+
+		script["cam"] = GafferScene.Camera()
+		script["cam"]["transform"]["translate"]["z"].setValue( 1 )
+
+		lightFilter, lightFilterDensityPlug = self._createLightFilter()
+		script["lightFilter"] = lightFilter
+		lightFilterDensityPlug.setValue( 0.0 )  # looking at unfiltered result first
+
+		script["attributes"] = GafferScene.StandardAttributes()
+		script["attributes"]["in"].setInput( script["lightFilter"]["out"] )
+
+		# This will link the light filter to just the one spot light.
+		script["attributes"]["attributes"]["filteredLights"]["enabled"].setValue( True )
+		script["attributes"]["attributes"]["filteredLights"]["value"].setValue( "defaultLights" )
+
+		script["group"] = GafferScene.Group()
+		script["group"]["in"][0].setInput( script["goboAssignment"]["out"] )
+		script["group"]["in"][1].setInput( script["plane"]["out"] )
+		script["group"]["in"][2].setInput( script["cam"]["out"] )
+		script["group"]["in"][3].setInput( script["attributes"]["out"] )
+
+		script["shader"], unused = self._createMatteShader()
+		script["assignment"] = GafferScene.ShaderAssignment()
+		script["assignment"]["in"].setInput( script["group"]["out"] )
+		script["assignment"]["shader"].setInput( script["shader"]["out"] )
+
+		script["outputs"] = GafferScene.Outputs()
+		script["outputs"].addOutput(
+			"beauty",
+			IECoreScene.Output(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( script['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+				}
+			)
+		)
+		script["outputs"]["in"].setInput( script["assignment"]["out"] )
+
+		script["options"] = GafferScene.StandardOptions()
+		script["options"]["options"]["renderCamera"]["value"].setValue( "/group/camera" )
+		script["options"]["options"]["renderCamera"]["enabled"].setValue( True )
+		script["options"]["in"].setInput( script["outputs"]["out"] )
+
+		script["render"] = self._createInteractiveRender()
+		script["render"]["in"].setInput( script["options"]["out"] )
+
+		# Render and give it some time to finish.
+
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			script["render"]["state"].setValue( script["render"].State.Running )
+
+			handler.waitFor( 1 )
+
+			c = self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) )
+			unfilteredIntensity = c[0]
+			self.__assertColorsAlmostEqual( c, imath.Color4f( unfilteredIntensity, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Use a dense light filter and let renderer update
+
+			lightFilterDensityPlug.setValue( 1.0 )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 0, 1 ), delta = 0.01 )
+
+			# Disable light filter and let renderer update
+
+			script["lightFilter"]["enabled"].setValue( False )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( unfilteredIntensity, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Enable light filter and let renderer update
+
+			script["lightFilter"]["enabled"].setValue( True )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 0, 1 ), delta = 0.01 )
+
+			# Add a gobo and disable light filter
+
+			script["gobo"]["enabled"].setValue( True )
+			script["lightFilter"]["enabled"].setValue( False )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Look at combined result of light filter and gobo
+
+			script["lightFilter"]["enabled"].setValue( True )
+			lightFilterDensityPlug.setValue( 0.5 )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, unfilteredIntensity * 0.5, 0, 1 ), delta = 0.01 )
+
+			# Change parameter on light
+
+			script["light"]["parameters"]["intensity"].setValue( 2.0 )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Change light filter transformation
+
+			script["lightFilter"]["transform"]["rotate"]["x"].setValue( 0.1 )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Change light filter parameter
+
+			script["lightFilter"]["parameters"]["geometry_type"].setValue( "sphere" )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Disable light
+
+			script["light"]["enabled"].setValue( False )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 0, 1 ), delta = 0.01 )
+
+			# Reenable light
+
+			script["light"]["enabled"].setValue( True )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Disable gobo, reset light and filter
+
+			script["gobo"]["enabled"].setValue( False )
+			script["light"]["parameters"]["intensity"].setValue( 1.0 )
+			lightFilterDensityPlug.setValue( 1 )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 0, 1 ), delta = 0.01 )
+
+			# Unlink the filter
+
+			script["attributes"]["attributes"]["filteredLights"]["value"].setValue( "" )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( unfilteredIntensity, unfilteredIntensity, 0, 1 ), delta = 0.01 )
+
+			# Relink the filter
+
+			script["attributes"]["attributes"]["filteredLights"]["value"].setValue( "defaultLights" )
+
+			handler.waitFor( 1 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 0, 1 ), delta = 0.01 )
+
+			script["render"]["state"].setValue( script["render"].State.Stopped )
+
+	def testLightFiltersAndSetEdits( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["catalogue"] = GafferImage.Catalogue()
+
+		script["light"], unused = self._createPointLight()
+		script["light"]["transform"]["translate"]["z"].setValue( 1 )
+
+		script["plane"] = GafferScene.Plane()
+
+		script["shader"], unused = self._createMatteShader()
+		script["assignment"] = GafferScene.ShaderAssignment()
+		script["assignment"]["in"].setInput( script["plane"]["out"] )
+		script["assignment"]["shader"].setInput( script["shader"]["out"] )
+
+		script["camera"] = GafferScene.Camera()
+		script["camera"]["transform"]["translate"]["z"].setValue( 1 )
+
+		script["lightFilter"], lightFilterDensityPlug = self._createLightFilter()
+		lightFilterDensityPlug.setValue( 1 )
+
+		script["group"] = GafferScene.Group()
+		script["group"]["in"][0].setInput( script["light"]["out"] )
+		script["group"]["in"][1].setInput( script["camera"]["out"] )
+		script["group"]["in"][2].setInput( script["assignment"]["out"] )
+		script["group"]["in"][3].setInput( script["lightFilter"]["out"] )
+
+		script["outputs"] = GafferScene.Outputs()
+		script["outputs"].addOutput(
+			"beauty",
+			IECoreScene.Output(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( script['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+				}
+			)
+		)
+		script["outputs"]["in"].setInput( script["group"]["out"] )
+
+		script["options"] = GafferScene.StandardOptions()
+		script["options"]["options"]["renderCamera"]["value"].setValue( "/group/camera" )
+		script["options"]["options"]["renderCamera"]["enabled"].setValue( True )
+		script["options"]["in"].setInput( script["outputs"]["out"] )
+
+		script["render"] = self._createInteractiveRender()
+		script["render"]["in"].setInput( script["options"]["out"] )
+
+		# Render and give it some time to finish. Should be unfiltered, because
+		# by default, filters aren't linked.
+
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			script["render"]["state"].setValue( script["render"].State.Running )
+			handler.waitFor( 1 )
+
+			unfilteredColor = self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) )
+			self.assertGreater( unfilteredColor[0], 0.25 )
+
+			# Try to link the filter. Should still be unfiltered, because the set is
+			# empty.
+
+			script["lightFilter"]["filteredLights"].setValue( "mySet" )
+			handler.waitFor( 1 )
+
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), unfilteredColor, delta = 0.01 )
+
+			# Add the light into the set. Now the filtering should happen.
+
+			script["light"]["sets"].setValue( "mySet" )
+			handler.waitFor( 1 )
+
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 0, 0, 0, 1 ), delta = 0.01 )
+
+			# Take the light out of the set. Goodbye filtering.
+
+			script["light"]["sets"].setValue( "" )
+			handler.waitFor( 1 )
+
+			self.__assertColorsAlmostEqual( self._color4fAtUV( script["catalogue"], imath.V2f( 0.5 ) ), unfilteredColor, delta = 0.01 )
+			script["render"]["state"].setValue( script["render"].State.Stopped )
 
 	def testAdaptors( self ) :
 
 		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
 		s["s"] = GafferScene.Sphere()
 
 		def a() :
@@ -1550,7 +1863,7 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 			result = GafferScene.SceneProcessor()
 
 			result["__shader"], colorPlug = self._createConstantShader()
-			colorPlug.setValue( IECore.Color3f( 1, 0, 0 ) )
+			colorPlug.setValue( imath.Color3f( 1, 0, 0 ) )
 
 			result["__assignment"] = GafferScene.ShaderAssignment()
 			result["__assignment"]["in"].setInput( result["in"] )
@@ -1565,13 +1878,15 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["o"] = GafferScene.Outputs()
 		s["o"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"test",
 				"ieDisplay",
 				"rgba",
 				{
-					"driverType" : "ImageDisplayDriver",
-					"handle" : "myLovelySphere",
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
 				}
 			)
 		)
@@ -1580,14 +1895,178 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 		s["r"] = self._createInteractiveRender()
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"]["state"].setValue( s["r"].State.Running )
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
 
-		time.sleep( 0.5 )
+			handler.waitFor( 2.0 )
 
-		# Render red sphere
+			# Render red sphere
 
-		image = IECore.ImageDisplayDriver.storedImage( "myLovelySphere" )
-		self.__assertColorsAlmostEqual( self.__color4fAtUV( image, IECore.V2f( 0.5 ) ), IECore.Color4f( 1, 0, 0, 1 ), delta = 0.01 )
+			self.__assertColorsAlmostEqual( self._color4fAtUV( s["catalogue"], imath.V2f( 0.5 ) ), imath.Color4f( 1, 0, 0, 1 ), delta = 0.01 )
+			s["r"]["state"].setValue( s["r"].State.Stopped )
+
+	def testLightLinking( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
+
+		s["l"], colorPlug = self._createPointLight()
+		colorPlug.setValue( imath.Color3f( 1, 0.5, 0.25 ) )
+		s["l"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["p"] = GafferScene.Plane()
+
+		s["c"] = GafferScene.Camera()
+		s["c"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["g"] = GafferScene.Group()
+		s["g"]["in"][0].setInput( s["l"]["out"] )
+		s["g"]["in"][1].setInput( s["p"]["out"] )
+		s["g"]["in"][2].setInput( s["c"]["out"] )
+
+		s["s"], unused = self._createMatteShader()
+		s["a"] = GafferScene.ShaderAssignment()
+		s["a"]["in"].setInput( s["g"]["out"] )
+		s["a"]["shader"].setInput( s["s"]["out"] )
+
+		s["d"] = GafferScene.Outputs()
+		s["d"].addOutput(
+			"beauty",
+			IECoreScene.Output(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
+				}
+			)
+		)
+		s["d"]["in"].setInput( s["a"]["out"] )
+
+		s["o"] = GafferScene.StandardOptions()
+		s["o"]["options"]["renderCamera"]["value"].setValue( "/group/camera" )
+		s["o"]["options"]["renderCamera"]["enabled"].setValue( True )
+		s["o"]["in"].setInput( s["d"]["out"] )
+
+		s["r"] = self._createInteractiveRender()
+		s["r"]["in"].setInput( s["o"]["out"] )
+
+		# Start a render, give it time to finish, and check the output.
+
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["r"]["state"].setValue( s["r"].State.Running )
+
+			handler.waitFor( 2 )
+
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 0.5, 0.25 ) )
+
+			# Unlink the light, give it time to update, and check the output.
+
+			s["l"]["defaultLight"].setValue( False )
+
+			handler.waitFor( 1 )
+
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c, imath.Color3f( 0, 0, 0 ) )
+
+			# \todo: This should also test the light linking functionaly provided by
+			# StandardAttributes
+
+			s["r"]["state"].setValue( s["r"].State.Stopped )
+
+	def testHideLinkedLight( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["catalogue"] = GafferImage.Catalogue()
+
+		# One default light and one non-default light, which will
+		# result in light links being emitted to the renderer.
+
+		s["defaultLight"], colorPlug = self._createPointLight()
+		s["defaultLight"]["name"].setValue( "defaultPointLight" )
+		colorPlug.setValue( imath.Color3f( 1, 0, 0 ) )
+		s["defaultLight"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["defaultLightAttributes"] = GafferScene.StandardAttributes()
+		s["defaultLightAttributes"]["in"].setInput( s["defaultLight"]["out"] )
+
+		s["nonDefaultLight"], colorPlug = self._createPointLight()
+		s["nonDefaultLight"]["name"].setValue( "nonDefaultPointLight" )
+		s["nonDefaultLight"]["defaultLight"].setValue( False )
+		colorPlug.setValue( imath.Color3f( 0, 1, 0 ) )
+		s["nonDefaultLight"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["plane"] = GafferScene.Plane()
+
+		s["camera"] = GafferScene.Camera()
+		s["camera"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["group"] = GafferScene.Group()
+		s["group"]["in"][0].setInput( s["defaultLightAttributes"]["out"] )
+		s["group"]["in"][1].setInput( s["nonDefaultLight"]["out"] )
+		s["group"]["in"][2].setInput( s["plane"]["out"] )
+		s["group"]["in"][3].setInput( s["camera"]["out"] )
+
+		s["shader"], unused = self._createMatteShader()
+		s["shaderAssignment"] = GafferScene.ShaderAssignment()
+		s["shaderAssignment"]["in"].setInput( s["group"]["out"] )
+		s["shaderAssignment"]["shader"].setInput( s["shader"]["out"] )
+
+		s["outputs"] = GafferScene.Outputs()
+		s["outputs"].addOutput(
+			"beauty",
+			IECoreScene.Output(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"driverType" : "ClientDisplayDriver",
+					"displayHost" : "localhost",
+					"displayPort" : str( s['catalogue'].displayDriverServer().portNumber() ),
+					"remoteDisplayType" : "GafferImage::GafferDisplayDriver",
+					"quantize" : IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
+				}
+			)
+		)
+		s["outputs"]["in"].setInput( s["shaderAssignment"]["out"] )
+
+		s["options"] = GafferScene.StandardOptions()
+		s["options"]["options"]["renderCamera"]["value"].setValue( "/group/camera" )
+		s["options"]["options"]["renderCamera"]["enabled"].setValue( True )
+		s["options"]["in"].setInput( s["outputs"]["out"] )
+
+		s["renderer"] = self._createInteractiveRender()
+		s["renderer"]["in"].setInput( s["options"]["out"] )
+
+		# Start a render, give it time to finish, and check the output.
+		# We should get light only from the default light, and not the
+		# other one.
+
+		with GafferTest.ParallelAlgoTest.UIThreadCallHandler() as handler :
+			s["renderer"]["state"].setValue( s["renderer"].State.Running )
+
+			handler.waitFor( 2 )
+
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertNotEqual( c[0], 0 )
+			self.assertEqual( c / c[0], imath.Color3f( 1, 0, 0 ) )
+
+			# Hide the default light. We should get a black render.
+
+			s["defaultLightAttributes"]["attributes"]["visibility"]["enabled"].setValue( True )
+			s["defaultLightAttributes"]["attributes"]["visibility"]["value"].setValue( False )
+
+			handler.waitFor( 1 )
+
+			c = self._color3fAtUV( s["catalogue"], imath.V2f( 0.5 ) )
+			self.assertEqual( c, imath.Color3f( 0, 0, 0 ) )
+
+			s["renderer"]["state"].setValue( s["renderer"].State.Stopped )
 
 	def tearDown( self ) :
 
@@ -1642,30 +2121,26 @@ class InteractiveRenderTest( GafferSceneTest.SceneTestCase ) :
 
 		raise NotImplementedError
 
-	def __color4fAtUV( self, image, uv ) :
+	# Should be implemented by derived classes to return
+	# an appropriate LightFilter node along with the plug
+	# controlling the light filter's density
+	def _createLightFilter( self ) :
 
-		e = IECore.ImagePrimitiveEvaluator( image )
-		r = e.createResult()
-		e.pointAtUV( uv, r )
+		raise NotImplementedError
 
-		return IECore.Color4f(
-			r.floatPrimVar( image["R"] ),
-			r.floatPrimVar( image["G"] ),
-			r.floatPrimVar( image["B"] ),
-			r.floatPrimVar( image["A"] ),
-		)
+	def _color4fAtUV( self, image, uv ) :
 
-	def __color3fAtUV( self, image, uv ) :
+		sampler = GafferImage.ImageSampler()
+		sampler["image"].setInput( image["out"] )
+		dw = image['out']["format"].getValue().getDisplayWindow().size()
+		sampler["pixel"].setValue( uv * imath.V2f( dw.x, dw.y ) )
 
-		e = IECore.ImagePrimitiveEvaluator( image )
-		r = e.createResult()
-		e.pointAtUV( uv, r )
+		return sampler["color"].getValue()
 
-		return IECore.Color3f(
-			r.floatPrimVar( image["R"] ),
-			r.floatPrimVar( image["G"] ),
-			r.floatPrimVar( image["B"] ),
-		)
+	def _color3fAtUV( self, image, uv ) :
+
+		c = self._color4fAtUV( image, uv )
+		return imath.Color3f( c.r, c.g, c.b )
 
 	def __assertColorsAlmostEqual( self, c0, c1, **kw ) :
 

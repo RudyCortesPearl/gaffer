@@ -34,19 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Font.h"
-#include "IECore/LRUCache.h"
-#include "IECore/MeshPrimitive.h"
-#include "IECore/SearchPath.h"
+#include "GafferScene/Text.h"
 
 #include "Gaffer/StringPlug.h"
+#include "Gaffer/Private/IECorePreview/LRUCache.h"
 
-#include "GafferScene/Text.h"
+#include "IECoreScene/Font.h"
+#include "IECoreScene/MeshPrimitive.h"
+
+#include "IECore/SearchPath.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 using namespace Imath;
 using namespace IECore;
+using namespace IECoreScene;
 
 //////////////////////////////////////////////////////////////////////////
 // Implementation of an LRUCache of Fonts.
@@ -61,7 +63,7 @@ namespace Detail
 FontPtr fontGetter( const std::string &fileName, size_t &cost )
 {
 	const char *e = getenv( "IECORE_FONT_PATHS" );
-	IECore::SearchPath sp( e ? e : "", ":" );
+	IECore::SearchPath sp( e ? e : "" );
 
 	std::string resolvedFileName = sp.find( fileName ).string();
 	if( !resolvedFileName.size() )
@@ -73,7 +75,7 @@ FontPtr fontGetter( const std::string &fileName, size_t &cost )
 	return new Font( resolvedFileName );
 }
 
-typedef LRUCache<std::string, FontPtr> FontCache;
+typedef IECorePreview::LRUCache<std::string, FontPtr> FontCache;
 
 FontCache *fontCache()
 {
@@ -89,7 +91,7 @@ FontCache *fontCache()
 // Text implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Text );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( Text );
 
 size_t Text::g_firstPlugIndex = 0;
 

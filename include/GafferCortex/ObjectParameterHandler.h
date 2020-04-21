@@ -38,11 +38,11 @@
 #ifndef GAFFERCORTEX_OBJECTPARAMETERHANDLER_H
 #define GAFFERCORTEX_OBJECTPARAMETERHANDLER_H
 
-#include "IECore/ObjectParameter.h"
+#include "GafferCortex/ParameterHandler.h"
 
 #include "Gaffer/TypedObjectPlug.h"
 
-#include "GafferCortex/ParameterHandler.h"
+#include "IECore/ObjectParameter.h"
 
 namespace GafferCortex
 {
@@ -50,7 +50,7 @@ namespace GafferCortex
 /// \todo Decide whether this is sufficient or we need a TypedParameterHandler
 /// mapping to different types of Plugs. Decide how we deal with input values
 /// which don't validate ok - set error status on Plug?
-class ObjectParameterHandler : public ParameterHandler
+class GAFFERCORTEX_API ObjectParameterHandler : public ParameterHandler
 {
 
 	public :
@@ -58,16 +58,16 @@ class ObjectParameterHandler : public ParameterHandler
 		IE_CORE_DECLAREMEMBERPTR( ObjectParameterHandler );
 
 		ObjectParameterHandler( IECore::ObjectParameter::Ptr parameter );
-		virtual ~ObjectParameterHandler();
+		~ObjectParameterHandler() override;
 
-		virtual IECore::Parameter *parameter();
-		virtual const IECore::Parameter *parameter() const;
-		virtual void restore( Gaffer::GraphComponent *plugParent );
-		virtual Gaffer::Plug *setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction=Gaffer::Plug::In, unsigned flags = Gaffer::Plug::Default | Gaffer::Plug::Dynamic );
-		virtual Gaffer::Plug *plug();
-		virtual const Gaffer::Plug *plug() const;
-		virtual void setParameterValue();
-		virtual void setPlugValue();
+		IECore::Parameter *parameter() override;
+		const IECore::Parameter *parameter() const override;
+		void restore( Gaffer::GraphComponent *plugParent ) override;
+		Gaffer::Plug *setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction=Gaffer::Plug::In, unsigned flags = Gaffer::Plug::Default | Gaffer::Plug::Dynamic ) override;
+		Gaffer::Plug *plug() override;
+		const Gaffer::Plug *plug() const override;
+		void setParameterValue() override;
+		void setPlugValue() override;
 
 	private :
 

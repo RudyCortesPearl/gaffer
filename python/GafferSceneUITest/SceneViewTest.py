@@ -34,9 +34,15 @@
 #
 ##########################################################################
 
+import os
+import unittest
+
+import imath
+
 import IECore
 
 import Gaffer
+import GafferTest
 import GafferUI
 import GafferUITest
 import GafferScene
@@ -83,7 +89,7 @@ class SceneViewTest( GafferUITest.TestCase ) :
 		view = GafferUI.View.create( A["out"] )
 
 		def setSelection( paths ) :
-			GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), GafferScene.PathMatcher( paths ) )
+			GafferSceneUI.ContextAlgo.setSelectedPaths( view.getContext(), IECore.PathMatcher( paths ) )
 
 		def getSelection() :
 			return set( GafferSceneUI.ContextAlgo.getSelectedPaths( view.getContext() ).paths() )
@@ -92,7 +98,7 @@ class SceneViewTest( GafferUITest.TestCase ) :
 		self.assertEqual( getSelection(), set( [ "/A" ] ) )
 
 		def setExpandedPaths( paths ) :
-			GafferSceneUI.ContextAlgo.setExpandedPaths( view.getContext(), GafferScene.PathMatcher( paths ) )
+			GafferSceneUI.ContextAlgo.setExpandedPaths( view.getContext(), IECore.PathMatcher( paths ) )
 
 		def getExpandedPaths() :
 			return set( GafferSceneUI.ContextAlgo.getExpandedPaths( view.getContext() ).paths() )
@@ -211,7 +217,7 @@ class SceneViewTest( GafferUITest.TestCase ) :
 
 		script["sphere"] = GafferScene.Sphere()
 		script["camera"] = GafferScene.Camera()
-		script["camera"]["transform"]["translate"].setValue( IECore.V3f( 1, 0, 0 ) )
+		script["camera"]["transform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
 
 		script["group"] = GafferScene.Group()
 		script["group"]["in"][0].setInput( script["sphere"]["out"] )
@@ -228,44 +234,42 @@ class SceneViewTest( GafferUITest.TestCase ) :
 
 		def setViewCameraTransform( matrix ) :
 
-			camera = view.viewportGadget().getCamera()
-			camera.getTransform().matrix = matrix
-			view.viewportGadget().setCamera( camera )
+			view.viewportGadget().setCameraTransform( matrix )
 
 		def getViewCameraTransform() :
 
-			return view.viewportGadget().getCamera().getTransform().transform()
+			return view.viewportGadget().getCameraTransform()
 
 		# Simulate the user translating the camera.
-		setViewCameraTransform( IECore.M44f.createTranslated( IECore.V3f( 100, 0, 0 ) ) )
-		self.assertEqual( getViewCameraTransform(), IECore.M44f.createTranslated( IECore.V3f( 100, 0, 0 ) ) )
+		setViewCameraTransform( imath.M44f().translate( imath.V3f( 100, 0, 0 ) ) )
+		self.assertEqual( getViewCameraTransform(), imath.M44f().translate( imath.V3f( 100, 0, 0 ) ) )
 
 		# Set the path for the look-through camera, but don't activate it - nothing should have changed.
-		view["lookThrough"]["camera"].setValue( "/group/camera" )
-		self.assertEqual( getViewCameraTransform(), IECore.M44f.createTranslated( IECore.V3f( 100, 0, 0 ) ) )
+		view["camera"]["lookThroughCamera"].setValue( "/group/camera" )
+		self.assertEqual( getViewCameraTransform(), imath.M44f().translate( imath.V3f( 100, 0, 0 ) ) )
 
 		# Enable the look-through - the camera should update.
-		view["lookThrough"]["enabled"].setValue( True )
-		self.waitForIdle()
+		view["camera"]["lookThroughEnabled"].setValue( True )
+		self.waitForIdle( 100 )
 		self.assertEqual( getViewCameraTransform(), script["group"]["out"].transform( "/group/camera" ) )
 
 		# Disable the look-through - the camera should revert to its previous position.
-		view["lookThrough"]["enabled"].setValue( False )
-		self.waitForIdle()
-		self.assertEqual( getViewCameraTransform(), IECore.M44f.createTranslated( IECore.V3f( 100, 0, 0 ) ) )
+		view["camera"]["lookThroughEnabled"].setValue( False )
+		self.waitForIdle( 100 )
+		self.assertEqual( getViewCameraTransform(), imath.M44f().translate( imath.V3f( 100, 0, 0 ) ) )
 
 		# Simulate the user moving the viewport camera, and then move the (now disabled) look-through
 		# camera. The user movement should win out.
-		setViewCameraTransform( IECore.M44f.createTranslated( IECore.V3f( 200, 0, 0 ) ) )
-		self.assertEqual( getViewCameraTransform(), IECore.M44f.createTranslated( IECore.V3f( 200, 0, 0 ) ) )
-		script["camera"]["transform"]["translate"].setValue( IECore.V3f( 2, 0, 0 ) )
-		self.waitForIdle()
-		self.assertEqual( getViewCameraTransform(), IECore.M44f.createTranslated( IECore.V3f( 200, 0, 0 ) ) )
+		setViewCameraTransform( imath.M44f().translate( imath.V3f( 200, 0, 0 ) ) )
+		self.assertEqual( getViewCameraTransform(), imath.M44f().translate( imath.V3f( 200, 0, 0 ) ) )
+		script["camera"]["transform"]["translate"].setValue( imath.V3f( 2, 0, 0 ) )
+		self.waitForIdle( 100 )
+		self.assertEqual( getViewCameraTransform(), imath.M44f().translate( imath.V3f( 200, 0, 0 ) ) )
 
 		# Change the viewer context - since look-through is disabled the user camera should not move.
 		viewer.getContext().setFrame( 10 )
-		self.waitForIdle()
-		self.assertEqual( getViewCameraTransform(), IECore.M44f.createTranslated( IECore.V3f( 200, 0, 0 ) ) )
+		self.waitForIdle( 100 )
+		self.assertEqual( getViewCameraTransform(), imath.M44f().translate( imath.V3f( 200, 0, 0 ) ) )
 
 		# Work around "Internal C++ object (PySide.QtWidgets.QWidget) already deleted" error. In an
 		# ideal world we'll fix this, but it's unrelated to what we're testing here.
@@ -277,8 +281,8 @@ class SceneViewTest( GafferUITest.TestCase ) :
 
 		script["Sphere"] = GafferScene.Sphere()
 		script["Sphere1"] = GafferScene.Sphere()
-		script["Sphere"]["transform"]["translate"].setValue( IECore.V3f( -10, 0, 0 ) )
-		script["Sphere1"]["transform"]["translate"].setValue( IECore.V3f( 10, 0, 0 ) )
+		script["Sphere"]["transform"]["translate"].setValue( imath.V3f( -10, 0, 0 ) )
+		script["Sphere1"]["transform"]["translate"].setValue( imath.V3f( 10, 0, 0 ) )
 
 		script["Group"] = GafferScene.Group()
 		script["Group"]["in"][0].setInput( script["Sphere"]["out"] )
@@ -291,19 +295,19 @@ class SceneViewTest( GafferUITest.TestCase ) :
 		def cameraContains( scene, objectPath ) :
 
 			camera = view.viewportGadget().getCamera()
-			screen = IECore.Box2f( IECore.V2f( 0 ), IECore.V2f( camera.parameters()["resolution"].value ) )
+			screen = imath.Box2f( imath.V2f( 0 ), imath.V2f( camera.getResolution() ) )
 
-			worldBound = scene.bound( objectPath ).transform( scene.fullTransform( objectPath ) )
+			worldBound = scene.bound( objectPath ) * scene.fullTransform( objectPath )
 
 			for p in [
-				IECore.V3f( worldBound.min.x, worldBound.min.y, worldBound.min.z ),
-				IECore.V3f( worldBound.min.x, worldBound.min.y, worldBound.max.z ),
-				IECore.V3f( worldBound.min.x, worldBound.max.y, worldBound.max.z ),
-				IECore.V3f( worldBound.min.x, worldBound.max.y, worldBound.min.z ),
-				IECore.V3f( worldBound.max.x, worldBound.max.y, worldBound.min.z ),
-				IECore.V3f( worldBound.max.x, worldBound.min.y, worldBound.min.z ),
-				IECore.V3f( worldBound.max.x, worldBound.min.y, worldBound.max.z ),
-				IECore.V3f( worldBound.max.x, worldBound.max.y, worldBound.max.z ),
+				imath.V3f( worldBound.min().x, worldBound.min().y, worldBound.min().z ),
+				imath.V3f( worldBound.min().x, worldBound.min().y, worldBound.max().z ),
+				imath.V3f( worldBound.min().x, worldBound.max().y, worldBound.max().z ),
+				imath.V3f( worldBound.min().x, worldBound.max().y, worldBound.min().z ),
+				imath.V3f( worldBound.max().x, worldBound.max().y, worldBound.min().z ),
+				imath.V3f( worldBound.max().x, worldBound.min().y, worldBound.min().z ),
+				imath.V3f( worldBound.max().x, worldBound.min().y, worldBound.max().z ),
+				imath.V3f( worldBound.max().x, worldBound.max().y, worldBound.max().z ),
 			] :
 				rp = view.viewportGadget().worldToRasterSpace( p )
 				if not screen.intersects( rp ) :
@@ -315,20 +319,89 @@ class SceneViewTest( GafferUITest.TestCase ) :
 		self.assertFalse( cameraContains( script["Group"]["out"], "/group/sphere" ) )
 		self.assertFalse( cameraContains( script["Group"]["out"], "/group/sphere1" ) )
 
-		view.frame( GafferScene.PathMatcher( [ "/group/sphere" ] ), direction = IECore.V3f( 0, 0, 1 ) )
+		view.frame( IECore.PathMatcher( [ "/group/sphere" ] ), direction = imath.V3f( 0, 0, 1 ) )
 		self.assertFalse( cameraContains( script["Group"]["out"], "/group" ) )
 		self.assertTrue( cameraContains( script["Group"]["out"], "/group/sphere" ) )
 		self.assertFalse( cameraContains( script["Group"]["out"], "/group/sphere1" ) )
 
-		view.frame( GafferScene.PathMatcher( [ "/group/sphere1" ] ), direction = IECore.V3f( 0, 0, 1 ) )
+		view.frame( IECore.PathMatcher( [ "/group/sphere1" ] ), direction = imath.V3f( 0, 0, 1 ) )
 		self.assertFalse( cameraContains( script["Group"]["out"], "/group" ) )
 		self.assertFalse( cameraContains( script["Group"]["out"], "/group/sphere" ) )
 		self.assertTrue( cameraContains( script["Group"]["out"], "/group/sphere1" ) )
 
-		view.frame( GafferScene.PathMatcher( [ "/group/sp*" ] ), direction = IECore.V3f( 0, 0, 1 ) )
+		view.frame( IECore.PathMatcher( [ "/group/sp*" ] ), direction = imath.V3f( 0, 0, 1 ) )
 		self.assertTrue( cameraContains( script["Group"]["out"], "/group" ) )
 		self.assertTrue( cameraContains( script["Group"]["out"], "/group/sphere" ) )
 		self.assertTrue( cameraContains( script["Group"]["out"], "/group/sphere1" ) )
+
+	def testClippingPlanesAndFOV( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["camera"] = GafferScene.Camera()
+
+		view = GafferUI.View.create( script["camera"]["out"] )
+
+		def assertDefaultCamera() :
+
+			# Force update
+			view.viewportGadget().preRenderSignal()( view.viewportGadget() )
+
+			self.assertEqual(
+				view["camera"]["clippingPlanes"].getValue(),
+				view.viewportGadget().getCamera().parameters()["clippingPlanes"].value
+			)
+			self.assertAlmostEqual(
+				view["camera"]["fieldOfView"].getValue(),
+				view.viewportGadget().getCamera().calculateFieldOfView()[0], places = 5
+			)
+
+		assertDefaultCamera()
+
+		view["camera"]["clippingPlanes"].setValue( imath.V2f( 1, 10 ) )
+		assertDefaultCamera()
+
+		view["camera"]["fieldOfView"].setValue( 40 )
+		assertDefaultCamera()
+
+		def assertLookThroughCamera() :
+
+			# Force update
+			view.viewportGadget().preRenderSignal()( view.viewportGadget() )
+
+			self.assertEqual(
+				script["camera"]["clippingPlanes"].getValue(),
+				view.viewportGadget().getCamera().parameters()["clippingPlanes"].value
+			)
+			self.assertAlmostEqual(
+				script["camera"]["fieldOfView"].getValue(),
+				view.viewportGadget().getCamera().calculateFieldOfView()[0], places = 5
+			)
+
+		# Quick hack - in order to compare FOV, we don't want the 40 border pixels added to the viewport
+		# camera to be a significant part of the FOV.  Just set the resolution to be enormous so that the
+		# border is insignificant
+		view.viewportGadget().setViewport( imath.V2i( 10000000000000 ) )
+		view["camera"]["lookThroughCamera"].setValue( "/camera" )
+		view["camera"]["lookThroughEnabled"].setValue( True )
+
+		assertLookThroughCamera()
+
+		view["camera"]["lookThroughEnabled"].setValue( False )
+
+		assertDefaultCamera()
+
+		view["camera"]["lookThroughEnabled"].setValue( True )
+
+		assertLookThroughCamera()
+
+		view["camera"]["clippingPlanes"].setValue( imath.V2f( 10, 20 ) )
+		view["camera"]["fieldOfView"].setValue( 60 )
+
+		assertLookThroughCamera()
+
+		view["camera"]["lookThroughEnabled"].setValue( False )
+
+		assertDefaultCamera()
 
 if __name__ == "__main__":
 	unittest.main()

@@ -38,6 +38,7 @@ import unittest
 
 import Gaffer
 import GafferTest
+import imath
 import IECore
 
 class DotTest( GafferTest.TestCase ) :
@@ -175,8 +176,8 @@ class DotTest( GafferTest.TestCase ) :
 
 		plug = s["n1"]["op1"]
 
-		connectionColor = IECore.Color3f( 0.1 , 0.2 , 0.3 )
-		noodleColor = IECore.Color3f( 0.4, 0.5 , 0.6 )
+		connectionColor = imath.Color3f( 0.1 , 0.2 , 0.3 )
+		noodleColor = imath.Color3f( 0.4, 0.5 , 0.6 )
 
 		Gaffer.Metadata.registerValue( plug, "connectionGadget:color", connectionColor )
 		Gaffer.Metadata.registerValue( plug, "nodule:color", noodleColor )
@@ -188,6 +189,40 @@ class DotTest( GafferTest.TestCase ) :
 
 		self.assertEqual( Gaffer.Metadata.value( s["d"]["out"], "connectionGadget:color" ), connectionColor )
 		self.assertEqual( Gaffer.Metadata.value( s["d"]["out"], "nodule:color" ), noodleColor )
+
+	def testSerialisationUsesSetup( self ) :
+
+		s1 = Gaffer.ScriptNode()
+		s1["d"] = Gaffer.Dot()
+		s1["d"].setup( Gaffer.IntPlug() )
+
+		ss = s1.serialise()
+		self.assertIn( "setup", ss )
+		self.assertEqual( ss.count( "addChild" ), 1 )
+		self.assertNotIn( "Dynamic", ss )
+		self.assertNotIn( "setInput", ss )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( ss )
+		self.assertIn( "in", s2["d"] )
+		self.assertIn( "out", s2["d"] )
+		self.assertIsInstance( s2["d"]["in"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["d"]["out"], Gaffer.IntPlug )
+
+	def testPlugMetadataSerialisation( self ) :
+
+		s1 = Gaffer.ScriptNode()
+		s1["d"] = Gaffer.Dot()
+		s1["d"].setup( Gaffer.IntPlug() )
+
+		Gaffer.Metadata.registerValue( s1["d"]["in"], "test", 1 )
+		Gaffer.Metadata.registerValue( s1["d"]["out"], "test", 2 )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s1.serialise() )
+
+		self.assertEqual( Gaffer.Metadata.value( s2["d"]["in"], "test" ), 1 )
+		self.assertEqual( Gaffer.Metadata.value( s2["d"]["out"], "test" ), 2 )
 
 if __name__ == "__main__":
 	unittest.main()

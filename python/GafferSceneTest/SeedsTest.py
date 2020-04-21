@@ -39,6 +39,7 @@ import unittest
 import threading
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -75,7 +76,7 @@ class SeedsTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( s["out"].objectHash( "/plane" ), p["out"].objectHash( "/plane" ) )
 		self.assertEqual( s["out"].object( "/plane" ), p["out"].object( "/plane" ) )
 
-		self.failUnless( isinstance( s["out"].object( "/plane/seeds" ), IECore.PointsPrimitive ) )
+		self.failUnless( isinstance( s["out"].object( "/plane/seeds" ), IECoreScene.PointsPrimitive ) )
 		numPoints = s["out"].object( "/plane/seeds" ).numPoints
 
 		s["density"].setValue( 10 )
@@ -122,7 +123,7 @@ class SeedsTest( GafferSceneTest.SceneTestCase ) :
 
 		s = GafferScene.Seeds()
 		a = s.affects( s["name"] )
-		self.assertEqual( [ x.relativeName( s ) for x in a ], [ "out.childNames" ] )
+		self.assertGreaterEqual( { x.relativeName( s ) for x in a }, { "out.childNames" } )
 
 	def testMultipleChildren( self ) :
 
@@ -164,7 +165,6 @@ class SeedsTest( GafferSceneTest.SceneTestCase ) :
 		s["name"].setValue( "" )
 
 		self.assertScenesEqual( s["out"], p["out"] )
-		self.assertSceneHashesEqual( s["out"], p["out"] )
 
 	def testEmptyParent( self ) :
 
@@ -220,8 +220,14 @@ class SeedsTest( GafferSceneTest.SceneTestCase ) :
 
 		# Add the primitive variable, it should take effect.
 
-		primitiveVariables["primitiveVariables"].addMember( "d", IECore.FloatData( 0.5 ) )
+		primitiveVariables["primitiveVariables"].addChild( Gaffer.NameValuePlug( "d", IECore.FloatData( 0.5 ) ) )
 		self.assertLessEqual( seeds["out"].object( "/plane/seeds" ).numPoints, p.numPoints )
+
+	def testInternalConnectionsNotSerialised( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["seeds"] = GafferScene.Seeds()
+		self.assertNotIn( "setInput", s.serialise() )
 
 if __name__ == "__main__":
 	unittest.main()

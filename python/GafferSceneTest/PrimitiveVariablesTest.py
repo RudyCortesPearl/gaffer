@@ -34,7 +34,10 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -51,10 +54,10 @@ class PrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		self.assertScenesEqual( s["out"], p["out"] )
 		self.assertSceneHashesEqual( s["out"], p["out"] )
 
-		p["primitiveVariables"].addMember( "a", IECore.IntData( 10 ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "a", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
-		self.assertScenesEqual( s["out"], p["out"], childPlugNamesToIgnore=( "object", ) )
-		self.assertSceneHashesEqual( s["out"], p["out"], childPlugNamesToIgnore=( "object", ) )
+		self.assertScenesEqual( s["out"], p["out"], checks = self.allSceneChecks - { "object" } )
+		self.assertSceneHashesEqual( s["out"], p["out"], checks = self.allSceneChecks - { "object" } )
 
 		self.assertNotEqual( s["out"].objectHash( "/sphere" ), p["out"].objectHash( "/sphere" ) )
 		self.assertNotEqual( s["out"].object( "/sphere" ), p["out"].object( "/sphere" ) )
@@ -63,7 +66,7 @@ class PrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		o2 = p["out"].object( "/sphere" )
 
 		self.assertEqual( set( o1.keys() + [ "a" ] ), set( o2.keys() ) )
-		self.assertEqual( o2["a"], IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Constant, IECore.IntData( 10 ) ) )
+		self.assertEqual( o2["a"], IECoreScene.PrimitiveVariable( IECoreScene.PrimitiveVariable.Interpolation.Constant, IECore.IntData( 10 ) ) )
 
 		del o2["a"]
 		self.assertEqual( o1, o2 )
@@ -74,9 +77,9 @@ class PrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		p = GafferScene.PrimitiveVariables()
 		p["in"].setInput( s["out"] )
 
-		p["primitiveVariables"].addMember( "myFirstData", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Vector ) )
-		p["primitiveVariables"].addMember( "mySecondData", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Normal ) )
-		p["primitiveVariables"].addMember( "myThirdData", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Point ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "myFirstData", IECore.V3fData( imath.V3f( 0 ), IECore.GeometricData.Interpretation.Vector ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "mySecondData", IECore.V3fData( imath.V3f( 0 ), IECore.GeometricData.Interpretation.Normal ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "myThirdData", IECore.V3fData( imath.V3f( 0 ), IECore.GeometricData.Interpretation.Point ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		o = p["out"].object( "/sphere" )
 
@@ -93,9 +96,9 @@ class PrimitiveVariablesTest( GafferSceneTest.SceneTestCase ) :
 		self.assertFalse( 'mySecondData' in o )
 		self.assertFalse( 'myThirdData' in o )
 
-		p["primitiveVariables"].addMember( "myFirstData", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Point ) )
-		p["primitiveVariables"].addMember( "mySecondData", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Vector ) )
-		p["primitiveVariables"].addMember( "myThirdData", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Normal ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "myFirstData", IECore.V3fData( imath.V3f( 0 ), IECore.GeometricData.Interpretation.Point ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "mySecondData", IECore.V3fData( imath.V3f( 0 ), IECore.GeometricData.Interpretation.Vector ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		p["primitiveVariables"].addChild( Gaffer.NameValuePlug( "myThirdData", IECore.V3fData( imath.V3f( 0 ), IECore.GeometricData.Interpretation.Normal ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		o = p["out"].object( "/sphere" )
 

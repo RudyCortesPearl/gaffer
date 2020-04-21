@@ -42,14 +42,12 @@
 namespace GafferBindings
 {
 
-void bindTypedPlug();
-
 template<typename T, typename TWrapper=T>
 class TypedPlugClass : public PlugClass<T, TWrapper>
 {
 	public :
 
-		TypedPlugClass( const char *docString = 0 );
+		TypedPlugClass( const char *docString = nullptr );
 
 };
 

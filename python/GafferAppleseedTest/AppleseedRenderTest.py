@@ -37,14 +37,17 @@
 import os
 import unittest
 import subprocess32 as subprocess
+import re
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
 import GafferScene
 import GafferAppleseed
 import GafferAppleseedTest
+import GafferOSL
 
 class AppleseedRenderTest( GafferTest.TestCase ) :
 
@@ -84,13 +87,13 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 
 		s["options"] = GafferAppleseed.AppleseedOptions()
 		s["options"]["in"].setInput( s["plane"]["out"] )
-		s["options"]["options"]["aaSamples"]["value"].setValue( 1 )
-		s["options"]["options"]["aaSamples"]["enabled"].setValue( True )
+		s["options"]["options"]["maxAASamples"]["value"].setValue( 1 )
+		s["options"]["options"]["maxAASamples"]["enabled"].setValue( True )
 
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				self.temporaryDirectory() + "/test.exr",
 				"exr",
 				"rgba",
@@ -139,13 +142,13 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 
 		s["options"] = GafferAppleseed.AppleseedOptions()
 		s["options"]["in"].setInput( s["plane"]["out"] )
-		s["options"]["options"]["aaSamples"]["value"].setValue( 1 )
-		s["options"]["options"]["aaSamples"]["enabled"].setValue( True )
+		s["options"]["options"]["maxAASamples"]["value"].setValue( 1 )
+		s["options"]["options"]["maxAASamples"]["enabled"].setValue( True )
 
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				self.temporaryDirectory() + "/test.####.exr",
 				"exr",
 				"rgba",
@@ -189,8 +192,8 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 	def testDirectoryCreation( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["variables"].addMember( "renderDirectory", self.temporaryDirectory() + "/renderTests" )
-		s["variables"].addMember( "appleseedDirectory", self.temporaryDirectory() + "/appleseedTests" )
+		s["variables"].addChild( Gaffer.NameValuePlug( "renderDirectory", self.temporaryDirectory() + "/renderTests",  Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+		s["variables"].addChild( Gaffer.NameValuePlug( "appleseedDirectory", self.temporaryDirectory() + "/appleseedTests", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		s["plane"] = GafferScene.Plane()
 
@@ -198,7 +201,7 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 		s["outputs"]["in"].setInput( s["plane"]["out"] )
 		s["outputs"].addOutput(
 			"beauty",
-			IECore.Display(
+			IECoreScene.Output(
 				"$renderDirectory/test.####.exr",
 				"exr",
 				"rgba",
@@ -241,6 +244,77 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["render"] = GafferAppleseed.AppleseedRender()
 		self.assertFalse( "__adaptedIn" in s.serialise() )
+
+	def testNoInput( self ) :
+
+		render = GafferAppleseed.AppleseedRender()
+		render["mode"].setValue( render.Mode.SceneDescriptionMode )
+		render["fileName"].setValue( os.path.join( self.temporaryDirectory(), "test.appleseed" ) )
+
+		self.assertEqual( render["task"].hash(), IECore.MurmurHash() )
+		render["task"].execute()
+		self.assertFalse( os.path.exists( render["fileName"].getValue() ) )
+
+	def testInputFromContextVariables( self ) :
+
+		plane = GafferScene.Plane()
+
+		variables = Gaffer.ContextVariables()
+		variables.setup( GafferScene.ScenePlug() )
+		variables["in"].setInput( plane["out"] )
+
+		render = GafferAppleseed.AppleseedRender()
+		render["in"].setInput( variables["out"] )
+		render["mode"].setValue( render.Mode.SceneDescriptionMode )
+		render["fileName"].setValue( os.path.join( self.temporaryDirectory(), "test.appleseed" ) )
+
+		self.assertNotEqual( render["task"].hash(), IECore.MurmurHash() )
+		render["task"].execute()
+		self.assertTrue( os.path.exists( render["fileName"].getValue() ) )
+
+	def testShaderSubstitutions( self ) :
+
+		plane = GafferScene.Plane()
+
+		planeAttrs = GafferScene.CustomAttributes()
+		planeAttrs["in"].setInput( plane["out"] )
+		planeAttrs["attributes"].addChild( Gaffer.NameValuePlug( "A", Gaffer.StringPlug( "value", defaultValue = 'bar' ) ) )
+		planeAttrs["attributes"].addChild( Gaffer.NameValuePlug( "B", Gaffer.StringPlug( "value", defaultValue = 'foo' ) ) )
+
+		cube = GafferScene.Cube()
+
+		cubeAttrs = GafferScene.CustomAttributes()
+		cubeAttrs["in"].setInput( cube["out"] )
+		cubeAttrs["attributes"].addChild( Gaffer.NameValuePlug( "B", Gaffer.StringPlug( "value", defaultValue = 'override' ) ) )
+
+		parent = GafferScene.Parent()
+		parent["in"].setInput( planeAttrs["out"] )
+		parent["children"][0].setInput( cubeAttrs["out"] )
+		parent["parent"].setValue( "/plane" )
+
+		shader = GafferOSL.OSLShader()
+		shader.loadShader( "as_texture" )
+		shader["parameters"]["in_filename"].setValue( "<attr:A>/path/<attr:B>.tx" )
+
+		f = GafferScene.PathFilter()
+		f["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
+
+		shaderAssignment = GafferScene.ShaderAssignment()
+		shaderAssignment["in"].setInput( parent["out"] )
+		shaderAssignment["filter"].setInput( f["out"] )
+		shaderAssignment["shader"].setInput( shader["out"] )
+
+		render = GafferAppleseed.AppleseedRender()
+		render["in"].setInput( shaderAssignment["out"] )
+		render["mode"].setValue( render.Mode.SceneDescriptionMode )
+		render["fileName"].setValue( os.path.join( self.temporaryDirectory(), "test.appleseed" ) )
+
+		self.assertNotEqual( render["task"].hash(), IECore.MurmurHash() )
+		render["task"].execute()
+		self.assertTrue( os.path.exists( render["fileName"].getValue() ) )
+		f = open( render["fileName"].getValue(), "r" )
+		texturePaths = set( re.findall( '<parameter name="in_filename" value="string (.*)"', f.read()) )
+		self.assertEqual( texturePaths, set( ['bar/path/foo.tx', 'bar/path/override.tx' ] ) )
 
 if __name__ == "__main__":
 	unittest.main()

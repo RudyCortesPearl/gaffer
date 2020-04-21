@@ -42,19 +42,19 @@
 namespace GafferScene
 {
 
-class DeletePrimitiveVariables : public PrimitiveVariableProcessor
+class GAFFERSCENE_API DeletePrimitiveVariables : public PrimitiveVariableProcessor
 {
 
 	public :
 
 		DeletePrimitiveVariables( const std::string &name=defaultName<DeletePrimitiveVariables>() );
-		virtual ~DeletePrimitiveVariables();
+		~DeletePrimitiveVariables() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::DeletePrimitiveVariables, DeletePrimitiveVariablesTypeId, PrimitiveVariableProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::DeletePrimitiveVariables, DeletePrimitiveVariablesTypeId, PrimitiveVariableProcessor );
 
 	protected :
 
-		virtual void processPrimitiveVariable( const ScenePath &path, const Gaffer::Context *context, IECore::ConstPrimitivePtr inputGeometry, IECore::PrimitiveVariable &inputVariable ) const;
+		void processPrimitiveVariable( const ScenePath &path, const Gaffer::Context *context, IECoreScene::ConstPrimitivePtr inputGeometry, IECoreScene::PrimitiveVariable &inputVariable ) const override;
 
 };
 

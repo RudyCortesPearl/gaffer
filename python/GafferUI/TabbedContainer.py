@@ -47,6 +47,7 @@ from Qt import QtWidgets
 class TabbedContainer( GafferUI.ContainerWidget ) :
 
 	__DragState = IECore.Enum.create( "None", "Waiting", "Active" )
+	__palette = None
 
 	def __init__( self, cornerWidget=None, **kw ) :
 
@@ -54,10 +55,18 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 		self.__tabBar = GafferUI.Widget( QtWidgets.QTabBar() )
 		self.__tabBar._qtWidget().setDrawBase( False )
-		self.__tabBarDragEnterConnection = self.__tabBar.dragEnterSignal().connect( Gaffer.WeakMethod( self.__tabBarDragEnter ) )
-		self.__tabBarDragMoveConnection = self.__tabBar.dragMoveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragMove ) )
-		self.__tabBarDragLeaveConnection = self.__tabBar.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragLeave ) )
+		self.__tabBar._qtWidget().tabMoved.connect( Gaffer.WeakMethod( self.__moveWidget ) )
+		self.__tabBar.dragEnterSignal().connect( Gaffer.WeakMethod( self.__tabBarDragEnter ), scoped = False )
+		self.__tabBar.dragMoveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragMove ), scoped = False )
+		self.__tabBar.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragLeave ), scoped = False )
 		self.__tabBarDragState = self.__DragState.None
+
+		# See comments in Button.py
+		if TabbedContainer.__palette is None :
+			TabbedContainer.__palette = QtGui.QPalette( QtWidgets.QApplication.instance().palette( self.__tabBar._qtWidget() ) )
+			TabbedContainer.__palette.setColor( QtGui.QPalette.Disabled, QtGui.QPalette.Light, QtGui.QColor( 0, 0, 0, 0 ) )
+
+		self.__tabBar._qtWidget().setPalette( TabbedContainer.__palette )
 
 		self._qtWidget().setTabBar( self.__tabBar._qtWidget() )
 
@@ -122,6 +131,12 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 		return self.__widgets[ self._qtWidget().currentIndex() ]
 
+	def __moveWidget( self, fromIndex, toIndex ) :
+
+		w = self.__widgets[ fromIndex ]
+		del self.__widgets[ fromIndex ]
+		self.__widgets.insert( toIndex, w )
+
 	def __getitem__( self, index ) :
 
 		return self.__widgets[index]
@@ -158,8 +173,11 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 			self._qtWidget().setCornerWidget( None )
 			self.__cornerWidget = None
 		else :
-			self._qtWidget().removeTab( self.__widgets.index( child ) )
+			# We must remove the child from __widgets before the tab, otherwise
+			# currentChangedSignal will be emit with the old widget.
+			removalIndex = self.__widgets.index( child )
 			self.__widgets.remove( child )
+			self._qtWidget().removeTab( removalIndex )
 
 		child._qtWidget().setParent( None )
 		child._applyVisibility()
@@ -216,7 +234,8 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 	def __currentChanged( self, index ) :
 
-		self.__currentChangedSignal( self, self[index] )
+		current = self[index] if len(self) else None
+		self.__currentChangedSignal( self, current )
 
 	def __tabBarDragEnter( self, widget, event ) :
 
@@ -283,3 +302,4 @@ class _TabWidget( QtWidgets.QTabWidget ) :
 				result.setWidth( result.width() - self.tabBar().minimumSizeHint().width() )
 
 		return result
+

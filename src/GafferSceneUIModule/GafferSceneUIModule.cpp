@@ -36,81 +36,25 @@
 
 #include "boost/python.hpp"
 
-#include "GafferBindings/NodeBinding.h"
+#include "ContextAlgoBinding.h"
+#include "HierarchyViewBinding.h"
+#include "SceneGadgetBinding.h"
+#include "SourceSetBinding.h"
+#include "ToolBinding.h"
+#include "ViewBinding.h"
+#include "VisualiserBinding.h"
 
-#include "GafferUIBindings/GadgetBinding.h"
-
-#include "GafferSceneUI/SceneGadget.h"
-#include "GafferSceneUI/SelectionTool.h"
-#include "GafferSceneUI/CropWindowTool.h"
-
-#include "GafferSceneUIBindings/SceneViewBinding.h"
-#include "GafferSceneUIBindings/ObjectVisualiserBinding.h"
-#include "GafferSceneUIBindings/LightVisualiserBinding.h"
-#include "GafferSceneUIBindings/StandardLightVisualiserBinding.h"
-#include "GafferSceneUIBindings/SceneHierarchyBinding.h"
-#include "GafferSceneUIBindings/ShaderViewBinding.h"
-#include "GafferSceneUIBindings/TransformToolBinding.h"
-#include "GafferSceneUIBindings/TranslateToolBinding.h"
-#include "GafferSceneUIBindings/RotateToolBinding.h"
-#include "GafferSceneUIBindings/ScaleToolBinding.h"
-#include "GafferSceneUIBindings/ContextAlgoBinding.h"
-
-using namespace boost::python;
-using namespace IECorePython;
-using namespace GafferSceneUI;
-using namespace GafferSceneUIBindings;
-
-namespace
-{
-
-IECore::InternedStringVectorDataPtr objectAt( SceneGadget &g, IECore::LineSegment3f &l )
-{
-	IECore::InternedStringVectorDataPtr result = new IECore::InternedStringVectorData;
-	if( g.objectAt( l, result->writable() ) )
-	{
-		return result;
-	}
-	return NULL;
-}
-
-} // namespace
+using namespace GafferSceneUIModule;
 
 BOOST_PYTHON_MODULE( _GafferSceneUI )
 {
 
-	bindSceneView();
-	bindShaderView();
-
-	GafferUIBindings::GadgetClass<SceneGadget>()
-		.def( init<>() )
-		.def( "setScene", &SceneGadget::setScene )
-		.def( "getScene", &SceneGadget::getScene, return_value_policy<CastToIntrusivePtr>() )
-		.def( "setContext", &SceneGadget::setContext )
-		.def( "getContext", (Gaffer::Context *(SceneGadget::*)())&SceneGadget::getContext, return_value_policy<CastToIntrusivePtr>() )
-		.def( "setExpandedPaths", &SceneGadget::setExpandedPaths )
-		.def( "getExpandedPaths", &SceneGadget::getExpandedPaths, return_value_policy<CastToIntrusivePtr>() )
-		.def( "setMinimumExpansionDepth", &SceneGadget::setMinimumExpansionDepth )
-		.def( "getMinimumExpansionDepth", &SceneGadget::getMinimumExpansionDepth )
-		.def( "baseState", &SceneGadget::baseState, return_value_policy<CastToIntrusivePtr>() )
-		.def( "objectAt", &objectAt )
-		.def( "objectsAt", &SceneGadget::objectsAt )
-		.def( "setSelection", &SceneGadget::setSelection )
-		.def( "getSelection", &SceneGadget::getSelection, return_value_policy<CastToIntrusivePtr>() )
-		.def( "selectionBound", &SceneGadget::selectionBound )
-	;
-
-	GafferBindings::NodeClass<SelectionTool>( NULL, no_init );
-	GafferBindings::NodeClass<CropWindowTool>( NULL, no_init );
-
-	bindTransformTool();
-	bindTranslateTool();
-	bindRotateTool();
-	bindScaleTool();
-	bindObjectVisualiser();
-	bindLightVisualiser();
-	bindStandardLightVisualiser();
-	bindSceneHierarchy();
+	bindViews();
+	bindTools();
+	bindVisualisers();
+	bindHierarchyView();
+	bindSceneGadget();
 	bindContextAlgo();
+	bindSourceSet();
 
 }

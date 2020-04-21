@@ -38,45 +38,57 @@
 #ifndef GAFFEROSL_OSLIMAGE_H
 #define GAFFEROSL_OSLIMAGE_H
 
-#include "GafferImage/ImageProcessor.h"
+#include "GafferOSL/Export.h"
+#include "GafferOSL/OSLCode.h"
+#include "GafferOSL/TypeIds.h"
 
 #include "GafferScene/ShaderPlug.h"
 
-#include "GafferOSL/TypeIds.h"
+#include "GafferImage/ImageProcessor.h"
+#include "GafferImage/Constant.h"
 
 namespace GafferOSL
 {
 
-class OSLImage : public GafferImage::ImageProcessor
+class GAFFEROSL_API OSLImage : public GafferImage::ImageProcessor
 {
 
 	public :
 
 		OSLImage( const std::string &name=defaultName<OSLImage>() );
-		virtual ~OSLImage();
+		~OSLImage() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferOSL::OSLImage, OSLImageTypeId, GafferImage::ImageProcessor );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferOSL::OSLImage, OSLImageTypeId, GafferImage::ImageProcessor );
 
-		GafferScene::ShaderPlug *shaderPlug();
-		const GafferScene::ShaderPlug *shaderPlug() const;
+		GafferImage::FormatPlug *defaultFormatPlug();
+		const GafferImage::FormatPlug *defaultFormatPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::Plug *channelsPlug();
+		const Gaffer::Plug *channelsPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
+		bool enabled() const override;
 
-		virtual bool enabled() const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
-		virtual IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
+		IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
+		GafferImage::Format computeFormat( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
+		Imath::Box2i computeDataWindow( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const override;
 
 	private :
+
+		GafferScene::ShaderPlug *shaderPlug();
+		const GafferScene::ShaderPlug *shaderPlug() const;
 
 		// computeChannelData() is called for individual channels at a time, but when we run a
 		// shader we get all the outputs at once. we therefore use this plug to compute (and
@@ -89,6 +101,23 @@ class OSLImage : public GafferImage::ImageProcessor
 
 		void hashShading( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		IECore::ConstCompoundDataPtr computeShading( const Gaffer::Context *context ) const;
+
+		GafferOSL::OSLCode *oslCode();
+		const GafferOSL::OSLCode *oslCode() const;
+
+		GafferImage::Constant *defaultConstant();
+		const GafferImage::Constant *defaultConstant() const;
+
+		GafferImage::ImagePlug *defaultInPlug();
+		const GafferImage::ImagePlug *defaultInPlug() const;
+
+		// The in plug, set to the default if left unconnected
+		const GafferImage::ImagePlug *defaultedInPlug() const;
+
+		void channelsAdded( const Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child );
+		void channelsRemoved( const Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child );
+
+		void updateChannels();
 
 		static size_t g_firstPlugIndex;
 

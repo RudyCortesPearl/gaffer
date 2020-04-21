@@ -42,7 +42,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( ImageMetadata );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ImageMetadata );
 
 size_t ImageMetadata::g_firstPlugIndex = 0;
 
@@ -98,7 +98,7 @@ IECore::ConstCompoundDataPtr ImageMetadata::computeProcessedMetadata( const Gaff
 	result->writable() = inputMetadata->readable();
 
 	std::string name;
-	for ( CompoundDataPlug::MemberPlugIterator it( p ); !it.done(); ++it )
+	for ( NameValuePlugIterator it( p ); !it.done(); ++it )
 	{
 		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
 		if ( d )

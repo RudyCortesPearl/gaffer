@@ -35,39 +35,79 @@
 ##########################################################################
 
 import os
+import sys
 
 import GafferUI
 
+import Qt
+from Qt import QtCore
 from Qt import QtGui
+from Qt import QtWidgets
 
 def joinEdges( listContainer ) :
 
 	if listContainer.orientation() == listContainer.Orientation.Horizontal :
-		lowProperty = "gafferFlatLeft"
-		highProperty = "gafferFlatRight"
+		lowProperty = "gafferAdjoinedLeft"
+		highProperty = "gafferAdjoinedRight"
 	else :
-		lowProperty = "gafferFlatTop"
-		highProperty = "gafferFlatBottom"
+		lowProperty = "gafferAdjoinedTop"
+		highProperty = "gafferAdjoinedBottom"
 
 	visibleWidgets = [ w for w in listContainer if w.getVisible() ]
 	l = len( visibleWidgets )
-	for i in range( 0, l ) :
-		visibleWidgets[i]._qtWidget().setProperty( lowProperty, i > 0 )
-		visibleWidgets[i]._qtWidget().setProperty( highProperty, i < l - 1 )
+	for i, widget in enumerate( visibleWidgets ) :
+
+		if isinstance( widget, GafferUI.BoolPlugValueWidget ) :
+			# Special case - we need to apply the rounding to
+			# the internal widget.
+			## \todo Is there a better approach here, perhaps
+			# using the stylesheet?
+			qtWidget = widget.boolWidget()._qtWidget()
+		else :
+			qtWidget = widget._qtWidget()
+
+		qtWidget.setProperty( lowProperty, i > 0 )
+		qtWidget.setProperty( highProperty, i < l - 1 )
+		widget._repolish()
 
 def grab( widget, imagePath ) :
 
-	GafferUI.EventLoop.waitForIdle()
+	if not GafferUI.EventLoop.mainEventLoop().running() :
+		# This is a hack to try to give Qt time to
+		# finish processing any events needed to get
+		# the widget ready for capture. Really we need
+		# a rock solid way that _guarantees_ this, and which
+		# we can also use when the event loop is running.
+		GafferUI.EventLoop.waitForIdle()
 
 	imageDir = os.path.dirname( imagePath )
 	if imageDir and not os.path.isdir( imageDir ) :
 		os.makedirs( imageDir )
 
-	# This emits a deprecation warning in Qt5, but the recommended
-	# `QScreen.grabWindow()` alternative is not available in PySide2,
-	# and the alternative `QWidget.grab()` method does not capture
-	# OpenGL content. We could in theory silence the deprecation warning
-	# by temporarily installing a Qt message handler, but surprise surprise,
-	# we can't do that in PySide2 either.
-	pixmap = QtGui.QPixmap.grabWindow( long( widget._qtWidget().winId() ) )
+	if Qt.__binding__ in ( "PySide2", "PyQt5" ) :
+		# Qt 5
+		screen = QtWidgets.QApplication.primaryScreen()
+		windowHandle = widget._qtWidget().windowHandle()
+		if windowHandle :
+			screen = windowHandle.screen()
+
+		pixmap = screen.grabWindow( long( widget._qtWidget().winId() ) )
+
+		if sys.platform == "darwin" and pixmap.size() == screen.size() * screen.devicePixelRatio() :
+			# A bug means that the entire screen will have been captured,
+			# not just the widget we requested. Copy out just the widget.
+			topLeft = widget._qtWidget().mapToGlobal( QtCore.QPoint( 0, 0 ) )
+			bottomRight = widget._qtWidget().mapToGlobal( QtCore.QPoint( widget._qtWidget().width(), widget._qtWidget().height() ) )
+			size = bottomRight - topLeft
+			pixmap = pixmap.copy(
+				QtCore.QRect(
+					topLeft * screen.devicePixelRatio(),
+					QtCore.QSize( size.x(), size.y() ) * screen.devicePixelRatio()
+				)
+			)
+
+	else :
+		# Qt 4
+		pixmap = QtGui.QPixmap.grabWindow( long( widget._qtWidget().winId() ) )
+
 	pixmap.save( imagePath )

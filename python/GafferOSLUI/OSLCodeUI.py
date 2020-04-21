@@ -36,6 +36,7 @@
 
 import os
 import functools
+import imath
 
 import IECore
 
@@ -93,7 +94,7 @@ Gaffer.Metadata.registerNode(
 			- V3fPlug (`vector`)
 			- M44fPlug (`matrix`)
 			- StringPlug (`string`)
-			- Plug (`closure color`)
+			- ClosurePlug (`closure color`)
 			- SplinefColor3f ( triplet of `float [], color [], string` )
 			""",
 
@@ -105,7 +106,10 @@ Gaffer.Metadata.registerNode(
 
 		"parameters.*" : [
 
-			"labelPlugValueWidget:renameable", True,
+			"renameable", True,
+			# Since the names are used directly as variable names in the code,
+			# it's best to avoid any fancy label formatting for them.
+			"label", lambda plug : plug.getName(),
 
 		],
 
@@ -129,7 +133,8 @@ Gaffer.Metadata.registerNode(
 
 		"out.*" : [
 
-			"labelPlugValueWidget:renameable", True,
+			"renameable", True,
+			"label", lambda plug : plug.getName(),
 
 		],
 
@@ -167,7 +172,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 
 		with row :
 
-				GafferUI.Spacer( IECore.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
+				GafferUI.Spacer( imath.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
 
 				menuButton = GafferUI.MenuButton(
 					image = "plus.png",
@@ -180,7 +185,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 				)
 				menuButton.setEnabled( not Gaffer.MetadataAlgo.readOnly( plug ) )
 
-				GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ), parenting = { "expand" : True } )
+				GafferUI.Spacer( imath.V2i( 1 ), imath.V2i( 999999, 1 ), parenting = { "expand" : True } )
 
 	def _updateFromPlug( self ) :
 
@@ -199,7 +204,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 			( "Color", Gaffer.Color3fPlug ),
 			( "Matrix", Gaffer.M44fPlug ),
 			( "String", Gaffer.StringPlug ),
-			( "Closure", Gaffer.Plug )
+			( "Closure", GafferOSL.ClosurePlug )
 		]
 
 		if self.getPlug().direction() == Gaffer.Plug.Direction.In :
@@ -212,10 +217,10 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 						defaultValue = IECore.SplinefColor3f(
 							IECore.CubicBasisf.catmullRom(),
 							(
-								( 0, IECore.Color3f( 0 ) ),
-								( 0, IECore.Color3f( 0 ) ),
-								( 1, IECore.Color3f( 1 ) ),
-								( 1, IECore.Color3f( 1 ) ),
+								( 0, imath.Color3f( 0 ) ),
+								( 0, imath.Color3f( 0 ) ),
+								( 1, imath.Color3f( 1 ) ),
+								( 1, imath.Color3f( 1 ) ),
 							)
 						)
 					)
@@ -257,7 +262,7 @@ class _CodePlugValueWidget( GafferUI.MultiLineStringPlugValueWidget ) :
 
 		self.textWidget().setRole( GafferUI.MultiLineTextWidget.Role.Code )
 
-		self.__dropTextConnection = self.textWidget().dropTextSignal().connect( Gaffer.WeakMethod( self.__dropText ) )
+		self.textWidget().dropTextSignal().connect( Gaffer.WeakMethod( self.__dropText ), scoped = False )
 
 	def __dropText( self, widget, dragData ) :
 
@@ -285,8 +290,8 @@ class _ErrorWidget( GafferUI.Widget ) :
 		self.__messageWidget = GafferUI.MessageWidget()
 		GafferUI.Widget.__init__( self, self.__messageWidget, **kw )
 
-		self.__errorConnection = node.errorSignal().connect( Gaffer.WeakMethod( self.__error ) )
-		self.__shaderCompiledConnection = node.shaderCompiledSignal().connect( Gaffer.WeakMethod( self.__shaderCompiled ) )
+		node.errorSignal().connect( Gaffer.WeakMethod( self.__error ), scoped = False )
+		node.shaderCompiledSignal().connect( Gaffer.WeakMethod( self.__shaderCompiled ), scoped = False )
 
 		self.__messageWidget.setVisible( False )
 
@@ -330,7 +335,7 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 		menuDefinition.append(
 			"/Delete",
 			{
-				"command" : IECore.curry( __deletePlug, plug ),
+				"command" : functools.partial( __deletePlug, plug ),
 				"active" : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug )
 			}
 		)
@@ -351,7 +356,7 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 			},
 		)
 
-__plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu, scoped = False )
 
 ##########################################################################
 # NodeEditor tool menu
@@ -387,4 +392,4 @@ def __exportOSLShader( nodeEditor, node ) :
 			with nodeEditor.getContext() :
 				f.write( node.source( os.path.splitext( os.path.basename( path ) )[0] ) )
 
-__nodeEditorToolMenuConnection = GafferUI.NodeEditor.toolMenuSignal().connect( __toolMenu )
+GafferUI.NodeEditor.toolMenuSignal().connect( __toolMenu, scoped = False )

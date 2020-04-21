@@ -34,13 +34,20 @@
 #
 ##########################################################################
 
+import functools
 import os
+import sys
 
 import IECore
 
 import Gaffer
-import GafferUI
+import GafferImage
 import GafferDispatch
+
+##########################################################################
+# Note this file is shared with the `dispatch` app. We need to ensure any
+# changes here have the desired behaviour in both applications.
+##########################################################################
 
 ##########################################################################
 # Project variables
@@ -50,11 +57,14 @@ def __scriptAdded( container, script ) :
 
 	variables = script["variables"]
 	if "projectName" not in variables :
-		projectName = variables.addMember( "project:name", IECore.StringData( "default" ), "projectName" )
-		projectName["name"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		projectName = variables.addChild( Gaffer.NameValuePlug( "project:name", IECore.StringData( "default" ), "projectName", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 	if "projectRootDirectory" not in variables :
-		projectRoot = variables.addMember( "project:rootDirectory", IECore.StringData( "$HOME/gaffer/projects/${project:name}" ), "projectRootDirectory" )
-		projectRoot["name"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		projectRoot = variables.addChild( Gaffer.NameValuePlug( "project:rootDirectory", IECore.StringData( "$HOME/gaffer/projects/${project:name}" ), "projectRootDirectory", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
+
+	Gaffer.MetadataAlgo.setReadOnly( variables["projectName"]["name"], True )
+	Gaffer.MetadataAlgo.setReadOnly( variables["projectRootDirectory"]["name"], True )
+
+	GafferImage.FormatPlug.acquireDefaultFormatPlug( script )
 
 application.root()["scripts"].childAddedSignal().connect( __scriptAdded, scoped = False )
 
@@ -62,16 +72,15 @@ application.root()["scripts"].childAddedSignal().connect( __scriptAdded, scoped 
 # Bookmarks
 ##########################################################################
 
-def __projectBookmark( forWidget, location ) :
+def __projectBookmark( widget, location ) :
 
 	script = None
-	if forWidget is not None :
-		if isinstance( forWidget, GafferUI.ScriptWindow ) :
-			scriptWindow = forWidget
-		else :
-			scriptWindow = forWidget.ancestor( GafferUI.ScriptWindow )
-		if scriptWindow is not None :
-			script = scriptWindow.scriptNode()
+	while widget is not None :
+		if hasattr( widget, "scriptNode" ) :
+			script = widget.scriptNode()
+			if isinstance( script, Gaffer.ScriptNode ) :
+				break
+		widget = widget.parent()
 
 	if script is not None :
 		p = script.context().substitute( location )
@@ -84,9 +93,15 @@ def __projectBookmark( forWidget, location ) :
 	else :
 		return os.getcwd()
 
-GafferUI.Bookmarks.acquire( application ).add( "Project", IECore.curry( __projectBookmark, location="${project:rootDirectory}" ) )
-GafferUI.Bookmarks.acquire( application, category="script" ).setDefault( IECore.curry( __projectBookmark, location="${project:rootDirectory}/scripts" ) )
-GafferUI.Bookmarks.acquire( application, category="reference" ).setDefault( IECore.curry( __projectBookmark, location="${project:rootDirectory}/references" ) )
+
+# We don't want to load UI modules unless we know we are in a UI context,
+# otherwise we force a connection to X. This situation arises as this startup
+# file is shared with the dispatch app, which has a headless mode.
+if 'GafferUI' in sys.modules :
+	import GafferUI
+	GafferUI.Bookmarks.acquire( application ).add( "Project", functools.partial( __projectBookmark, location="${project:rootDirectory}" ) )
+	GafferUI.Bookmarks.acquire( application, category="script" ).setDefault( functools.partial( __projectBookmark, location="${project:rootDirectory}/scripts" ) )
+	GafferUI.Bookmarks.acquire( application, category="reference" ).setDefault( functools.partial( __projectBookmark, location="${project:rootDirectory}/references" ) )
 
 ##########################################################################
 # Dispatchers
@@ -99,9 +114,19 @@ with IECore.IgnoredExceptions( ImportError ) :
 
 for dispatcher in dispatchers :
 
-	Gaffer.Metadata.registerPlugValue( dispatcher, "jobName", "userDefault", "${script:name}" )
+	Gaffer.Metadata.registerValue( dispatcher, "jobName", "userDefault", "${script:name}" )
 	directoryName = dispatcher.staticTypeName().rpartition( ":" )[2].replace( "Dispatcher", "" ).lower()
-	Gaffer.Metadata.registerPlugValue( dispatcher, "jobsDirectory", "userDefault", "${project:rootDirectory}/dispatcher/" + directoryName )
+	Gaffer.Metadata.registerValue( dispatcher, "jobsDirectory", "userDefault", "${project:rootDirectory}/dispatcher/" + directoryName )
 
-Gaffer.Metadata.registerPlugValue( GafferDispatch.LocalDispatcher, "executeInBackground", "userDefault", True )
-GafferDispatch.Dispatcher.setDefaultDispatcherType( "Local" )
+##########################################################################
+# Renderers
+##########################################################################
+
+with IECore.IgnoredExceptions( ImportError ) :
+	import GafferArnold
+	Gaffer.Metadata.registerValue( GafferArnold.ArnoldRender, "fileName", "userDefault", "${project:rootDirectory}/asses/${script:name}/${script:name}.####.ass" )
+	Gaffer.Metadata.registerValue( GafferArnold.ArnoldTextureBake, "bakeDirectory", "userDefault", "${project:rootDirectory}/bakedTextures/${script:name}/" )
+
+with IECore.IgnoredExceptions( ImportError ) :
+	import GafferAppleseed
+	Gaffer.Metadata.registerValue( GafferAppleseed.AppleseedRender, "fileName", "userDefault", "${project:rootDirectory}/appleseeds/${script:name}/${script:name}.####.appleseed" )

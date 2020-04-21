@@ -35,14 +35,13 @@
 #
 ##########################################################################
 
+__import__( "IECoreScene" )
 __import__( "Gaffer" )
 __import__( "GafferDispatch" )
 __import__( "GafferImage" )
 
 from _GafferScene import *
 
-from ScriptProcedural import ScriptProcedural
-from AlembicPath import AlembicPath
 from ShaderBall import ShaderBall
 
-__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferScene" )
+__import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", subdirectory = "GafferScene" )

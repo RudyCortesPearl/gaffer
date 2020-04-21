@@ -34,26 +34,27 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/format.hpp"
-
 #include "GafferScene/ResamplePrimitiveVariables.h"
 
-#include "IECore/MeshPrimitive.h"
-#include "IECore/CurvesPrimitive.h"
-#include "IECore/PointsPrimitive.h"
-#include "IECore/MeshAlgo.h"
-#include "IECore/CurvesAlgo.h"
-#include "IECore/PointsAlgo.h"
+#include "IECoreScene/CurvesAlgo.h"
+#include "IECoreScene/CurvesPrimitive.h"
+#include "IECoreScene/MeshAlgo.h"
+#include "IECoreScene/MeshPrimitive.h"
+#include "IECoreScene/PointsAlgo.h"
+#include "IECoreScene/PointsPrimitive.h"
+
+#include "boost/format.hpp"
 
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( ResamplePrimitiveVariables );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ResamplePrimitiveVariables );
 
 size_t ResamplePrimitiveVariables::g_firstPlugIndex = 0;
 
-ResamplePrimitiveVariables::ResamplePrimitiveVariables( const std::string &name ) : PrimitiveVariableProcessor( name, Filter::NoMatch )
+ResamplePrimitiveVariables::ResamplePrimitiveVariables( const std::string &name ) : PrimitiveVariableProcessor( name, IECore::PathMatcher::NoMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -91,7 +92,7 @@ void ResamplePrimitiveVariables::hashProcessedObject( const ScenePath &path, con
 	interpolationPlug()->hash( h );
 }
 
-void ResamplePrimitiveVariables::processPrimitiveVariable( const ScenePath &path, const Gaffer::Context *context, IECore::ConstPrimitivePtr inputGeometry, IECore::PrimitiveVariable &variable ) const
+void ResamplePrimitiveVariables::processPrimitiveVariable( const ScenePath &path, const Gaffer::Context *context, IECoreScene::ConstPrimitivePtr inputGeometry, IECoreScene::PrimitiveVariable &variable ) const
 {
 	PrimitiveVariable::Interpolation interpolation = static_cast<PrimitiveVariable::Interpolation> ( interpolationPlug()->getValue() );
 

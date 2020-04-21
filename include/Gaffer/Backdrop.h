@@ -47,15 +47,15 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 
 /// The Backdrop node has no computational purpose - it is merely a placeholder
 /// for an organisation tool in the user interface, implemented in GafferUI::BackdropNodeGadget.
-class Backdrop : public Node
+class GAFFER_API Backdrop : public Node
 {
 
 	public :
 
 		Backdrop( const std::string &name=defaultName<Backdrop>() );
-		virtual ~Backdrop();
+		~Backdrop() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Backdrop, BackdropTypeId, Node );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( Gaffer::Backdrop, BackdropTypeId, Node );
 
 		StringPlug *titlePlug();
 		const StringPlug *titlePlug() const;

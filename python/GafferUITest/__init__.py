@@ -48,10 +48,9 @@ from LinearContainerTest import LinearContainerTest
 from NodeGadgetTest import NodeGadgetTest
 from GadgetTest import GadgetTest
 from TabbedContainerTest import TabbedContainerTest
-from NodeGraphTest import NodeGraphTest
+from GraphEditorTest import GraphEditorTest
 from WidgetSignalTest import WidgetSignalTest
 from EventLoopTest import EventLoopTest
-from SplinePlugGadgetTest import SplinePlugGadgetTest
 from TextWidgetTest import TextWidgetTest
 from BoolWidgetTest import BoolWidgetTest
 from ImageTest import ImageTest
@@ -67,9 +66,8 @@ from ProgressBarTest import ProgressBarTest
 from ContainerWidgetTest import ContainerWidgetTest
 from SelectionMenuTest import SelectionMenuTest
 from StandardStyleTest import StandardStyleTest
-from EditorWidgetTest import EditorWidgetTest
+from EditorTest import EditorTest
 from NumericSliderTest import NumericSliderTest
-from RenderableGadgetTest import RenderableGadgetTest
 from PlugValueWidgetTest import PlugValueWidgetTest
 from PathListingWidgetTest import PathListingWidgetTest
 from MultiLineTextWidgetTest import MultiLineTextWidgetTest
@@ -77,7 +75,6 @@ from LabelTest import LabelTest
 from ScrolledContainerTest import ScrolledContainerTest
 from NodeEditorTest import NodeEditorTest
 from ScriptWindowTest import ScriptWindowTest
-from CompoundPlugValueWidgetTest import CompoundPlugValueWidgetTest
 from CompoundEditorTest import CompoundEditorTest
 from MultiSelectionMenuTest import MultiSelectionMenuTest
 from StandardGraphLayoutTest import StandardGraphLayoutTest
@@ -94,6 +91,7 @@ from PlaybackTest import PlaybackTest
 from SpacerGadgetTest import SpacerGadgetTest
 from BoxUITest import BoxUITest
 from ConnectionGadgetTest import ConnectionGadgetTest
+from AuxiliaryConnectionsGadgetTest import AuxiliaryConnectionsGadgetTest
 from MessageWidgetTest import MessageWidgetTest
 from ModuleTest import ModuleTest
 from PlugLayoutTest import PlugLayoutTest
@@ -102,6 +100,7 @@ from VectorDataWidgetTest import VectorDataWidgetTest
 from DotNodeGadgetTest import DotNodeGadgetTest
 from DocumentationTest import DocumentationTest
 from LazyMethodTest import LazyMethodTest
+from BackgroundMethodTest import BackgroundMethodTest
 from ReferenceUITest import ReferenceUITest
 from CompoundDataPlugValueWidgetTest import CompoundDataPlugValueWidgetTest
 from GraphGadgetTest import GraphGadgetTest
@@ -111,6 +110,13 @@ from CompoundNoduleTest import CompoundNoduleTest
 from SwitchNodeGadgetTest import SwitchNodeGadgetTest
 from NoduleLayoutTest import NoduleLayoutTest
 from ErrorDialogueTest import ErrorDialogueTest
+from WidgetAlgoTest import WidgetAlgoTest
+from BackupsTest import BackupsTest
+from LayoutsTest import LayoutsTest
+from CompoundNumericNoduleTest import CompoundNumericNoduleTest
+from DocumentationAlgoTest import DocumentationAlgoTest
+from ExamplesTest import ExamplesTest
+from NodeSetEditorTest import NodeSetEditorTest
 
 if __name__ == "__main__":
 	unittest.main()

@@ -35,18 +35,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/lexical_cast.hpp"
+#include "GafferUI/View.h"
 
 #include "Gaffer/Context.h"
+#include "Gaffer/EditScope.h"
 #include "Gaffer/Plug.h"
 
-#include "GafferUI/View.h"
+#include "boost/bind.hpp"
+#include "boost/lexical_cast.hpp"
 
 using namespace Gaffer;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( View );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( View );
 
 size_t View::g_firstPlugIndex = 0;
 
@@ -56,14 +57,35 @@ View::View( const std::string &name, Gaffer::PlugPtr inPlug )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	setChild( "in", inPlug );
+	addChild( new Plug( "editScope" ) );
 
 	setContext( new Context() );
-
-	viewportGadget()->keyPressSignal().connect( boost::bind( &View::keyPress, this, ::_1, ::_2 ) );
 }
 
 View::~View()
 {
+}
+
+Gaffer::Plug *View::editScopePlug()
+{
+	return getChild<Plug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::Plug *View::editScopePlug() const
+{
+	return getChild<Plug>( g_firstPlugIndex + 1 );
+}
+
+Gaffer::EditScope *View::editScope()
+{
+	Plug *p = editScopePlug()->getInput();
+	return p ? p->parent<EditScope>() : nullptr;
+}
+
+const Gaffer::EditScope *View::editScope() const
+{
+	const Plug *p = editScopePlug()->getInput();
+	return p ? p->parent<EditScope>() : nullptr;
 }
 
 Gaffer::Context *View::getContext()
@@ -105,7 +127,7 @@ const ViewportGadget *View::viewportGadget() const
 void View::setPreprocessor( Gaffer::NodePtr preprocessor )
 {
 	setChild( "__preprocessor", preprocessor );
-	preprocessor->getChild<Plug>( "in" )->setInput( inPlug<Plug>() );
+	preprocessor->getChild<Plug>( "in" )->setInput( inPlug() );
 }
 
 void View::contextChanged( const IECore::InternedString &name )
@@ -115,30 +137,6 @@ void View::contextChanged( const IECore::InternedString &name )
 boost::signals::connection &View::contextChangedConnection()
 {
 	return m_contextChangedConnection;
-}
-
-bool View::keyPress( GadgetPtr gadget, const KeyEvent &keyEvent )
-{
-	if( keyEvent.key == "F" )
-	{
-		Imath::Box3f b = framingBound();
-		if( !b.isEmpty() && viewportGadget()->getCameraEditable() )
-		{
-			viewportGadget()->frame( b );
-			return true;
-		}
-	}
-
-	return false;
-}
-
-Imath::Box3f View::framingBound() const
-{
-	if( const Gadget *c = viewportGadget()->getPrimaryChild() )
-	{
-		return c->bound();
-	}
-	return Imath::Box3f();
 }
 
 View::CreatorMap &View::creators()
@@ -190,7 +188,7 @@ ViewPtr View::create( Gaffer::PlugPtr plug )
 		t = IECore::RunTimeTyped::baseTypeId( t );
 	}
 
-	return 0;
+	return nullptr;
 }
 
 void View::registerView( IECore::TypeId plugType, ViewCreator creator )

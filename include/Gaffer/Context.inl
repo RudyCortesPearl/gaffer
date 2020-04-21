@@ -37,9 +37,9 @@
 #ifndef GAFFER_CONTEXT_INL
 #define GAFFER_CONTEXT_INL
 
-#include "boost/format.hpp"
-
 #include "IECore/SimpleTypedData.h"
+
+#include "boost/format.hpp"
 
 namespace Gaffer
 {
@@ -216,6 +216,28 @@ void Context::EditableScope::set( const IECore::InternedString &name, const T &v
 {
 	m_context->set( name, value );
 }
+
+const IECore::Canceller *Context::canceller() const
+{
+	return m_canceller;
+}
+
+class Context::SubstitutionProvider : public IECore::StringAlgo::VariableProvider
+{
+
+	public :
+
+		SubstitutionProvider( const Context *context );
+
+		int frame() const override;
+		const std::string &variable( const boost::string_view &name, bool &recurse ) const override;
+
+	private :
+
+		const Context *m_context;
+		mutable std::string m_formattedString;
+
+};
 
 } // namespace Gaffer
 

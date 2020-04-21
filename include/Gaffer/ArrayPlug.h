@@ -37,9 +37,9 @@
 #ifndef GAFFER_ARRAYPLUG_H
 #define GAFFER_ARRAYPLUG_H
 
-#include "OpenEXR/ImathLimits.h"
-
 #include "Gaffer/Plug.h"
+
+#include "OpenEXR/ImathLimits.h"
 
 namespace Gaffer
 {
@@ -47,7 +47,7 @@ namespace Gaffer
 /// The ArrayPlug maintains a sequence of identically-typed child
 /// plugs, automatically adding new plugs when all existing plugs
 /// have connections.
-class ArrayPlug : public Plug
+class GAFFER_API ArrayPlug : public Plug
 {
 
 	public :
@@ -62,30 +62,42 @@ class ArrayPlug : public Plug
 		ArrayPlug(
 			const std::string &name = defaultName<ArrayPlug>(),
 			Direction direction = In,
-			PlugPtr element = NULL,
+			PlugPtr element = nullptr,
 			size_t minSize = 1,
 			size_t maxSize = Imath::limits<size_t>::max(),
-			unsigned flags = Default
+			unsigned flags = Default,
+			bool resizeWhenInputsChange = true
 		);
 
-		virtual ~ArrayPlug();
+		~ArrayPlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ArrayPlug, ArrayPlugTypeId, Plug );
+		GAFFER_PLUG_DECLARE_TYPE( Gaffer::ArrayPlug, ArrayPlugTypeId, Plug );
 
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual void setInput( PlugPtr input );
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		bool acceptsInput( const Plug *input ) const override;
+		void setInput( PlugPtr input ) override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		size_t minSize() const;
 		size_t maxSize() const;
+		void resize( size_t size );
+		bool resizeWhenInputsChange() const;
+		/// Returns an unconnected element at the end of the array, adding one
+		/// if necessary. Returns null if `maxSize()` prevents the creation of
+		/// a new element.
+		Gaffer::Plug *next();
+
+	protected :
+
+		void parentChanged( GraphComponent *oldParent ) override;
 
 	private :
 
-		void parentChanged();
 		void inputChanged( Gaffer::Plug *plug );
 
 		size_t m_minSize;
 		size_t m_maxSize;
+		bool m_resizeWhenInputsChange;
 
 		boost::signals::scoped_connection m_inputChangedConnection;
 

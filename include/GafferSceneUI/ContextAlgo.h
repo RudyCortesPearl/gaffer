@@ -37,6 +37,12 @@
 #ifndef GAFFERSCENEUI_CONTEXTALGO_H
 #define GAFFERSCENEUI_CONTEXTALGO_H
 
+#include "GafferSceneUI/Export.h"
+
+#include "IECore/PathMatcher.h"
+
+#include "OpenEXR/ImathLimits.h"
+
 namespace Gaffer
 {
 
@@ -47,7 +53,7 @@ class Context;
 namespace GafferScene
 {
 
-class PathMatcher;
+class ScenePlug;
 
 } // namespace GafferScene
 
@@ -63,33 +69,38 @@ namespace ContextAlgo
 /// The UI components coordinate with each other to perform on-demand scene
 /// generation by using the Context to store paths to the currently expanded
 /// locations within the scene. For instance, this allows the Viewer show the
-/// objects from locations exposed by expansion performed in the SceneHierarchy,
+/// objects from locations exposed by expansion performed in the HierarchyView,
 /// and vice versa.
 ///
 /// By convention, an expanded location is one whose children are visible,
-/// meaning that they are listed below it in the SceneHierarchy and their objects
+/// meaning that they are listed below it in the HierarchyView and their objects
 /// are drawn in the Viewer. Conversely, a collapsed location's children are
-/// not listed in the SceneHierarchy and the location itself is drawn as a
+/// not listed in the HierarchyView and the location itself is drawn as a
 /// the bounding box of the children.
 ///
 /// As a consequence of this definition, it is not necessary to expand locations
 /// without children. For a simple node such as Sphere, it is only necessary
 /// to expand the root location ("/") to view the geometry. For nodes which
 /// construct a deeper hierarchy, if the name of a location is visible in
-/// the SceneHierarchy, then it's geometry will be displayed in the Viewer.
+/// the HierarchyView, then it's geometry will be displayed in the Viewer.
 
-void setExpandedPaths( Gaffer::Context *context, const GafferScene::PathMatcher &paths );
-GafferScene::PathMatcher getExpandedPaths( const Gaffer::Context *context );
+GAFFERSCENEUI_API void setExpandedPaths( Gaffer::Context *context, const IECore::PathMatcher &paths );
+GAFFERSCENEUI_API IECore::PathMatcher getExpandedPaths( const Gaffer::Context *context );
+
+/// Returns true if the named context variable affects the result of `getExpandedPaths()`.
+/// This can be used from `Context::changedSignal()` to determine if the expansion has been
+/// changed.
+GAFFERSCENEUI_API bool affectsExpandedPaths( const IECore::InternedString &name );
 
 /// Appends paths to the current expansion, optionally adding all ancestor paths too.
-void expand( Gaffer::Context *context, const GafferScene::PathMatcher &paths, bool expandAncestors = true );
+GAFFERSCENEUI_API void expand( Gaffer::Context *context, const IECore::PathMatcher &paths, bool expandAncestors = true );
 
 /// Appends descendant paths to the current expansion up to a specified maximum depth.
 /// Returns a new PathMatcher containing the new leafs of this expansion.
-GafferScene::PathMatcher expandDescendants( Gaffer::Context *context, const GafferScene::PathMatcher &paths, const GafferScene::ScenePlug *scene, int depth = Imath::limits<int>::max() );
+GAFFERSCENEUI_API IECore::PathMatcher expandDescendants( Gaffer::Context *context, const IECore::PathMatcher &paths, const GafferScene::ScenePlug *scene, int depth = Imath::limits<int>::max() );
 
 /// Clears the currently expanded paths
-void clearExpansion( Gaffer::Context *context );
+GAFFERSCENEUI_API void clearExpansion( Gaffer::Context *context );
 
 /// Path Selection
 /// ==============
@@ -97,9 +108,26 @@ void clearExpansion( Gaffer::Context *context );
 /// Similarly to Path Expansion, the UI components coordinate with each other
 /// to perform scene selection, again using the Context to store paths to the
 /// currently selected locations within the scene.
+GAFFERSCENEUI_API void setSelectedPaths( Gaffer::Context *context, const IECore::PathMatcher &paths );
+GAFFERSCENEUI_API IECore::PathMatcher getSelectedPaths( const Gaffer::Context *context );
 
-void setSelectedPaths( Gaffer::Context *context, const GafferScene::PathMatcher &paths );
-GafferScene::PathMatcher getSelectedPaths( const Gaffer::Context *context );
+/// Returns true if the named context variable affects the result of `getSelectedPaths()`.
+/// This can be used from `Context::changedSignal()` to determine if the selection has been
+/// changed.
+GAFFERSCENEUI_API bool affectsSelectedPaths( const IECore::InternedString &name );
+
+/// When multiple paths are selected, it can be useful to know which was the last path to be
+/// added. Because `PathMatcher` is unordered, this must be specified separately.
+///
+/// > Note : The last selected path is synchronised automatically with the list of selected
+/// > paths. When `setLastSelectedPath()` is called, it adds the path to the main selection list.
+/// > When `setSelectedPaths()` is called, an arbitrary path becomes the last selected path.
+/// >
+/// > Note : An empty path is considered to mean that there is no last selected path, _not_
+/// > that the scene root is selected.
+GAFFERSCENEUI_API void setLastSelectedPath( Gaffer::Context *context, const std::vector<IECore::InternedString> &path );
+GAFFERSCENEUI_API std::vector<IECore::InternedString> getLastSelectedPath( const Gaffer::Context *context );
+GAFFERSCENEUI_API bool affectsLastSelectedPath( const IECore::InternedString &name );
 
 } // namespace ContextAlgo
 

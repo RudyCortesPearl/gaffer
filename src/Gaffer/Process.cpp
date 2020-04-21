@@ -34,68 +34,69 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <stack>
-
-#include "boost/container/flat_set.hpp"
-
 #include "Gaffer/Process.h"
-#include "Gaffer/Plug.h"
-#include "Gaffer/Node.h"
+
+#include "Gaffer/Context.h"
 #include "Gaffer/Monitor.h"
+#include "Gaffer/Node.h"
+#include "Gaffer/Plug.h"
+#include "Gaffer/ScriptNode.h"
+
+#include "IECore/Canceller.h"
+
+#include "tbb/enumerable_thread_specific.h"
 
 using namespace Gaffer;
+
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
 
 namespace
 {
 
-typedef boost::container::flat_set<Monitor *> Monitors;
-Monitors g_activeMonitors;
+std::string prefixedWhat( const IECore::Exception &e )
+{
+	std::string s = std::string( e.type() );
+	if( s == "Exception" )
+	{
+		// Prefixing with type wouldn't add any useful information.
+		return e.what();
+	}
+	s += " : "; s += e.what();
+	return s;
+}
 
 } // namespace
 
-struct Process::ThreadData
+//////////////////////////////////////////////////////////////////////////
+// Process
+//////////////////////////////////////////////////////////////////////////
+
+Process::Process( const IECore::InternedString &type, const Plug *plug, const Plug *destinationPlug )
+	:	m_type( type ), m_plug( plug ), m_destinationPlug( destinationPlug ? destinationPlug : plug )
 {
+	IECore::Canceller::check( context()->canceller() );
+	m_parent = m_threadState->m_process;
+	m_threadState->m_process = this;
 
-	typedef std::stack<const Process *> Stack;
-	Stack stack;
-
-	const Plug *errorSource;
-
-};
-
-tbb::enumerable_thread_specific<Process::ThreadData, tbb::cache_aligned_allocator<Process::ThreadData>, tbb::ets_key_per_instance> Process::g_threadData;
-
-Process::Process( const IECore::InternedString &type, const Plug *plug, const Plug *downstream )
-	:	m_type( type ), m_plug( plug ), m_downstream( downstream ? downstream : plug ), m_threadData( &g_threadData.local() )
-{
-	ThreadData::Stack &stack = m_threadData->stack;
-	m_parent = stack.size() ? stack.top() : NULL;
-	m_threadData->stack.push( this );
-
-	for( Monitors::const_iterator it = g_activeMonitors.begin(), eIt = g_activeMonitors.end(); it != eIt; ++it )
+	for( const auto &m : *m_threadState->m_monitors )
 	{
-		(*it)->processStarted( this );
+		m->processStarted( this );
 	}
 }
 
 Process::~Process()
 {
-	for( Monitors::const_iterator it = g_activeMonitors.begin(), eIt = g_activeMonitors.end(); it != eIt; ++it )
+	for( const auto &m : *m_threadState->m_monitors )
 	{
-		(*it)->processFinished( this );
-	}
-
-	m_threadData->stack.pop();
-	if( m_threadData->stack.empty() )
-	{
-		m_threadData->errorSource = NULL;
+		m->processFinished( this );
 	}
 }
 
 const Process *Process::current()
 {
-	const ThreadData::Stack &stack = g_threadData.local().stack;
-	return stack.size() ? stack.top() : NULL;
+	return ThreadState::current().m_process;
 }
 
 void Process::handleException()
@@ -106,54 +107,123 @@ void Process::handleException()
 		// so we can examine it.
 		throw;
 	}
+	catch( const IECore::Cancelled &e )
+	{
+		// Process is just being cancelled. No need
+		// to report via `emitError()`.
+		throw;
+	}
+	catch( const ProcessException &e )
+	{
+		emitError( e.what(), e.plug() );
+		throw;
+	}
+	catch( const IECore::Exception &e )
+	{
+		emitError( prefixedWhat( e ) );
+		// Wrap in a ProcessException. This allows us to correctly
+		// transport the source plug up the call chain, and also
+		// provides a more useful error message to the unlucky
+		// recipient.
+		ProcessException::wrapCurrentException( *this );
+	}
 	catch( const std::exception &e )
 	{
-		if( !m_threadData->errorSource )
-		{
-			m_threadData->errorSource = plug();
-		}
 		emitError( e.what() );
-		throw;
+		// Wrap in a ProcessException. This allows us to correctly
+		// transport the source plug up the call chain, and also
+		// provides a more useful error message to the unlucky
+		// recipient.
+		ProcessException::wrapCurrentException( *this );
 	}
 	catch( ... )
 	{
-		if( !m_threadData->errorSource )
-		{
-			m_threadData->errorSource = plug();
-		}
 		emitError( "Unknown error" );
-		throw;
+		ProcessException::wrapCurrentException( *this );
 	}
 }
 
-void Process::emitError( const std::string &error ) const
+void Process::emitError( const std::string &error, const Plug *source ) const
 {
-	const Plug *plug = m_downstream;
+	const Plug *plug = m_destinationPlug;
 	while( plug )
 	{
 		if( plug->direction() == Plug::Out )
 		{
 			if( const Node *node = plug->node() )
 			{
-				node->errorSignal()( plug, m_threadData->errorSource, error );
+				node->errorSignal()( plug, source ? source : m_plug, error );
 			}
 		}
-		plug = plug != m_plug ? plug->getInput<Plug>() : NULL;
+		plug = plug != m_plug ? plug->getInput() : nullptr;
 	}
 }
 
-void Process::registerMonitor( Monitor *monitor )
+//////////////////////////////////////////////////////////////////////////
+// ProcessException
+//////////////////////////////////////////////////////////////////////////
+
+ProcessException::ProcessException( const ConstPlugPtr &plug, const Context *context, IECore::InternedString processType, const std::exception_ptr &exception, const char *what )
+	:	std::runtime_error( formatWhat( plug.get(), what ) ), m_plug( plug ), m_context( new Context( *context ) ), m_processType( processType ), m_exception( exception )
 {
-	g_activeMonitors.insert( monitor );
 }
 
-void Process::deregisterMonitor( Monitor *monitor )
+const Plug *ProcessException::plug() const
 {
-	g_activeMonitors.erase( monitor );
+	return m_plug.get();
 }
 
-bool Process::monitorRegistered( const Monitor *monitor )
+const Context *ProcessException::context() const
 {
-	return g_activeMonitors.find( const_cast<Monitor *>( monitor ) ) != g_activeMonitors.end();
+	return m_context.get();
 }
 
+void ProcessException::rethrowUnwrapped() const
+{
+	std::rethrow_exception( m_exception );
+}
+
+IECore::InternedString ProcessException::processType() const
+{
+	return m_processType;
+}
+
+void ProcessException::wrapCurrentException( const Process &process )
+{
+	wrapCurrentException( process.plug(), process.context(), process.type() );
+}
+
+void ProcessException::wrapCurrentException( const ConstPlugPtr &plug, const Context *context, IECore::InternedString processType )
+{
+	assert( std::current_exception() );
+	try
+	{
+		throw;
+	}
+	catch( const IECore::Cancelled &e )
+	{
+		throw;
+	}
+	catch( const ProcessException &e )
+	{
+		throw;
+	}
+	catch( const IECore::Exception &e )
+	{
+		const std::string w = prefixedWhat( e );
+		throw ProcessException( plug, context, processType, std::current_exception(), w.c_str() );
+	}
+	catch( const std::exception &e )
+	{
+		throw ProcessException( plug, context, processType, std::current_exception(), e.what() );
+	}
+	catch( ... )
+	{
+		throw ProcessException( plug, context, processType, std::current_exception(), "Unknown error" );
+	}
+}
+
+std::string ProcessException::formatWhat( const Plug *plug, const char *what )
+{
+	return plug->relativeName( plug->ancestor<ScriptNode>() ) + " : " + what;
+}

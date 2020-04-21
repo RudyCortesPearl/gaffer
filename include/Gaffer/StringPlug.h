@@ -38,8 +38,10 @@
 #ifndef GAFFER_STRINGPLUG_H
 #define GAFFER_STRINGPLUG_H
 
-#include "Gaffer/ValuePlug.h"
+#include "IECore/StringAlgo.h"
+
 #include "Gaffer/Context.h"
+#include "Gaffer/ValuePlug.h"
 
 namespace Gaffer
 {
@@ -79,29 +81,29 @@ namespace Gaffer
 /// > `getValue()`. However, in practice, it was determined to
 /// > be too error prone to remember to do this for every
 /// > value access in every node.
-class StringPlug : public ValuePlug
+class GAFFER_API StringPlug : public ValuePlug
 {
 
 	public :
 
 		typedef std::string ValueType;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::StringPlug, StringPlugTypeId, ValuePlug );
+		GAFFER_PLUG_DECLARE_TYPE( Gaffer::StringPlug, StringPlugTypeId, ValuePlug );
 
 		StringPlug(
 			const std::string &name = defaultName<StringPlug>(),
 			Direction direction=In,
 			const std::string &defaultValue = "",
 			unsigned flags = Default,
-			unsigned substitutions = Context::AllSubstitutions
+			unsigned substitutions = IECore::StringAlgo::AllSubstitutions
 		);
-		virtual ~StringPlug();
+		~StringPlug() override;
 
 		unsigned substitutions() const;
 
 		/// Accepts only instances of StringPlug or derived classes.
-		virtual bool acceptsInput( const Plug *input ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsInput( const Plug *input ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		const std::string &defaultValue() const;
 
@@ -110,11 +112,11 @@ class StringPlug : public ValuePlug
 		/// Returns the value. See comments in TypedObjectPlug::getValue()
 		/// for details of the optional precomputedHash argument - and use
 		/// with care!
-		std::string getValue( const IECore::MurmurHash *precomputedHash = NULL ) const;
+		std::string getValue( const IECore::MurmurHash *precomputedHash = nullptr ) const;
 
-		virtual void setFrom( const ValuePlug *other );
+		void setFrom( const ValuePlug *other ) override;
 
-		virtual IECore::MurmurHash hash() const;
+		IECore::MurmurHash hash() const override;
 		/// Ensures the method above doesn't mask
 		/// ValuePlug::hash( h )
 		using ValuePlug::hash;

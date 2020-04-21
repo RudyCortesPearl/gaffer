@@ -37,10 +37,11 @@
 #ifndef GAFFERSCENE_FILTERPLUG_H
 #define GAFFERSCENE_FILTERPLUG_H
 
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/Context.h"
-
+#include "GafferScene/Export.h"
 #include "GafferScene/TypeIds.h"
+
+#include "Gaffer/Context.h"
+#include "Gaffer/NumericPlug.h"
 
 namespace GafferScene
 {
@@ -52,7 +53,7 @@ class ScenePlug;
 /// \todo This derives from IntPlug for backwards compatibility
 /// reasons, but it may be preferable to derive straight from
 /// ValuePlug for version 1.0.0.0.
-class FilterPlug : public Gaffer::IntPlug
+class GAFFERSCENE_API FilterPlug : public Gaffer::IntPlug
 {
 
 	public :
@@ -73,12 +74,14 @@ class FilterPlug : public Gaffer::IntPlug
 			unsigned flags
 		);
 
-		virtual ~FilterPlug();
+		~FilterPlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FilterPlug, FilterPlugTypeId, Gaffer::IntPlug );
+		GAFFER_PLUG_DECLARE_TYPE( GafferScene::FilterPlug, FilterPlugTypeId, Gaffer::IntPlug );
 
-		virtual bool acceptsInput( const Gaffer::Plug *input ) const;
-		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsInput( const Gaffer::Plug *input ) const override;
+		Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
+
+		bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const;
 
 		/// Name of a context variable used to provide the input
 		/// scene to the filter

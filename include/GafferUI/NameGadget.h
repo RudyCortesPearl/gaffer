@@ -39,20 +39,20 @@
 
 #include "GafferUI/TextGadget.h"
 
-#include "IECore/Font.h"
+#include "IECoreScene/Font.h"
 
 namespace GafferUI
 {
 
-class NameGadget : public TextGadget
+class GAFFERUI_API NameGadget : public TextGadget
 {
 
 	public :
 
 		NameGadget( Gaffer::GraphComponentPtr object );
-		virtual ~NameGadget();
+		~NameGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::NameGadget, NameGadgetTypeId, TextGadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::NameGadget, NameGadgetTypeId, TextGadget );
 
 	private :
 

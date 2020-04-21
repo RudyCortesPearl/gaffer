@@ -37,129 +37,44 @@
 
 #include "boost/python.hpp"
 
-#include "IECorePython/ScopedGILRelease.h"
-
-#include "GafferBindings/DependencyNodeBinding.h"
-
-#include "GafferImage/Display.h"
-#include "GafferImage/ChannelDataProcessor.h"
-#include "GafferImage/ColorProcessor.h"
-#include "GafferImage/ObjectToImage.h"
-#include "GafferImage/Grade.h"
-#include "GafferImage/Clamp.h"
-#include "GafferImage/Constant.h"
-#include "GafferImage/ImageTransform.h"
-#include "GafferImage/ImageStats.h"
-#include "GafferImage/ImageSampler.h"
-#include "GafferImage/MetadataProcessor.h"
-#include "GafferImage/ImageMetadata.h"
-#include "GafferImage/DeleteImageMetadata.h"
-#include "GafferImage/CopyImageMetadata.h"
-#include "GafferImage/Premultiply.h"
-#include "GafferImage/Unpremultiply.h"
-#include "GafferImage/Crop.h"
-
-#include "GafferImageBindings/ImageNodeBinding.h"
-#include "GafferImageBindings/ImageProcessorBinding.h"
-#include "GafferImageBindings/ImagePlugBinding.h"
-#include "GafferImageBindings/FormatBinding.h"
-#include "GafferImageBindings/FormatPlugBinding.h"
-#include "GafferImageBindings/AtomicFormatPlugBinding.h"
-#include "GafferImageBindings/SamplerBinding.h"
-#include "GafferImageBindings/DeleteChannelsBinding.h"
-#include "GafferImageBindings/MergeBinding.h"
-#include "GafferImageBindings/MixinBinding.h"
-#include "GafferImageBindings/FormatDataBinding.h"
-#include "GafferImageBindings/OpenImageIOReaderBinding.h"
-#include "GafferImageBindings/ImageReaderBinding.h"
-#include "GafferImageBindings/ImageWriterBinding.h"
-#include "GafferImageBindings/ShuffleBinding.h"
-#include "GafferImageBindings/CropBinding.h"
-#include "GafferImageBindings/ResampleBinding.h"
-#include "GafferImageBindings/ResizeBinding.h"
-#include "GafferImageBindings/ImageAlgoBinding.h"
-#include "GafferImageBindings/BufferAlgoBinding.h"
-#include "GafferImageBindings/OffsetBinding.h"
-#include "GafferImageBindings/BlurBinding.h"
-#include "GafferImageBindings/ShapeBinding.h"
-#include "GafferImageBindings/TextBinding.h"
-#include "GafferImageBindings/OpenColorIOTransformBinding.h"
-#include "GafferImageBindings/WarpBinding.h"
-#include "GafferImageBindings/VectorWarpBinding.h"
-#include "GafferImageBindings/MirrorBinding.h"
-#include "GafferImageBindings/CopyChannelsBinding.h"
-#include "GafferImageBindings/FilterAlgoBinding.h"
-#include "GafferImageBindings/MedianBinding.h"
-#include "GafferImageBindings/RankFilterBinding.h"
-#include "GafferImageBindings/ErodeBinding.h"
-#include "GafferImageBindings/DilateBinding.h"
-#include "GafferImageBindings/MixBinding.h"
-#include "GafferImageBindings/DisplayBinding.h"
-#include "GafferImageBindings/CatalogueBinding.h"
-#include "GafferImageBindings/CollectImagesBinding.h"
+#include "BufferAlgoBinding.h"
+#include "CatalogueBinding.h"
+#include "ChannelDataProcessorBinding.h"
+#include "CoreBinding.h"
+#include "DeepNodeBinding.h"
+#include "FilterAlgoBinding.h"
+#include "FilterBinding.h"
+#include "IOBinding.h"
+#include "ImageAlgoBinding.h"
+#include "ImageProcessorBinding.h"
+#include "MetadataBinding.h"
+#include "OpenColorIOTransformBinding.h"
+#include "ShapeBinding.h"
+#include "TransformBinding.h"
+#include "UtilityNodeBinding.h"
+#include "WarpBinding.h"
 
 using namespace boost::python;
-using namespace GafferImage;
+using namespace GafferImageModule;
 
 BOOST_PYTHON_MODULE( _GafferImage )
 {
 
-	GafferImageBindings::bindImagePlug();
-
-	GafferImageBindings::bindImageNode();
-	GafferImageBindings::bindImageProcessor();
-	GafferBindings::DependencyNodeClass<ImagePrimitiveNode>();
-	GafferBindings::DependencyNodeClass<ImagePrimitiveProcessor>();
-	GafferBindings::DependencyNodeClass<ChannelDataProcessor>();
-	GafferBindings::DependencyNodeClass<ColorProcessor>();
-	GafferBindings::DependencyNodeClass<ObjectToImage>();
-	GafferBindings::DependencyNodeClass<Grade>();
-	GafferBindings::DependencyNodeClass<Clamp>();
-	GafferBindings::DependencyNodeClass<Constant>();
-	GafferBindings::DependencyNodeClass<ImageTransform>();
-	GafferBindings::DependencyNodeClass<ImageStats>();
-	GafferBindings::DependencyNodeClass<ImageSampler>();
-	GafferBindings::DependencyNodeClass<MetadataProcessor>();
-	GafferBindings::DependencyNodeClass<ImageMetadata>();
-	GafferBindings::DependencyNodeClass<DeleteImageMetadata>();
-	GafferBindings::DependencyNodeClass<CopyImageMetadata>();
-	GafferBindings::DependencyNodeClass<Premultiply>();
-	GafferBindings::DependencyNodeClass<Unpremultiply>();
-
-	GafferImageBindings::bindDeleteChannels();
-	GafferImageBindings::bindFormat();
-	GafferImageBindings::bindFormatPlug();
-	GafferImageBindings::bindAtomicFormatPlug();
-	GafferImageBindings::bindSampler();
-	GafferImageBindings::bindMixin();
-	GafferImageBindings::bindFormatData();
-	GafferImageBindings::bindOpenImageIOReader();
-	GafferImageBindings::bindImageReader();
-	GafferImageBindings::bindImageWriter();
-	GafferImageBindings::bindMerge();
-	GafferImageBindings::bindShuffle();
-	GafferImageBindings::bindCrop();
-	GafferImageBindings::bindResample();
-	GafferImageBindings::bindResize();
-	GafferImageBindings::bindImageAlgo();
-	GafferImageBindings::bindBufferAlgo();
-	GafferImageBindings::bindOffset();
-	GafferImageBindings::bindBlur();
-	GafferImageBindings::bindShape();
-	GafferImageBindings::bindText();
-	GafferImageBindings::bindOpenColorIOTransform();
-	GafferImageBindings::bindWarp();
-	GafferImageBindings::bindVectorWarp();
-	GafferImageBindings::bindMirror();
-	GafferImageBindings::bindCopyChannels();
-	GafferImageBindings::bindFilterAlgo();
-	GafferImageBindings::bindRankFilter();
-	GafferImageBindings::bindMedian();
-	GafferImageBindings::bindErode();
-	GafferImageBindings::bindDilate();
-	GafferImageBindings::bindMix();
-	GafferImageBindings::bindDisplay();
-	GafferImageBindings::bindCatalogue();
-	GafferImageBindings::bindCollectImages();
+	bindCore();
+	bindImageProcessor();
+	bindTransforms();
+	bindMetadata();
+	bindIO();
+	bindWarp();
+	bindShape();
+	bindFilters();
+	bindOpenColorIOTransform();
+	bindChannelDataProcessor();
+	bindDeepNodes();
+	bindUtilityNodes();
+	bindCatalogue();
+	bindImageAlgo();
+	bindBufferAlgo();
+	bindFilterAlgo();
 
 }

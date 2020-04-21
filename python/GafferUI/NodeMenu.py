@@ -35,11 +35,8 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
-import re
-import fnmatch
 import inspect
+import imath
 
 import IECore
 
@@ -98,12 +95,12 @@ class NodeMenu( object ) :
 
 		def f( menu ) :
 
-			nodeGraph = menu.ancestor( GafferUI.NodeGraph )
-			assert( nodeGraph is not None )
-			gadgetWidget = nodeGraph.graphGadgetWidget()
-			graphGadget = nodeGraph.graphGadget()
+			graphEditor = menu.ancestor( GafferUI.GraphEditor )
+			assert( graphEditor is not None )
+			gadgetWidget = graphEditor.graphGadgetWidget()
+			graphGadget = graphEditor.graphGadget()
 
-			script = nodeGraph.scriptNode()
+			script = graphEditor.scriptNode()
 
 			commandArgs = []
 			with IECore.IgnoredExceptions( TypeError ) :
@@ -134,17 +131,17 @@ class NodeMenu( object ) :
 			# the click location that opened the menu.
 			menuPosition = menu.popupPosition( relativeTo = gadgetWidget )
 			fallbackPosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
-				IECore.V2f( menuPosition.x, menuPosition.y ),
+				imath.V2f( menuPosition.x, menuPosition.y ),
 				gadget = graphGadget
 			).p0
-			fallbackPosition = IECore.V2f( fallbackPosition.x, fallbackPosition.y )
+			fallbackPosition = imath.V2f( fallbackPosition.x, fallbackPosition.y )
 
 			graphGadget.getLayout().positionNode( graphGadget, node, fallbackPosition )
 
 			script.selection().clear()
 			script.selection().add( node )
 
-			nodeGraph.frame( [ node ], extend = True )
+			graphEditor.frame( [ node ], extend = True )
 
 			if postCreator is not None :
 				postCreator( node, menu )

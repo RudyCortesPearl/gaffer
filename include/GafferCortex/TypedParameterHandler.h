@@ -38,15 +38,17 @@
 #ifndef GAFFERCORTEX_TYPEDPARAMETERHANDLER_H
 #define GAFFERCORTEX_TYPEDPARAMETERHANDLER_H
 
+#include "GafferCortex/ParameterHandler.h"
+
 #include "Gaffer/PlugType.h"
 
-#include "GafferCortex/ParameterHandler.h"
+#include "IECore/TypedParameter.h"
 
 namespace GafferCortex
 {
 
 template<typename T>
-class TypedParameterHandler : public ParameterHandler
+class GAFFERCORTEX_API TypedParameterHandler : public ParameterHandler
 {
 
 	public :
@@ -57,18 +59,22 @@ class TypedParameterHandler : public ParameterHandler
 		typedef typename Gaffer::PlugType<T>::Type PlugType;
 
 		TypedParameterHandler( typename ParameterType::Ptr parameter );
-		virtual ~TypedParameterHandler();
+		~TypedParameterHandler() override;
 
-		virtual IECore::Parameter *parameter();
-		virtual const IECore::Parameter *parameter() const;
-		virtual void restore( Gaffer::GraphComponent *plugParent );
-		virtual Gaffer::Plug *setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction=Gaffer::Plug::In, unsigned flags = Gaffer::Plug::Default | Gaffer::Plug::Dynamic );
-		virtual Gaffer::Plug *plug();
-		virtual const Gaffer::Plug *plug() const;
-		virtual void setParameterValue();
-		virtual void setPlugValue();
+		IECore::Parameter *parameter() override;
+		const IECore::Parameter *parameter() const override;
+		void restore( Gaffer::GraphComponent *plugParent ) override;
+		Gaffer::Plug *setupPlug( Gaffer::GraphComponent *plugParent, Gaffer::Plug::Direction direction=Gaffer::Plug::In, unsigned flags = Gaffer::Plug::Default | Gaffer::Plug::Dynamic ) override;
+		Gaffer::Plug *plug() override;
+		const Gaffer::Plug *plug() const override;
+		void setParameterValue() override;
+		void setPlugValue() override;
 
 	private :
+
+		typename PlugType::Ptr createPlug( Gaffer::Plug::Direction direction ) const;
+		// variant for StringPlugs
+		typename PlugType::Ptr createPlug( Gaffer::Plug::Direction direction, IECore::StringAlgo::Substitutions substitutions ) const;
 
 		typename ParameterType::Ptr m_parameter;
 		typename PlugType::Ptr m_plug;

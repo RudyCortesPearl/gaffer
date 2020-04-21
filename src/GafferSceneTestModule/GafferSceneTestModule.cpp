@@ -37,16 +37,16 @@
 
 #include "boost/python.hpp"
 
-#include "IECorePython/ScopedGILRelease.h"
+#include "GafferSceneTest/ContextSanitiser.h"
+#include "GafferSceneTest/CompoundObjectSource.h"
+#include "GafferSceneTest/ScenePlugTest.h"
+#include "GafferSceneTest/TestLight.h"
+#include "GafferSceneTest/TestShader.h"
+#include "GafferSceneTest/TraverseScene.h"
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
-#include "GafferSceneTest/CompoundObjectSource.h"
-#include "GafferSceneTest/TraverseScene.h"
-#include "GafferSceneTest/TestShader.h"
-#include "GafferSceneTest/TestLight.h"
-#include "GafferSceneTest/ScenePlugTest.h"
-#include "GafferSceneTest/PathMatcherTest.h"
+#include "IECorePython/ScopedGILRelease.h"
 
 using namespace boost::python;
 using namespace GafferSceneTest;
@@ -60,6 +60,10 @@ static void traverseSceneWrapper( const GafferScene::ScenePlug *scenePlug )
 BOOST_PYTHON_MODULE( _GafferSceneTest )
 {
 
+	IECorePython::RefCountedClass<ContextSanitiser, Gaffer::Monitor>( "ContextSanitiser" )
+		.def( init<>() )
+	;
+
 	GafferBindings::DependencyNodeClass<CompoundObjectSource>();
 	GafferBindings::NodeClass<TestShader>();
 	GafferBindings::NodeClass<TestLight>();
@@ -70,9 +74,5 @@ BOOST_PYTHON_MODULE( _GafferSceneTest )
 	def( "connectTraverseSceneToPreDispatchSignal", &connectTraverseSceneToPreDispatchSignal );
 
 	def( "testManyStringToPathCalls", &testManyStringToPathCalls );
-
-	def( "testPathMatcherRawIterator", &testPathMatcherRawIterator );
-	def( "testPathMatcherIteratorPrune", &testPathMatcherIteratorPrune );
-	def( "testPathMatcherFind", &testPathMatcherFind );
 
 }

@@ -38,11 +38,12 @@
 #ifndef GAFFER_ACTION_H
 #define GAFFER_ACTION_H
 
-#include "boost/function.hpp"
+#include "Gaffer/Export.h"
+#include "Gaffer/TypeIds.h"
 
 #include "IECore/RunTimeTyped.h"
 
-#include "Gaffer/TypeIds.h"
+#include <functional>
 
 namespace Gaffer
 {
@@ -51,20 +52,24 @@ IE_CORE_FORWARDDECLARE( GraphComponent );
 IE_CORE_FORWARDDECLARE( ScriptNode );
 IE_CORE_FORWARDDECLARE( Action );
 
-/// The Action class forms the basis of the undo system - all
-/// methods which wish to support undo must be implemented by
-/// calling Action::enact(). Note that client code never creates Actions
-/// explicitly - instead they are created implicitly whenever an UndoScope
-/// is active and an undoable method is called. Because Actions are
-/// essentially an implementation detail of the undo system, subclasses
-/// shouldn't be exposed in the public headers.
+/// The Action class represents node graph edits. It forms the basis of
+/// the undo system, and cooperates with `BackgroundTask` to synchronise
+/// graph edits with background computes. All methods which wish to edit
+/// the node graph and/or support undo _must_ be implemented by
+/// calling Action::enact().
 ///
-/// Because Actions are held in the undo queue in the ScriptNode, it's
-/// essential that they do not themselves hold an intrusive pointer pointing
-/// back to the ScriptNode - this would result in a circular reference,
-/// preventing the ScriptNode from being deleted appropriately. It is essential
-/// that great care is taken with this when implementing subclasses.
-class Action : public IECore::RunTimeTyped
+/// > Note : Client code never creates Actions explicitly; instead they
+/// > are created implicitly whenever an UndoScope is active and an undoable
+/// > method is called. Because Actions are essentially an implementation detail
+/// > of the undo system, subclasses shouldn't be exposed in the public headers.
+///
+/// > Caution : Because Actions are held in the undo queue in the ScriptNode, it's
+/// > essential that they do not themselves hold an intrusive pointer pointing
+/// > back to the ScriptNode - this would result in a circular reference,
+/// > preventing the ScriptNode from being deleted appropriately. It is essential
+/// > that great care is taken with this when implementing subclasses or
+/// > calling `enact()`.
+class GAFFER_API Action : public IECore::RunTimeTyped
 {
 
 	public :
@@ -80,7 +85,7 @@ class Action : public IECore::RunTimeTyped
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Action, ActionTypeId, IECore::RunTimeTyped );
 
-		typedef boost::function<void ()> Function;
+		typedef std::function<void ()> Function;
 
 		/// Enacts the specified action by calling doAction() and
 		/// adding it to the undo queue in the appropriate ScriptNode.
@@ -96,12 +101,18 @@ class Action : public IECore::RunTimeTyped
 		/// circular reference. It is guaranteed that the subject will
 		/// remain alive for as long as the Functions are in use by the undo
 		/// system, so it is sufficient to bind only raw pointers to the subject.
-		static void enact( GraphComponentPtr subject, const Function &doFn, const Function &undoFn );
+		///
+		/// > Caution : Only pass `cancelBackgroundTasks = false` if you are
+		/// > _certain_ that there is no possible interaction between this Action
+		/// > and a concurrent background task. At the time of writing, the only
+		/// > known valid use is in the Metadata system (because computations are
+		/// > not allowed to depend on metadata).
+		static void enact( GraphComponentPtr subject, const Function &doFn, const Function &undoFn, bool cancelBackgroundTasks = true );
 
 	protected :
 
-		Action();
-		virtual ~Action();
+		Action( bool cancelBackgroundTasks = true );
+		~Action() override;
 
 		/// Must be implemented by derived classes to
 		/// return the subject of the work they perform -
@@ -137,6 +148,7 @@ class Action : public IECore::RunTimeTyped
 		friend class ScriptNode;
 
 		bool m_done;
+		const bool m_cancelBackgroundTasks;
 
 };
 

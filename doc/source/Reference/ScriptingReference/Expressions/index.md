@@ -1,3 +1,5 @@
+<!-- !NO_SCROLLSPY -->
+
 Expressions
 ===========
 
@@ -26,7 +28,7 @@ Set value           parent["NodeName"]["plugName"] = value   parent.NodeName.plu
 =================== ======================================== ================================
 ```
 
-Context variables
+Context Variables
 -----------------
 
 ```eval_rst

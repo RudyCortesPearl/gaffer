@@ -42,22 +42,22 @@
 namespace GafferScene
 {
 
-class CoordinateSystem : public ObjectSource
+class GAFFERSCENE_API CoordinateSystem : public ObjectSource
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::CoordinateSystem, CoordinateSystemTypeId, ObjectSource );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::CoordinateSystem, CoordinateSystemTypeId, ObjectSource );
 
 		CoordinateSystem( const std::string &name=defaultName<CoordinateSystem>() );
-		virtual ~CoordinateSystem();
+		~CoordinateSystem() override;
 
 	protected :
 
-		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+		void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const override;
 
-		virtual IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const;
+		IECore::ConstInternedStringVectorDataPtr computeStandardSetNames() const override;
 };
 
 IE_CORE_DECLAREPTR( CoordinateSystem )

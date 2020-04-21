@@ -35,6 +35,7 @@
 ##########################################################################
 
 import functools
+import imath
 
 import IECore
 import Gaffer
@@ -73,7 +74,7 @@ class FormatPlugValueWidget( GafferUI.PlugValueWidget ) :
 		# sensitive to contex changes and omits calls to _updateFromPlug(). But the default
 		# format mechanism uses the context, so we must arrange to do updates ourselves when
 		# necessary.
-		self.__contextChangedConnection = self.getContext().changedSignal().connect( Gaffer.WeakMethod( self.__contextChanged ) )
+		self.getContext().changedSignal().connect( Gaffer.WeakMethod( self.__contextChanged ), scoped = False )
 
 		self._addPopupMenu( self.__menuButton )
 		self._updateFromPlug()
@@ -112,7 +113,7 @@ class FormatPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		self.__menuButton.setText( text if mode != "custom" else "Custom" )
 
-		nonZeroOrigin = fmt.getDisplayWindow().min != IECore.V2i( 0 )
+		nonZeroOrigin = fmt.getDisplayWindow().min() != imath.V2i( 0 )
 		for widget in ( self.__minLabel, self.__minWidget ) :
 			widget.setVisible( mode == "custom" and nonZeroOrigin )
 
@@ -168,7 +169,7 @@ class FormatPlugValueWidget( GafferUI.PlugValueWidget ) :
 	def __applyFormat( self, unused, fmt ) :
 
 		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
-			Gaffer.Metadata.registerValue( self.getPlug(), "formatPlugValueWidget:mode", "standard", persistent = False )
+			Gaffer.Metadata.registerValue( self.getPlug(), "formatPlugValueWidget:mode", "standard" )
 			self.getPlug().setValue( fmt )
 
 	def __applyCustomFormat( self, unused ) :
@@ -189,7 +190,7 @@ class FormatPlugValueWidget( GafferUI.PlugValueWidget ) :
 			# custom mode despite of this fact. We use metadata rather than
 			# a member variable so that undo will take us back to the non-custom
 			# state automatically.
-			Gaffer.Metadata.registerValue( self.getPlug(), "formatPlugValueWidget:mode", "custom", persistent = False )
+			Gaffer.Metadata.registerValue( self.getPlug(), "formatPlugValueWidget:mode", "custom" )
 
 	def __contextChanged( self, context, key ) :
 

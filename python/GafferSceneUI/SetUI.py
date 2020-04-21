@@ -54,6 +54,8 @@ Gaffer.Metadata.registerNode(
 	a particular set.
 	""",
 
+	"layout:activator:pathsInUse", lambda node : node["paths"].getInput() is not None or len( node["paths"].getValue() ),
+
 	plugs = {
 
 		"mode" : [
@@ -98,10 +100,15 @@ Gaffer.Metadata.registerNode(
 			"description",
 			"""
 			The paths to be added to or removed from the set.
+
+			> Caution : This plug is deprecated and will be removed
+			in a future release. No validity checks are performed on
+			these paths, so it is possible to accidentally generate
+			invalid sets.
 			""",
 
-			"ui:scene:acceptsPaths", True,
 			"vectorDataPlugValueWidget:dragPointer", "objects",
+			"layout:visibilityActivator", "pathsInUse",
 
 		],
 
@@ -109,15 +116,7 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			A filter to define additional paths to be added to
-			or removed from the set.
-
-			> Warning : Using a filter can be very expensive.
-			It is advisable to limit use to filters with a
-			limited number of matches and/or sets which are
-			not used heavily downstream. Wherever possible,
-			prefer to use the `paths` plug directly instead
-			of using a filter.
+			Defines the locations to be added to or removed from the set.
 			""",
 
 		],
@@ -137,16 +136,45 @@ def __setValue( plug, value, *unused ) :
 	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		plug.setValue( value )
 
+def __downstreamNodes( plug ) :
+
+	result = set()
+	outputs = plug.outputs()
+	if outputs :
+		for output in outputs :
+			result |= __downstreamNodes( output )
+	else :
+		if plug.node() :
+			result.add( plug.node() )
+
+	return result
+
+def __scenePlugs( node ) :
+
+	result = []
+	for plug in node.children( Gaffer.Plug ) :
+		if plug.direction() != plug.Direction.In :
+			continue
+		if isinstance( plug, Gaffer.ArrayPlug ) and len( plug ) :
+			plug = plug[0]
+		if isinstance( plug, GafferScene.ScenePlug ) :
+			result.append( plug )
+
+	return result
+
 def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 
 	plug = plugValueWidget.getPlug()
 	if plug is None :
 		return
 
+	# Some operations require a text widget so we can manipulate insertion position, etc...
+	hasTextWidget = hasattr( plugValueWidget, 'textWidget' )
+
 	# get required data
 	acceptsSetName = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetName" )
 	acceptsSetNames = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetNames" )
-	acceptsSetExpression = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetExpression" )
+	acceptsSetExpression = hasTextWidget and Gaffer.Metadata.value( plug, "ui:scene:acceptsSetExpression" )
 	if not acceptsSetName and not acceptsSetNames and not acceptsSetExpression :
 		return
 
@@ -166,22 +194,17 @@ def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 		if insertAt == (0, 0) :  # if there's no selection to be replaced, use position of cursor
 			insertAt = (cursorPosition, cursorPosition)
 
-
 	node = plug.node()
 	if isinstance( node, GafferScene.Filter ) :
-		nodes = [ o.node() for o in node["out"].outputs() ]
+		nodes = __downstreamNodes( node["out"] )
 	else :
-		nodes = [ node ]
+		nodes = { node }
 
 	setNames = set()
 	with plugValueWidget.getContext() :
 		for node in nodes :
-			for scenePlug in node.children( GafferScene.ScenePlug ) :
-
-				if scenePlug.direction() != scenePlug.Direction.In :
-					continue
-
-				setNames.update( [ str( n ) for n in scenePlug["setNames"].getValue() ] )
+			for scenePlug in __scenePlugs( node ) :
+				setNames.update( [ str( n ) for n in scenePlug["setNames"].getValue() if not str( n ).startswith( "__" ) ] )
 
 	if not setNames :
 		return
@@ -216,7 +239,7 @@ def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 
 		menuDefinition.prepend( "/Sets/%s" % setName, parameters )
 
-__setsPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __setsPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __setsPopupMenu, scoped = False )
 
 ##########################################################################
 # Gadgets

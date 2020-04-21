@@ -50,15 +50,15 @@ namespace GafferUI
 /// the transforms for children when they have been dirtied. This would
 /// simplify derived classes and provide greater justification for the
 /// existence of this base class.
-class ContainerGadget : public Gadget
+class GAFFERUI_API ContainerGadget : public Gadget
 {
 
 	public :
 
 		ContainerGadget( const std::string &name=defaultName<ContainerGadget>() );
-		virtual ~ContainerGadget();
+		~ContainerGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::ContainerGadget, ContainerGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::ContainerGadget, ContainerGadgetTypeId, Gadget );
 
 		/// The padding is a region added around the contents of the children.
 		/// It is specified as the final bounding box when the child bounding
@@ -69,7 +69,7 @@ class ContainerGadget : public Gadget
 
 		/// Applies the padding to the default union-of-children
 		/// bounding box.
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	private :
 

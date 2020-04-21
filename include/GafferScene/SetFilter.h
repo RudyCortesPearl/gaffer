@@ -37,11 +37,9 @@
 #ifndef GAFFERSCENE_SETFILTER_H
 #define GAFFERSCENE_SETFILTER_H
 
-#include "Gaffer/TypedObjectPlug.h"
-
 #include "GafferScene/Filter.h"
-#include "GafferScene/PathMatcher.h"
-#include "GafferScene/PathMatcherDataPlug.h"
+
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace Gaffer
 {
@@ -54,35 +52,35 @@ namespace GafferScene
 {
 
 /// \todo Investigate whether or not caching is actually beneficial for this node
-class SetFilter : public Filter
+class GAFFERSCENE_API SetFilter : public Filter
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SetFilter, SetFilterTypeId, Filter );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::SetFilter, SetFilterTypeId, Filter );
 
 		SetFilter( const std::string &name=defaultName<SetFilter>() );
-		virtual ~SetFilter();
+		~SetFilter() override;
 
 		Gaffer::StringPlug *setExpressionPlug();
 		const Gaffer::StringPlug *setExpressionPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
-		virtual bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const;
+		bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
-		virtual void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const;
+		void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const override;
 
 	private :
 
-		GafferScene::PathMatcherDataPlug *expressionResultPlug();
-		const GafferScene::PathMatcherDataPlug *expressionResultPlug() const;
+		Gaffer::PathMatcherDataPlug *expressionResultPlug();
+		const Gaffer::PathMatcherDataPlug *expressionResultPlug() const;
 
 		static size_t g_firstPlugIndex;
 

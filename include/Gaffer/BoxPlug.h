@@ -38,17 +38,20 @@
 #ifndef GAFFER_BOXPLUG_H
 #define GAFFER_BOXPLUG_H
 
-#include "OpenEXR/ImathBox.h"
+#include "Gaffer/CompoundNumericPlug.h"
 
 #include "IECore/BoxTraits.h"
+#include "IECore/Export.h"
 
-#include "Gaffer/CompoundNumericPlug.h"
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathBox.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace Gaffer
 {
 
 template<typename T>
-class BoxPlug : public ValuePlug
+class GAFFER_API BoxPlug : public ValuePlug
 {
 
 	public :
@@ -57,7 +60,7 @@ class BoxPlug : public ValuePlug
 		typedef typename IECore::BoxTraits<T>::BaseType PointType;
 		typedef CompoundNumericPlug<PointType> ChildType;
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( BoxPlug<T>, ValuePlug );
+		GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( BoxPlug<T>, ValuePlug );
 
 		BoxPlug(
 			const std::string &name = defaultName<BoxPlug>(),
@@ -75,11 +78,11 @@ class BoxPlug : public ValuePlug
 			unsigned flags = Default
 		);
 
-		virtual ~BoxPlug();
+		~BoxPlug() override;
 
 		/// Accepts no children following construction.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		ChildType *minPlug();
 		const ChildType *minPlug() const;
@@ -102,10 +105,6 @@ class BoxPlug : public ValuePlug
 		/// Returns the value, calling getValue() on the min and max child plugs to compute a component
 		/// of the result.
 		T getValue() const;
-
-	private :
-
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( BoxPlug<T> );
 
 };
 

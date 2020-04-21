@@ -37,23 +37,24 @@
 #ifndef GAFFERTEST_MULTIPLYNODE_H
 #define GAFFERTEST_MULTIPLYNODE_H
 
+#include "GafferTest/Export.h"
+#include "GafferTest/TypeIds.h"
+
 #include "Gaffer/ComputeNode.h"
 #include "Gaffer/NumericPlug.h"
-
-#include "GafferTest/TypeIds.h"
 
 namespace GafferTest
 {
 
-class MultiplyNode : public Gaffer::ComputeNode
+class GAFFERTEST_API MultiplyNode : public Gaffer::ComputeNode
 {
 
 	public :
 
 		MultiplyNode( const std::string &name=defaultName<MultiplyNode>() );
-		virtual ~MultiplyNode();
+		~MultiplyNode() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferTest::MultiplyNode, MultiplyNodeTypeId, Gaffer::ComputeNode );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferTest::MultiplyNode, MultiplyNodeTypeId, Gaffer::ComputeNode );
 
 		Gaffer::IntPlug *op1Plug();
 		const Gaffer::IntPlug *op1Plug() const;
@@ -64,12 +65,12 @@ class MultiplyNode : public Gaffer::ComputeNode
 		Gaffer::IntPlug *productPlug();
 		const Gaffer::IntPlug *productPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 	private :
 

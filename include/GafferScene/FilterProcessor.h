@@ -51,7 +51,7 @@ namespace GafferScene
 
 /// A base class for filters which operate by processing one
 /// or more input filters.
-class FilterProcessor : public Filter
+class GAFFERSCENE_API FilterProcessor : public Filter
 {
 
 	public :
@@ -64,9 +64,9 @@ class FilterProcessor : public Filter
 		/// inPlugs() to access the array itself.
 		FilterProcessor( const std::string &name, size_t minInputs, size_t maxInputs = Imath::limits<size_t>::max() );
 
-		virtual ~FilterProcessor();
+		~FilterProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FilterProcessor, FilterProcessorTypeId, Filter );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferScene::FilterProcessor, FilterProcessorTypeId, Filter );
 
 		/// Returns the primary filter input. For nodes with multiple inputs
 		/// this will be the first child of the inPlugs() array. For nodes
@@ -77,22 +77,22 @@ class FilterProcessor : public Filter
 		const FilterPlug *inPlug() const;
 
 		/// For nodes with multiple inputs, returns the ArrayPlug which
-		/// hosts them. For single input nodes, returns NULL;
+		/// hosts them. For single input nodes, returns null.
 		Gaffer::ArrayPlug *inPlugs();
 		const Gaffer::ArrayPlug *inPlugs() const;
 
-		virtual bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const;
+		bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const override;
 
 		/// Returns inPlug() as the correspondingInput of outPlug();
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override;
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override;
 
 	protected :
 
 		/// Reimplemented to pass through the inPlug() hash when the node is disabled.
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		/// Reimplemented to pass through the inPlug() result when the node is disabled.
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 	private :
 

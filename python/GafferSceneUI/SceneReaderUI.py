@@ -34,7 +34,9 @@
 #
 ##########################################################################
 
-import IECore
+import functools
+
+import IECoreScene
 
 import Gaffer
 import GafferUI
@@ -52,13 +54,8 @@ Gaffer.Metadata.registerNode(
 	"""
 	The primary means of loading external assets (models, animation and cameras etc)
 	from caches into Gaffer. Gaffer's native file format is the .scc (SceneCache) format
-	provided by Cortex, but other formats may be supported by registering a new implementation
-	of Cortex's abstract SceneInterface.
-
-	> Note :
-	>
-	> Currently the SceneReader does not support Alembic caches - for those, the AlembicSource
-	> node should be used instead.
+	provided by Cortex, but Alembic and USD files are also supported. Other formats may be
+	added by registering a new implementation of Cortex's abstract SceneInterface.
 	""",
 
 	plugs = {
@@ -75,7 +72,7 @@ Gaffer.Metadata.registerNode(
 			"path:leaf", True,
 			"path:valid", True,
 			"path:bookmarks", "sceneCache",
-			"fileSystemPath:extensions", " ".join( IECore.SceneInterface.supportedExtensions() ),
+			"fileSystemPath:extensions", " ".join( IECoreScene.SceneInterface.supportedExtensions() ),
 			"fileSystemPath:extensionsLabel", "Show only cache files",
 
 		],
@@ -102,6 +99,18 @@ Gaffer.Metadata.registerNode(
 			Limits the parts of the scene loaded to only those
 			with a specific set of tags.
 			""",
+
+		],
+
+		"transform" : [
+
+			"description",
+			"""
+			The transform used to position the cache. This is applied to
+			all children of the cache root.
+			""",
+
+			"layout:section", "Transform",
 
 		],
 
@@ -136,7 +145,7 @@ def __tagsPopupMenu( menuDefinition, plugValueWidget ) :
 
 	fileName = plugValueWidget.getContext().substitute( node["fileName"].getValue() )
 	try :
-		scene = IECore.SharedSceneInterfaces.get( fileName )
+		scene = IECoreScene.SharedSceneInterfaces.get( fileName )
 	except :
 		return
 
@@ -154,10 +163,10 @@ def __tagsPopupMenu( menuDefinition, plugValueWidget ) :
 		menuDefinition.prepend(
 			"/Tags/%s" % tag,
 			{
-				"command" : IECore.curry( __toggleTag, plug, tag ),
+				"command" : functools.partial( __toggleTag, plug, tag ),
 				"checkBox" : tag in currentTags,
 				"active" : plug.settable() and not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
 			}
 		)
 
-__tagsPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __tagsPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __tagsPopupMenu, scoped = False )

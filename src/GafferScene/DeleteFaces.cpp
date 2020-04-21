@@ -34,33 +34,32 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/format.hpp"
-#include "boost/algorithm/string.hpp"
-
-#include "IECore/MeshPrimitive.h"
-#include "IECore/MeshAlgo.h"
+#include "GafferScene/DeleteFaces.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferScene/DeleteFaces.h"
+#include "IECoreScene/MeshAlgo.h"
+#include "IECoreScene/MeshPrimitive.h"
+
+#include "boost/algorithm/string.hpp"
+#include "boost/format.hpp"
 
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( DeleteFaces );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( DeleteFaces );
 
 size_t DeleteFaces::g_firstPlugIndex = 0;
 
-DeleteFaces::DeleteFaces( const std::string &name ) : SceneElementProcessor( name, Filter::NoMatch )
+DeleteFaces::DeleteFaces( const std::string &name )
+	:	Deformer( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
 	addChild( new StringPlug( "faces", Plug::In, "deleteFaces" ) );
-
-	// Fast pass-through for things we don't modify
-	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
-	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
+	addChild( new BoolPlug( "invert", Plug::In, false ) );
 }
 
 DeleteFaces::~DeleteFaces()
@@ -77,62 +76,44 @@ const Gaffer::StringPlug *DeleteFaces::facesPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
-void DeleteFaces::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+Gaffer::BoolPlug *DeleteFaces::invertPlug()
 {
-	SceneElementProcessor::affects( input, outputs );
-
-	if( input == facesPlug() )
-	{
-		outputs.push_back( outPlug()->objectPlug() );
-	}
-	else if( input == outPlug()->objectPlug() )
-	{
-		outputs.push_back( outPlug()->boundPlug() );
-	}
+	return getChild<BoolPlug>( g_firstPlugIndex + 1);
 }
 
-bool DeleteFaces::processesBound() const
+const Gaffer::BoolPlug *DeleteFaces::invertPlug() const
 {
-	return true;
+	return getChild<BoolPlug>( g_firstPlugIndex + 1);
 }
 
-void DeleteFaces::hashProcessedBound( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+bool DeleteFaces::affectsProcessedObject( const Gaffer::Plug *input ) const
 {
-
-	hashProcessedObject( path, context, h );
-}
-
-Imath::Box3f DeleteFaces::computeProcessedBound( const ScenePath &path, const Gaffer::Context *context, const Imath::Box3f &inputBound ) const
-{
-	ConstObjectPtr object = outPlug()->objectPlug()->getValue();
-	if( const Primitive *primitive = runTimeCast<const Primitive>( object.get() ) )
-	{
-		return primitive->bound();
-	}
-	return inputBound;
-}
-
-bool DeleteFaces::processesObject() const
-{
-	return true;
+	return
+		Deformer::affectsProcessedObject( input ) ||
+		input == facesPlug() ||
+		input == invertPlug()
+	;
 }
 
 void DeleteFaces::hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	Deformer::hashProcessedObject( path, context, h );
 	facesPlug()->hash( h );
+	invertPlug()->hash( h );
 }
 
-IECore::ConstObjectPtr DeleteFaces::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const
+IECore::ConstObjectPtr DeleteFaces::computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const
 {
-	const MeshPrimitive *mesh = runTimeCast<const MeshPrimitive>( inputObject.get() );
+	const MeshPrimitive *mesh = runTimeCast<const MeshPrimitive>( inputObject );
 	if( !mesh )
 	{
 		return inputObject;
 	}
 
-
 	std::string deletePrimVarName = facesPlug()->getValue();
 
+	/// \todo Remove. We take values verbatim everywhere else in Gaffer, and I don't
+	/// see any good reason to differ here.
 	if( boost::trim_copy( deletePrimVarName ).empty() )
 	{
 		return inputObject;
@@ -144,5 +125,5 @@ IECore::ConstObjectPtr DeleteFaces::computeProcessedObject( const ScenePath &pat
 		throw InvalidArgumentException( boost::str( boost::format( "DeleteFaces : No primitive variable \"%s\" found" ) % deletePrimVarName ) );
 	}
 
-	return MeshAlgo::deleteFaces( mesh, it->second );
+	return MeshAlgo::deleteFaces( mesh, it->second, invertPlug()->getValue() );
 }

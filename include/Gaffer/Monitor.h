@@ -37,7 +37,10 @@
 #ifndef GAFFER_MONITOR_H
 #define GAFFER_MONITOR_H
 
-#include "boost/noncopyable.hpp"
+#include "Gaffer/Export.h"
+#include "Gaffer/ThreadState.h"
+
+#include "IECore/RefCounted.h"
 
 namespace Gaffer
 {
@@ -45,35 +48,44 @@ namespace Gaffer
 class Process;
 
 /// Base class for monitoring node graph processes.
-class Monitor : boost::noncopyable
+class GAFFER_API Monitor : public IECore::RefCounted
 {
 
 	public :
 
-		Monitor();
 		virtual ~Monitor();
 
-		void setActive( bool active );
-		bool getActive() const;
+		IE_CORE_DECLAREMEMBERPTR( Monitor )
 
-		class Scope : boost::noncopyable
+		using MonitorSet = boost::container::flat_set<MonitorPtr>;
+
+		class Scope : private ThreadState::Scope
 		{
 
 			public :
 
-				/// Constructing the Scope makes the monitor active.
-				/// If monitor is NULL, the Scope is a no-op.
-				Scope( Monitor *monitor );
-				/// Destruction of the Scope makes the monitor inactive.
+				/// Constructs a Scope where the monitor has the specified
+				/// active state. If monitor is null, the scope is a no-op.
+				Scope( const MonitorPtr &monitor, bool active = true );
+				/// Constructs a Scope where each of `monitors` has the
+				/// specified `active` state.
+				Scope( const MonitorSet &monitors, bool active = true );
+				/// Returns to the previously active set of monitors.
 				~Scope();
 
 			private :
 
-				Monitor *m_monitor;
+				MonitorSet m_monitors;
 
 		};
 
+		/// Returns the set of monitors that are currently active
+		/// on this thread.
+		static const MonitorSet &current();
+
 	protected :
+
+		Monitor();
 
 		friend class Process;
 
@@ -83,6 +95,8 @@ class Monitor : boost::noncopyable
 		virtual void processFinished( const Process *process ) = 0;
 
 };
+
+IE_CORE_DECLAREPTR( Monitor )
 
 } // namespace Gaffer
 
